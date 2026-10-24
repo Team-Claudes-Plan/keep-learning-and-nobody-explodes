@@ -45,6 +45,8 @@
           s3AccessKey = "devadmin";
           s3SecretKey = "devadmin-secret";
           s3Bucket = "course-materials";
+          webhookToken = "dev-webhook-token";
+          webhookOrigin = "http://127.0.0.1:8081";
 
           # Environment consumed by the backend; also exported in the dev shell.
           devEnv = {
@@ -53,6 +55,7 @@
             S3_ACCESS_KEY = s3AccessKey;
             S3_SECRET_KEY = s3SecretKey;
             S3_BUCKET = s3Bucket;
+            WEBHOOK_TOKEN = webhookToken;
             SQLX_OFFLINE = "true";
           };
 
@@ -107,7 +110,14 @@
             runtimeInputs = [ pkgs.rustfs ];
             text = ''
               data="$PWD/.data/s3"
-              mkdir -p "$data"
+              notify_queue="$PWD/.data/notify-primary"
+              mkdir -p "$data" "$notify_queue"
+              export RUSTFS_NOTIFY_ENABLE="true"
+              export RUSTFS_NOTIFY_WEBHOOK_ENABLE_PRIMARY="on"
+              export RUSTFS_NOTIFY_WEBHOOK_ENDPOINT_PRIMARY="${webhookOrigin}/events/rustfs"
+              export RUSTFS_NOTIFY_WEBHOOK_AUTH_TOKEN_PRIMARY="${webhookToken}"
+              export RUSTFS_NOTIFY_WEBHOOK_QUEUE_DIR_PRIMARY="$notify_queue"
+              export RUSTFS_OUTBOUND_ALLOW_ORIGINS="${webhookOrigin}"
               exec rustfs server \
                 --address 127.0.0.1:${toString s3Port} \
                 --console-enable \
@@ -118,22 +128,25 @@
             '';
           };
 
-          # One-shot: create the job-queue database and the material bucket.
-          # Fails loudly on real errors so it shows up in the dashboard.
+          # One-shot setup steps. The backend starts before RustFS so its root
+          # endpoint answers the webhook target's documented HEAD health check.
           dev-setup = pkgs.writeShellApplication {
             name = "dev-setup";
-            runtimeInputs = [ postgresql pkgs.s5cmd ];
+            runtimeInputs = [ postgresql ];
             text = ''
-              export AWS_ACCESS_KEY_ID=${s3AccessKey}
-              export AWS_SECRET_ACCESS_KEY=${s3SecretKey}
-
-              # Job-queue database (idempotent)
               if [ -z "$(psql -h localhost -p ${toString pgPort} -U ${dbUser} -d postgres -Atc \
                 "SELECT 1 FROM pg_database WHERE datname = '${dbName}'")" ]; then
                 createdb -h localhost -p ${toString pgPort} -U ${dbUser} ${dbName}
               fi
+            '';
+          };
 
-              # Material bucket (idempotent)
+          bucket-setup = pkgs.writeShellApplication {
+            name = "bucket-setup";
+            runtimeInputs = [ pkgs.s5cmd ];
+            text = ''
+              export AWS_ACCESS_KEY_ID=${s3AccessKey}
+              export AWS_SECRET_ACCESS_KEY=${s3SecretKey}
               if ! s5cmd --endpoint-url http://localhost:${toString s3Port} \
                 ls "s3://${s3Bucket}" > /dev/null 2>&1; then
                 s5cmd --endpoint-url http://localhost:${toString s3Port} mb "s3://${s3Bucket}"
@@ -146,7 +159,25 @@
             # stdenv.cc provides the `cc` linker cargo needs outside the crane build.
             runtimeInputs = [ toolchain pkgs.cargo-watch pkgs.stdenv.cc pkgs.cmake pkgs.pkg-config ];
             text = ''
-              exec cargo watch -x run
+              export CARGO_BUILD_JOBS="1"
+              export NUM_JOBS="1"
+              exec cargo watch --watch-when-idle \
+                -w upload/src -w upload/migrations -w upload/Cargo.toml \
+                -w common/grpc -w Cargo.toml -w Cargo.lock \
+                -x run
+            '';
+          };
+
+          notification-setup = pkgs.writeShellApplication {
+            name = "notification-setup";
+            runtimeInputs = [ pkgs.awscli2 ];
+            text = ''
+              export AWS_ACCESS_KEY_ID=${s3AccessKey}
+              export AWS_SECRET_ACCESS_KEY=${s3SecretKey}
+              aws --endpoint-url http://localhost:${toString s3Port} --region us-east-1 \
+                s3api put-bucket-notification-configuration \
+                --bucket ${s3Bucket} \
+                --notification-configuration '{"QueueConfigurations":[{"Id":"ocr-uploads","QueueArn":"arn:rustfs:sqs:us-east-1:primary:webhook","Events":["s3:ObjectCreated:*"],"Filter":{"Key":{"FilterRules":[{"Name":"prefix","Value":"uploads/"}]}}}]}'
             '';
           };
         in
@@ -166,6 +197,7 @@
               pkgs.curl
               self'.packages.dev
               pkgs.protobuf
+              pkgs.awscli2
               pkgs.cmake
               pkgs.pkg-config
               pkgs.rustPlatform.bindgenHook
@@ -205,6 +237,7 @@
               rustfs = {
                 description = "RustFS (S3-compatible) object storage";
                 command = rustfs-up;
+                depends_on.backend.condition = "process_healthy";
                 readiness_probe = {
                   exec.command = "${pkgs.curl}/bin/curl -fsS -o /dev/null http://localhost:${toString s3Port}/minio/health/ready";
                   initial_delay_seconds = 2;
@@ -214,18 +247,36 @@
               };
 
               setup = {
-                description = "Create database and bucket (idempotent)";
+                description = "Create database (idempotent)";
                 command = dev-setup;
-                depends_on = {
-                  postgres.condition = "process_healthy";
-                  rustfs.condition = "process_healthy";
-                };
+                depends_on.postgres.condition = "process_healthy";
+              };
+
+              bucket = {
+                description = "Create material bucket (idempotent)";
+                command = bucket-setup;
+                depends_on.rustfs.condition = "process_healthy";
               };
 
               backend = {
                 description = "Rust upload backend (cargo watch)";
                 command = backend-run;
                 depends_on.setup.condition = "process_completed_successfully";
+                readiness_probe = {
+                  exec.command = "${pkgs.curl}/bin/curl -fsS -o /dev/null http://localhost:8081/health";
+                  initial_delay_seconds = 2;
+                  period_seconds = 2;
+                  timeout_seconds = 2;
+                };
+              };
+
+              notifications = {
+                description = "Configure RustFS OCR webhook (idempotent)";
+                command = notification-setup;
+                depends_on = {
+                  backend.condition = "process_healthy";
+                  bucket.condition = "process_completed_successfully";
+                };
               };
             };
           };
