@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from 'react'
 import { useFrame, type ThreeEvent } from '@react-three/fiber'
-import { Text } from '@react-three/drei'
 import * as THREE from 'three'
-import { FACE, FONT_URL, HINT_COLOR, labelSize, ROWS_BOTTOM, ROWS_TOP, rowLayout, useModulePointer } from './module3d'
+import { FACE, FONT_URL, labelSize, ROWS_BOTTOM, ROWS_TOP, rowLayout, useModulePointer } from './module3d'
+import { Label, ModuleHeading } from './Label3D'
 import type { ModuleProps } from './types'
 
 // Same palette as the 2D wire module.
@@ -225,7 +225,7 @@ function Wire({
 
   return (
     <group>
-      <Text
+      <Label
         font={FONT_URL}
         position={[LABEL_LEFT, y, FACE + 0.012]}
         fontSize={labelSize(label, LABEL_WIDTH, rowHeight)}
@@ -236,7 +236,7 @@ function Wire({
         color={cutT === null ? '#f2f4f7' : '#7d8590'}
       >
         {label}
-      </Text>
+      </Label>
 
       {[WIRE_START - 0.02, WIRE_END + 0.02].map((x) => (
         <mesh key={x} position={[x, y, FACE + 0.02]}>
@@ -260,7 +260,7 @@ function Wire({
 }
 
 /** Wires laid out for the question: one labelled wire per answer, cut with the side cutter. */
-export default function WireModule3D({ primitive, value, onChange, disabled }: ModuleProps<'pick'>) {
+export default function WireModule3D({ primitive, value, onChange, disabled, heading }: ModuleProps<'pick'>) {
   /** Where each wire was cut, as curve parameter. */
   const [cutAt, setCutAt] = useState<Record<number, number>>({})
   /** Wires cut so far, for the cutter's snip animation. */
@@ -287,22 +287,9 @@ export default function WireModule3D({ primitive, value, onChange, disabled }: M
     setAim(null)
   }
 
-  const hint =
-    primitive.mode === 'one' ? 'Schneide das richtige Kabel durch.' : 'Schneide die falschen Antworten durch.'
-
   return (
     <group>
-      <Text
-        font={FONT_URL}
-        position={[LABEL_LEFT, 0.37, FACE + 0.012]}
-        fontSize={0.032}
-        maxWidth={0.72}
-        anchorX="left"
-        anchorY="middle"
-        color={HINT_COLOR}
-      >
-        {hint}
-      </Text>
+      <ModuleHeading text={heading} />
 
       {/* dark label strip, so labels read well on the metal plate */}
       <mesh position={[LABEL_LEFT + LABEL_WIDTH / 2 - 0.01, (ROWS_TOP + ROWS_BOTTOM) / 2, FACE + 0.004]}>

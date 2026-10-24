@@ -2,7 +2,8 @@ import { useRef } from 'react'
 import { useFrame, type ThreeEvent } from '@react-three/fiber'
 import { Text } from '@react-three/drei'
 import type * as THREE from 'three'
-import { FACE, FONT_URL, HINT_COLOR, labelSize, ROWS_BOTTOM, ROWS_TOP } from './module3d'
+import { FACE, FONT_URL, labelSize, ROWS_BOTTOM, ROWS_TOP } from './module3d'
+import { Label, ModuleHeading } from './Label3D'
 import type { ModuleProps } from './types'
 
 const ACTIVE = '#ffb547'
@@ -91,7 +92,7 @@ function Fuse({ x, top, width, holderHeight, label, inserted, stateLabel, disabl
         ))}
       </group>
 
-      <Text
+      <Label
         font={FONT_URL}
         position={[0, holderY - holderHeight / 2 - 0.018, 0.012]}
         fontSize={labelSize(label, width * 0.92, 0.09, 0.034)}
@@ -103,7 +104,7 @@ function Fuse({ x, top, width, holderHeight, label, inserted, stateLabel, disabl
         color={inserted ? '#f2f4f7' : '#aab1bb'}
       >
         {label}
-      </Text>
+      </Label>
 
       {/* invisible plane just in front of the dark backing, so clicks into the empty part of the cell count too */}
       <mesh position={[0, top - (holderHeight + 0.14) / 2, 0.0075]}>
@@ -115,7 +116,7 @@ function Fuse({ x, top, width, holderHeight, label, inserted, stateLabel, disabl
 }
 
 /** Fuse box on the bomb: one holder per answer, click to insert or pull a fuse. */
-export default function FuseModule3D({ primitive, value, onChange, disabled }: ModuleProps<'pick'>) {
+export default function FuseModule3D({ primitive, value, onChange, disabled, heading }: ModuleProps<'pick'>) {
   const on = primitive.onLabel ?? 'EIN'
   const off = primitive.offLabel ?? 'AUS'
   const count = primitive.items.length
@@ -133,9 +134,7 @@ export default function FuseModule3D({ primitive, value, onChange, disabled }: M
 
   return (
     <group>
-      <Text font={FONT_URL} position={[-0.44, 0.37, FACE + 0.012]} fontSize={0.032} maxWidth={0.72} anchorX="left" anchorY="middle" color={HINT_COLOR}>
-        {primitive.mode === 'one' ? 'Setze die richtige Sicherung ein.' : `Sicherung rein = ${on}, draußen = ${off}.`}
-      </Text>
+      <ModuleHeading text={heading} />
       {/* dark backing behind the holders */}
       <mesh position={[0, (ROWS_TOP + ROWS_BOTTOM) / 2, FACE + 0.003]}>
         <boxGeometry args={[PLATE_WIDTH + 0.02, ROWS_TOP - ROWS_BOTTOM + 0.04, 0.006]} />

@@ -2,7 +2,8 @@ import { useRef } from 'react'
 import { useFrame, type ThreeEvent } from '@react-three/fiber'
 import { Text } from '@react-three/drei'
 import type * as THREE from 'three'
-import { FACE, FONT_URL, HINT_COLOR } from './module3d'
+import { FACE, FONT_URL } from './module3d'
+import { Label, ModuleHeading } from './Label3D'
 import type { ModuleProps } from './types'
 
 const ACTIVE = '#ffb547'
@@ -45,7 +46,7 @@ function Chip({ label, y, width, height, fontSize }: { label: string; y: number;
         <boxGeometry args={[width, height - 0.006, 0.03]} />
         <meshStandardMaterial color="#b9853f" roughness={0.7} />
       </mesh>
-      <Text
+      <Label
         font={FONT_URL}
         position={[0, 0, 0.046]}
         fontSize={fontSize}
@@ -57,7 +58,7 @@ function Chip({ label, y, width, height, fontSize }: { label: string; y: number;
         color="#1b1408"
       >
         {label}
-      </Text>
+      </Label>
     </group>
   )
 }
@@ -66,7 +67,7 @@ function Chip({ label, y, width, height, fontSize }: { label: string; y: number;
  * Conveyor with a sorting gate on the bomb: the part on the belt goes into the bin whose chute you
  * click. Sorted parts stay in their bin.
  */
-export default function SorterModule3D({ primitive, value, onChange, disabled }: ModuleProps<'assign'>) {
+export default function SorterModule3D({ primitive, value, onChange, disabled, heading }: ModuleProps<'assign'>) {
   const current = value.findIndex((v) => v === null)
   const remaining = value.filter((v) => v === null).length
   const binCount = primitive.targets.length
@@ -86,9 +87,7 @@ export default function SorterModule3D({ primitive, value, onChange, disabled }:
 
   return (
     <group>
-      <Text font={FONT_URL} position={[-0.44, 0.37, FACE + 0.012]} fontSize={0.032} maxWidth={0.72} anchorX="left" anchorY="middle" color={HINT_COLOR}>
-        Klick die Rutsche, in die das Teil vom Band soll.
-      </Text>
+      <ModuleHeading text={heading} />
 
       {/* conveyor belt with the current part */}
       <group position={[0, BELT_Y, FACE]}>
@@ -112,7 +111,7 @@ export default function SorterModule3D({ primitive, value, onChange, disabled }:
               <boxGeometry args={[crateWidth, Math.max(0.072, crate!.height + 0.03), 0.04]} />
               <meshStandardMaterial color="#c99447" roughness={0.7} />
             </mesh>
-            <Text
+            <Label
               font={FONT_URL}
               position={[0, 0, 0.061]}
               fontSize={crate!.fontSize}
@@ -124,7 +123,7 @@ export default function SorterModule3D({ primitive, value, onChange, disabled }:
               color="#1b1408"
             >
               {primitive.items[current]}
-            </Text>
+            </Label>
           </group>
         )}
         {/* above the belt on the left (the status LED sits top right), so a long part never covers it */}

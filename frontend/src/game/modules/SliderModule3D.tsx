@@ -2,7 +2,8 @@ import { useEffect, useRef, useState } from 'react'
 import { useFrame, type ThreeEvent } from '@react-three/fiber'
 import { Text } from '@react-three/drei'
 import * as THREE from 'three'
-import { FACE, FONT_URL, HINT_COLOR, labelSize, rowLayout, useModulePointer } from './module3d'
+import { FACE, FONT_URL, labelSize, rowLayout, useModulePointer } from './module3d'
+import { Label, ModuleHeading } from './Label3D'
 import type { ModuleProps } from './types'
 
 const ACTIVE = '#ffb547'
@@ -52,7 +53,7 @@ function Block({ label, y, height, dragging, disabled, onGrab }: BlockProps) {
           <meshBasicMaterial color={disabled ? '#5b6270' : '#9aa3b2'} />
         </mesh>
       ))}
-      <Text
+      <Label
         font={FONT_URL}
         position={[-BLOCK_WIDTH / 2 + 0.07, 0, FACE + 0.046]}
         raycast={() => null}
@@ -64,7 +65,7 @@ function Block({ label, y, height, dragging, disabled, onGrab }: BlockProps) {
         color="#f2f4f7"
       >
         {label}
-      </Text>
+      </Label>
     </group>
   )
 }
@@ -76,7 +77,7 @@ type Drag = { item: number; y: number; insertAt: number; offset: number }
 const SLOT_HOLD = 0.65
 
 /** Sliding blocks on the bomb: drag them up or down into the right order (top = first). */
-export default function SliderModule3D({ primitive, value, onChange, disabled }: ModuleProps<'sequence'>) {
+export default function SliderModule3D({ primitive, value, onChange, disabled, heading }: ModuleProps<'sequence'>) {
   const group = useRef<THREE.Group>(null)
   const pointerOnModule = useModulePointer(group)
   const [drag, setDrag] = useState<Drag | null>(null)
@@ -143,9 +144,7 @@ export default function SliderModule3D({ primitive, value, onChange, disabled }:
 
   return (
     <group ref={group}>
-      <Text font={FONT_URL} position={[-0.44, 0.37, FACE + 0.012]} fontSize={0.032} maxWidth={0.72} anchorX="left" anchorY="middle" color={HINT_COLOR}>
-        Zieh die Blöcke in die richtige Reihenfolge (oben = zuerst).
-      </Text>
+      <ModuleHeading text={heading} />
       {/* rail with numbered slots */}
       <mesh position={[BLOCK_X, (ys[0] + ys[ys.length - 1]) / 2, FACE + 0.003]}>
         <boxGeometry args={[BLOCK_WIDTH + 0.03, ys[0] - ys[ys.length - 1] + step, 0.006]} />

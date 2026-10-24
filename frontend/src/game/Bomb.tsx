@@ -44,10 +44,12 @@ type BombProps = {
   view?: 'solo' | 'defuser'
   /** Shows the test bar to pick a question type and click through its tasks. */
   testBar?: boolean
+  /** Practice round (e.g. koop with a question type): no timer, no explosion. */
+  practice?: boolean
 }
 
 /** Full-screen 3D bomb, nothing else: click a module to zoom in and work on it. */
-export default function Bomb({ modules, plan: fixedPlan, view = 'solo', testBar = false }: BombProps) {
+export default function Bomb({ modules, plan: fixedPlan, view = 'solo', testBar = false, practice = false }: BombProps) {
   const [round, setRound] = useState(0)
   const [load, setLoad] = useState<Load>({ status: 'loading' })
   const [slots, setSlots] = useState<Slot[]>([])
@@ -88,7 +90,7 @@ export default function Bomb({ modules, plan: fixedPlan, view = 'solo', testBar 
   }, [modules, round, fixedPlan, mode])
 
   /** Testing one question type: no timer and no explosion, so every module can be tried. */
-  const testing = testBar && mode !== 'random'
+  const testing = practice || (testBar && mode !== 'random')
   const strikes = slots.filter((s) => s.status === 'failed').length
   const exploded = !testing && (strikes >= MAX_STRIKES || timeLeft <= 0)
   const finished = slots.length > 0 && slots.every((s) => s.status !== 'active' && s.status !== 'sending')
@@ -161,6 +163,7 @@ export default function Bomb({ modules, plan: fixedPlan, view = 'solo', testBar 
           onChange={(value) => changeValue(index, value)}
           disabled={!active || expanded !== index}
           onLockIn={() => lockIn(index)}
+          heading={slot.heading === undefined ? slot.task.prompt : (slot.heading ?? undefined)}
         />
         {/* Modules that need confirming get a real button on the plate (the defuser has no card). */}
         {!isImmediate(slot) && (

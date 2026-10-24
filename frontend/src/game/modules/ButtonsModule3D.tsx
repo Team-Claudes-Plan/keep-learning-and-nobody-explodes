@@ -2,7 +2,8 @@ import { useRef, useState } from 'react'
 import { useFrame, type ThreeEvent } from '@react-three/fiber'
 import { Text } from '@react-three/drei'
 import type * as THREE from 'three'
-import { FACE, FONT_URL, HINT_COLOR, labelSize, ROWS_BOTTOM, ROWS_TOP } from './module3d'
+import { FACE, FONT_URL, labelSize, ROWS_BOTTOM, ROWS_TOP } from './module3d'
+import { Label, ModuleHeading } from './Label3D'
 import type { ModuleProps } from './types'
 
 const BUTTON_COLORS = ['#e5484d', '#3e63dd', '#eab308', '#30a46c', '#8e4ec6', '#f76b15', '#12a594', '#d6409f']
@@ -64,7 +65,7 @@ function PushButton({ x, y, radius, width, label, color, step, disabled, onPress
           </Text>
         )}
       </group>
-      <Text
+      <Label
         font={FONT_URL}
         position={[0, -radius * 1.22 - 0.02, 0.012]}
         fontSize={labelSize(label, width * 0.92, 0.09, 0.032)}
@@ -76,13 +77,13 @@ function PushButton({ x, y, radius, width, label, color, step, disabled, onPress
         color="#f2f4f7"
       >
         {label}
-      </Text>
+      </Label>
     </group>
   )
 }
 
 /** Push-button panel on the bomb: press the buttons in the right order; pressing one again undoes from there. */
-export default function ButtonsModule3D({ primitive, value, onChange, disabled }: ModuleProps<'sequence'>) {
+export default function ButtonsModule3D({ primitive, value, onChange, disabled, heading }: ModuleProps<'sequence'>) {
   const count = primitive.items.length
   const rows = count > 4 ? 2 : 1
   const cols = Math.ceil(count / rows)
@@ -105,9 +106,7 @@ export default function ButtonsModule3D({ primitive, value, onChange, disabled }
 
   return (
     <group>
-      <Text font={FONT_URL} position={[-0.44, 0.37, FACE + 0.012]} fontSize={0.032} maxWidth={0.72} anchorX="left" anchorY="middle" color={HINT_COLOR}>
-        Drück die Knöpfe in der richtigen Reihenfolge.
-      </Text>
+      <ModuleHeading text={heading} />
       {primitive.items.map((label, i) => {
         const row = Math.floor(i / cols)
         const inRow = row === rows - 1 ? count - cols * (rows - 1) : cols

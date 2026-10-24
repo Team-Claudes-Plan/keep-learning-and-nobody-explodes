@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
 import { useFrame, type ThreeEvent } from '@react-three/fiber'
-import { Text } from '@react-three/drei'
 import * as THREE from 'three'
 import type { AssignPrimitive, PickPrimitive } from '../primitives'
-import { FACE, FONT_URL, HINT_COLOR, useModulePointer } from './module3d'
+import { FACE, FONT_URL, useModulePointer } from './module3d'
+import { Label, ModuleHeading } from './Label3D'
 import type { ModuleProps } from './types'
 
 type Props = ModuleProps<'pick'> | ModuleProps<'assign'>
@@ -244,7 +244,7 @@ function Dial({ center, labels, position, onSelect, disabled }: DialProps) {
           const side = sin < -0.2 ? 'right' : sin > 0.2 ? 'left' : 'center'
           const room = side === 'center' ? 0.3 : PLATE_EDGE - Math.abs(center[0] + x)
           return (
-            <Text
+            <Label
               key={i}
               font={FONT_URL}
               position={[x, cos * LABEL_RADIUS, 0.016]}
@@ -261,7 +261,7 @@ function Dial({ center, labels, position, onSelect, disabled }: DialProps) {
               }}
             >
               {label}
-            </Text>
+            </Label>
           )
         })}
       </group>
@@ -321,7 +321,7 @@ function DialPerItem({ primitive, value, onChange, disabled }: ModuleProps<'assi
             <meshBasicMaterial color={canStep(by) ? ACTIVE : '#4a4f57'} toneMapped={false} />
           </mesh>
         ))}
-        <Text
+        <Label
           font={FONT_URL}
           position={[0, 0.005, 0.012]}
           fontSize={Math.min(0.04, 1 / Math.max(primitive.items[current].length, 10))}
@@ -332,7 +332,7 @@ function DialPerItem({ primitive, value, onChange, disabled }: ModuleProps<'assi
           color="#f2f4f7"
         >
           {primitive.items[current]}
-        </Text>
+        </Label>
         {/* dots: white = current item, amber = looked at (answered), grey = still open */}
         {primitive.items.map((_, i) => (
           <mesh key={i} position={[(i - (count - 1) / 2) * 0.03, -0.065, 0.006]} raycast={() => null}>
@@ -357,9 +357,7 @@ function DialPerItem({ primitive, value, onChange, disabled }: ModuleProps<'assi
 export default function RotaryModule3D(props: Props) {
   return (
     <group>
-      <Text font={FONT_URL} position={[-0.44, 0.37, FACE + 0.012]} fontSize={0.032} maxWidth={0.72} anchorX="left" anchorY="middle" color={HINT_COLOR}>
-        {props.primitive.kind === 'pick' ? 'Dreh den Schalter auf die Antwort.' : 'Dreh auf die Gruppe, mit dem Pfeil → zum nächsten Begriff.'}
-      </Text>
+      <ModuleHeading text={props.heading} />
       {props.primitive.kind === 'pick' ? (
         <SingleDial {...(props as ModuleProps<'pick'>)} />
       ) : (

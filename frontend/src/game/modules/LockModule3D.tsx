@@ -2,7 +2,8 @@ import { useEffect, useRef, useState } from 'react'
 import { useFrame, type ThreeEvent } from '@react-three/fiber'
 import { Text } from '@react-three/drei'
 import type * as THREE from 'three'
-import { FACE, FONT_URL, HINT_COLOR } from './module3d'
+import { FACE, FONT_URL } from './module3d'
+import { ModuleHeading } from './Label3D'
 import type { ModuleProps } from './types'
 
 const ACTIVE = '#ffb547'
@@ -158,7 +159,7 @@ function Wheel({ x, digit, cursor, disabled, onTurn, onFocus }: WheelProps) {
 }
 
 /** Combination lock on the bomb: four number wheels, turned by click, scroll or keyboard. */
-export default function LockModule3D({ primitive, value, onChange, disabled }: ModuleProps<'number'>) {
+export default function LockModule3D({ primitive, value, onChange, disabled, heading }: ModuleProps<'number'>) {
   const [cursor, setCursor] = useState(0)
   const digits = String(value ?? 0).padStart(DIGITS, '0').slice(-DIGITS).split('').map(Number)
 
@@ -198,9 +199,7 @@ export default function LockModule3D({ primitive, value, onChange, disabled }: M
 
   return (
     <group>
-      <Text font={FONT_URL} position={[-0.44, 0.37, FACE + 0.012]} fontSize={0.032} maxWidth={0.72} anchorX="left" anchorY="middle" color={HINT_COLOR}>
-        Räder drehen: klicken, scrollen oder tippen (↑↓ ←→ 0–9).
-      </Text>
+      <ModuleHeading text={heading} />
       {/* housing: dark window around the wheels */}
       <mesh position={[first + ((DIGITS - 1) * WHEEL_GAP) / 2, WHEEL_Y, FACE + 0.003]}>
         <boxGeometry args={[(DIGITS - 1) * WHEEL_GAP + WHEEL_WIDTH + 0.08, WHEEL_RADIUS * 2.3, 0.006]} />

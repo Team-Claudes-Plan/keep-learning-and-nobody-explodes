@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { ThreeEvent } from '@react-three/fiber'
-import { Text } from '@react-three/drei'
 import * as THREE from 'three'
-import { FACE, FONT_URL, HINT_COLOR, labelSize, ROWS_BOTTOM, ROWS_TOP, rowLayout, useModulePointer } from './module3d'
+import { FACE, FONT_URL, labelSize, ROWS_BOTTOM, ROWS_TOP, rowLayout, useModulePointer } from './module3d'
+import { Label, ModuleHeading } from './Label3D'
 import type { ModuleProps } from './types'
 
 // Same palette as the 2D cable module.
@@ -71,7 +71,7 @@ function Cable({ from, to, color, layer }: { from: THREE.Vector3; to: THREE.Vect
  * Patch panel on the bomb: drag a plug from the left onto a socket on the right.
  * Matching allows one cable per socket; grouping lets several cables share one.
  */
-export default function CableModule3D({ primitive, value, onChange, disabled }: ModuleProps<'assign'>) {
+export default function CableModule3D({ primitive, value, onChange, disabled, heading }: ModuleProps<'assign'>) {
   const group = useRef<THREE.Group>(null)
   const [drag, setDrag] = useState<Drag | null>(null)
 
@@ -187,9 +187,7 @@ export default function CableModule3D({ primitive, value, onChange, disabled }: 
 
   return (
     <group ref={group}>
-      <Text font={FONT_URL} position={[-0.44, 0.37, FACE + 0.012]} fontSize={0.032} maxWidth={0.72} anchorX="left" anchorY="middle" color={HINT_COLOR}>
-        {grouping ? 'Stecker in die passende Leiste ziehen (mehrere pro Gruppe).' : 'Jeden Stecker in seine Buchse ziehen (eine pro Buchse).'}
-      </Text>
+      <ModuleHeading text={heading} />
 
       {/* dark label strips */}
       <mesh position={[LEFT_LABEL_X + LEFT_LABEL_WIDTH / 2 - 0.01, (ROWS_TOP + ROWS_BOTTOM) / 2, FACE + 0.004]}>
@@ -206,7 +204,7 @@ export default function CableModule3D({ primitive, value, onChange, disabled }: 
         const color = CABLE_COLORS[i % CABLE_COLORS.length]
         return (
           <group key={`item-${i}`}>
-            <Text
+            <Label
               font={FONT_URL}
               position={[LEFT_LABEL_X, left.ys[i], FACE + 0.012]}
               fontSize={labelSize(label, LEFT_LABEL_WIDTH, left.step)}
@@ -217,7 +215,7 @@ export default function CableModule3D({ primitive, value, onChange, disabled }: 
               color="#f2f4f7"
             >
               {label}
-            </Text>
+            </Label>
             {/* the whole row (label + plug) is the grab handle */}
             <mesh
               position={[(LEFT_LABEL_X + PLUG_X + 0.04) / 2, left.ys[i], Z + 0.03]}
@@ -266,7 +264,7 @@ export default function CableModule3D({ primitive, value, onChange, disabled }: 
               <meshStandardMaterial color="#1b1e24" metalness={0.6} roughness={0.35} />
             </mesh>
           )}
-          <Text
+          <Label
             font={FONT_URL}
             position={[rightLabelX, right.ys[j], FACE + 0.012]}
             fontSize={labelSize(label, rightLabelWidth, right.step)}
@@ -277,7 +275,7 @@ export default function CableModule3D({ primitive, value, onChange, disabled }: 
             color="#f2f4f7"
           >
             {label}
-          </Text>
+          </Label>
         </group>
       ))}
 

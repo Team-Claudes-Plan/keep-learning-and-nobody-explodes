@@ -2,7 +2,13 @@ import type { Question, QuestionType } from '../api/types'
 import { tasksFor, type Task } from './adapters'
 import type { ModuleDef } from './modules/types'
 
-export type PlannedModule = { question: Question; task: Task; module: ModuleDef }
+export type PlannedModule = {
+  question: Question
+  task: Task
+  module: ModuleDef
+  /** What the module shows across its top. Unset: the task's prompt; null: nothing (koop, see briefing.ts). */
+  heading?: string | null
+}
 
 /** Random number source in [0, 1); Math.random or a seeded one. */
 export type Random = () => number
@@ -48,8 +54,16 @@ export function planBomb(
 }
 
 /** Test mode: one module per (task variant × fitting module) for the given question type. */
-export function planForType(questions: Question[], modules: ModuleDef[], type: QuestionType): PlannedModule[] {
-  const ofType = shuffle(questions.filter((q) => q.type === type))
+export function planForType(
+  questions: Question[],
+  modules: ModuleDef[],
+  type: QuestionType,
+  random: Random = Math.random,
+): PlannedModule[] {
+  const ofType = shuffle(
+    questions.filter((q) => q.type === type),
+    random,
+  )
   if (ofType.length === 0) return []
 
   const plan: PlannedModule[] = []

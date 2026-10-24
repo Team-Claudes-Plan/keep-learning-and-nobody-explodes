@@ -3,7 +3,8 @@ import { useFrame } from '@react-three/fiber'
 import { Html, Text } from '@react-three/drei'
 import type { ThreeEvent } from '@react-three/fiber'
 import type * as THREE from 'three'
-import { FACE, FONT_URL, HINT_COLOR } from './module3d'
+import { FACE, FONT_URL } from './module3d'
+import { ModuleHeading } from './Label3D'
 import type { ModuleProps } from './types'
 
 type Props = ModuleProps<'text'> | ModuleProps<'number'>
@@ -82,9 +83,7 @@ export default function TerminalModule3D(props: Props) {
 
   return (
     <group>
-      <Text font={FONT_URL} position={[-0.44, 0.37, FACE + 0.012]} fontSize={0.032} anchorX="left" anchorY="middle" color={HINT_COLOR}>
-        {isNumber ? 'Gib die Zahl ein. Enter schließt ab.' : 'Tippe die Antwort. Enter schließt ab.'}
-      </Text>
+      <ModuleHeading text={props.heading} />
 
       {/* bezel + screen */}
       <mesh position={[0, 0.03, FACE + 0.02]}>

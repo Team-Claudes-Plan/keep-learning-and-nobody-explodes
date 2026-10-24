@@ -3,7 +3,8 @@ import { useFrame, type ThreeEvent } from '@react-three/fiber'
 import { Text } from '@react-three/drei'
 import type * as THREE from 'three'
 import type { AssignPrimitive, PickPrimitive } from '../primitives'
-import { FACE, FONT_URL, HINT_COLOR, labelSize, ROWS_TOP, rowLayout, useModulePointer } from './module3d'
+import { FACE, FONT_URL, labelSize, ROWS_TOP, rowLayout, useModulePointer } from './module3d'
+import { Label, ModuleHeading } from './Label3D'
 import type { ModuleProps } from './types'
 
 type Props = ModuleProps<'pick'> | ModuleProps<'assign'>
@@ -89,9 +90,7 @@ function Lamp({ x, y, size, lit }: { x: number; y: number; size: number; lit: bo
   )
 }
 
-function ToggleSwitches({ primitive, value, onChange, disabled }: ModuleProps<'pick'> & { primitive: PickPrimitive }) {
-  const on = primitive.onLabel ?? 'AN'
-  const off = primitive.offLabel ?? 'AUS'
+function ToggleSwitches({ primitive, value, onChange, disabled, heading }: ModuleProps<'pick'> & { primitive: PickPrimitive }) {
   const { step, ys } = rowLayout(primitive.items.length)
   const labelWidth = 0.52
   // the lever must stay within its own row, also when it points down at the next one
@@ -104,16 +103,14 @@ function ToggleSwitches({ primitive, value, onChange, disabled }: ModuleProps<'p
 
   return (
     <group>
-      <Text font={FONT_URL} position={[LABEL_LEFT, 0.37, FACE + 0.012]} fontSize={0.032} maxWidth={0.72} anchorX="left" anchorY="middle" color={HINT_COLOR}>
-        Schalter oben (Lampe an) = {on}, unten = {off}.
-      </Text>
+      <ModuleHeading text={heading} />
       <LabelStrip width={labelWidth} ys={ys} step={step} />
       {primitive.items.map((label, i) => {
         const isOn = value.includes(i)
         const y = ys[i]
         return (
           <group key={i}>
-            <Text
+            <Label
               font={FONT_URL}
               position={[LABEL_LEFT, y, FACE + 0.012]}
               fontSize={labelSize(label, labelWidth, step)}
@@ -124,7 +121,7 @@ function ToggleSwitches({ primitive, value, onChange, disabled }: ModuleProps<'p
               color="#f2f4f7"
             >
               {label}
-            </Text>
+            </Label>
             <group position={[switchX, 0, 0]}>
               <Toggle y={y} isOn={isOn} size={size} />
             </group>
@@ -220,7 +217,7 @@ function Slide({ y, xs, position, size, dragX }: SlideProps) {
   )
 }
 
-function PositionSwitches({ primitive, value, onChange, disabled }: ModuleProps<'assign'> & { primitive: AssignPrimitive }) {
+function PositionSwitches({ primitive, value, onChange, disabled, heading }: ModuleProps<'assign'> & { primitive: AssignPrimitive }) {
   const { step, ys } = rowLayout(primitive.items.length)
   const labelWidth = 0.36
   const trackLeft = 0.0
@@ -275,9 +272,7 @@ function PositionSwitches({ primitive, value, onChange, disabled }: ModuleProps<
 
   return (
     <group ref={group}>
-      <Text font={FONT_URL} position={[LABEL_LEFT, 0.37, FACE + 0.012]} fontSize={0.032} maxWidth={0.72} anchorX="left" anchorY="middle" color={HINT_COLOR}>
-        Zieh jeden Schalter in die passende Spalte.
-      </Text>
+      <ModuleHeading text={heading} />
       <LabelStrip width={labelWidth} ys={ys} step={step} />
       {/* column headings: the targets, on a dark strip */}
       <mesh position={[(trackLeft + trackRight) / 2, ROWS_TOP + 0.045, FACE + 0.004]}>
@@ -302,7 +297,7 @@ function PositionSwitches({ primitive, value, onChange, disabled }: ModuleProps<
       ))}
       {primitive.items.map((label, i) => (
         <group key={i}>
-          <Text
+          <Label
             font={FONT_URL}
             position={[LABEL_LEFT, ys[i], FACE + 0.012]}
             fontSize={labelSize(label, labelWidth, step)}
@@ -313,7 +308,7 @@ function PositionSwitches({ primitive, value, onChange, disabled }: ModuleProps<
             color="#f2f4f7"
           >
             {label}
-          </Text>
+          </Label>
           <Slide y={ys[i]} xs={xs} position={value[i]} size={size} dragX={drag?.item === i ? drag.x : null} />
           {/* the track is the handle: press anywhere on it to grab the knob */}
           <mesh

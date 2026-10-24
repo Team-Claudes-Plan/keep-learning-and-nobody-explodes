@@ -10,6 +10,8 @@ export type ModuleProps<K extends PrimitiveKind> = {
   disabled: boolean
   /** Submit the current value, e.g. on Enter. No-op while incomplete. */
   onLockIn: () => void
+  /** Text across the top of the module: the question, or nothing in koop when only the manual has it. */
+  heading?: string
 }
 
 export type ModuleDef = {

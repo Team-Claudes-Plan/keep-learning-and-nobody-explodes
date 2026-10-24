@@ -2,7 +2,8 @@ import { useEffect, useRef, useState } from 'react'
 import { useFrame, type ThreeEvent } from '@react-three/fiber'
 import { Text } from '@react-three/drei'
 import * as THREE from 'three'
-import { FACE, FONT_URL, HINT_COLOR } from './module3d'
+import { FACE, FONT_URL } from './module3d'
+import { ModuleHeading } from './Label3D'
 import type { ModuleProps } from './types'
 
 const ACTIVE = '#ffb547'
@@ -60,7 +61,7 @@ function Sweep({ radius }: { radius: number }) {
 }
 
 /** Radar screen on the bomb: click the spot in the image; the crosshair marks it. */
-export default function RadarModule3D({ primitive, value, onChange, disabled }: ModuleProps<'point'>) {
+export default function RadarModule3D({ primitive, value, onChange, disabled, heading }: ModuleProps<'point'>) {
   const texture = useImageTexture(primitive.image)
   const aspect = texture?.aspect ?? 4 / 3
   const width = Math.min(MAX_WIDTH, MAX_HEIGHT * aspect)
@@ -78,9 +79,7 @@ export default function RadarModule3D({ primitive, value, onChange, disabled }: 
 
   return (
     <group>
-      <Text font={FONT_URL} position={[-0.44, 0.37, FACE + 0.012]} fontSize={0.032} maxWidth={0.72} anchorX="left" anchorY="middle" color={HINT_COLOR}>
-        Klick auf die richtige Stelle im Radarbild.
-      </Text>
+      <ModuleHeading text={heading} />
       <group position={[0, SCREEN_Y, FACE]}>
         {/* bezel */}
         <mesh position={[0, 0, 0.006]}>
