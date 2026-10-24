@@ -23,4 +23,6 @@ export type ModuleDef = {
   /** Starting value if the module needs a different one than the primitive default. */
   init?: (primitive: Primitive) => AnyValue
   component: ComponentType<ModuleProps<PrimitiveKind>>
+  /** Optional 3D version, rendered directly on the bomb (react-three-fiber, module space of the GLB slot). */
+  component3d?: ComponentType<ModuleProps<PrimitiveKind>>
 }

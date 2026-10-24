@@ -1,12 +1,16 @@
 import type { ModuleDef } from './types'
 import WireModule from './WireModule'
+import WireModule3D from './WireModule3D'
 import FuseModule from './FuseModule'
 import SwitchModule from './SwitchModule'
 import RotaryModule from './RotaryModule'
+import RotaryModule3D from './RotaryModule3D'
 import CableModule from './CableModule'
+import CableModule3D from './CableModule3D'
 import SorterModule from './SorterModule'
 import LockModule from './LockModule'
 import TerminalModule from './TerminalModule'
+import TerminalModule3D from './TerminalModule3D'
 import ButtonsModule from './ButtonsModule'
 import SliderModule from './SliderModule'
 import RadarModule from './RadarModule'
@@ -23,6 +27,7 @@ export const MODULES: ModuleDef[] = [
     // Multiple choice / true-false: the wrong options get cut.
     supports: (p) => p.kind === 'pick' && p.selects !== 'true' && p.items.length <= 8,
     component: WireModule as Component,
+    component3d: WireModule3D as Component,
   },
   {
     id: 'fuses',
@@ -51,6 +56,7 @@ export const MODULES: ModuleDef[] = [
       (p.kind === 'pick' && p.mode === 'one') || (p.kind === 'assign' && type !== 'matching' && p.targets.length <= 8),
     confirm: true,
     component: RotaryModule as Component,
+    component3d: RotaryModule3D as Component,
   },
   {
     id: 'cables',
@@ -59,6 +65,7 @@ export const MODULES: ModuleDef[] = [
     description: 'Zuordnen, Gruppieren',
     supports: (p, type) => p.kind === 'assign' && (type === 'matching' || type === 'grouping'),
     component: CableModule as Component,
+    component3d: CableModule3D as Component,
   },
   {
     id: 'sorter',
@@ -84,6 +91,7 @@ export const MODULES: ModuleDef[] = [
     description: 'Texteingabe, Zahleneingabe',
     supports: (p) => p.kind === 'text' || p.kind === 'number',
     component: TerminalModule as Component,
+    component3d: TerminalModule3D as Component,
   },
   {
     id: 'buttons',

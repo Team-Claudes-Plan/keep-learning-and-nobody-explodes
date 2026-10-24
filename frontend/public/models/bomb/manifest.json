@@ -1,0 +1,208 @@
+{
+  "units": "meters",
+  "coordinateSystem": "glTF Y-up (three.js)",
+  "moduleSize": [
+    1.0,
+    1.0
+  ],
+  "moduleFront": "+Z (local)",
+  "bomb": "bomb.glb",
+  "timerSlot": "Slot_0",
+  "slots": [
+    {
+      "name": "Slot_0",
+      "index": 0,
+      "fixed": "timer",
+      "position": [
+        -0.54,
+        1.55,
+        0.9959
+      ],
+      "normal": [
+        0.0,
+        0.0,
+        1.0
+      ]
+    },
+    {
+      "name": "Slot_1",
+      "index": 1,
+      "fixed": null,
+      "position": [
+        0.54,
+        1.55,
+        0.9959
+      ],
+      "normal": [
+        0.0,
+        0.0,
+        1.0
+      ]
+    },
+    {
+      "name": "Slot_2",
+      "index": 2,
+      "fixed": null,
+      "position": [
+        -0.54,
+        2.4125,
+        0.498
+      ],
+      "normal": [
+        0.0,
+        0.866,
+        0.5
+      ]
+    },
+    {
+      "name": "Slot_3",
+      "index": 3,
+      "fixed": null,
+      "position": [
+        0.54,
+        2.4125,
+        0.498
+      ],
+      "normal": [
+        0.0,
+        0.866,
+        0.5
+      ]
+    },
+    {
+      "name": "Slot_4",
+      "index": 4,
+      "fixed": null,
+      "position": [
+        -0.54,
+        2.4125,
+        -0.498
+      ],
+      "normal": [
+        0.0,
+        0.866,
+        -0.5
+      ]
+    },
+    {
+      "name": "Slot_5",
+      "index": 5,
+      "fixed": null,
+      "position": [
+        0.54,
+        2.4125,
+        -0.498
+      ],
+      "normal": [
+        0.0,
+        0.866,
+        -0.5
+      ]
+    },
+    {
+      "name": "Slot_6",
+      "index": 6,
+      "fixed": null,
+      "position": [
+        -0.54,
+        1.55,
+        -0.9959
+      ],
+      "normal": [
+        0.0,
+        -0.0,
+        -1.0
+      ]
+    },
+    {
+      "name": "Slot_7",
+      "index": 7,
+      "fixed": null,
+      "position": [
+        0.54,
+        1.55,
+        -0.9959
+      ],
+      "normal": [
+        0.0,
+        -0.0,
+        -1.0
+      ]
+    },
+    {
+      "name": "Slot_8",
+      "index": 8,
+      "fixed": null,
+      "position": [
+        -0.54,
+        0.6875,
+        -0.498
+      ],
+      "normal": [
+        0.0,
+        -0.866,
+        -0.5
+      ]
+    },
+    {
+      "name": "Slot_9",
+      "index": 9,
+      "fixed": null,
+      "position": [
+        0.54,
+        0.6875,
+        -0.498
+      ],
+      "normal": [
+        0.0,
+        -0.866,
+        -0.5
+      ]
+    },
+    {
+      "name": "Slot_10",
+      "index": 10,
+      "fixed": null,
+      "position": [
+        -0.54,
+        0.6875,
+        0.498
+      ],
+      "normal": [
+        0.0,
+        -0.866,
+        0.5
+      ]
+    },
+    {
+      "name": "Slot_11",
+      "index": 11,
+      "fixed": null,
+      "position": [
+        0.54,
+        0.6875,
+        0.498
+      ],
+      "normal": [
+        0.0,
+        -0.866,
+        0.5
+      ]
+    }
+  ],
+  "modules": {
+    "blank": "modules/blank.glb",
+    "buttons": "modules/buttons.glb",
+    "cables": "modules/cables.glb",
+    "fuses": "modules/fuses.glb",
+    "lock": "modules/lock.glb",
+    "radar": "modules/radar.glb",
+    "rotary": "modules/rotary.glb",
+    "slider": "modules/slider.glb",
+    "sorter": "modules/sorter.glb",
+    "switches": "modules/switches.glb",
+    "terminal": "modules/terminal.glb",
+    "timer": "modules/timer.glb",
+    "wires": "modules/wires.glb"
+  }
+}

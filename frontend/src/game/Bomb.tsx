@@ -1,18 +1,17 @@
 import { useEffect, useState } from 'react'
 import { fetchQuestions, submitAnswer } from '../api/client'
-import type { AnswerResult, AnswerSubmission, Question, QuestionType } from '../api/types'
+import type { AnswerResult, AnswerSubmission, Question } from '../api/types'
 import { submissionFor } from './adapters'
+import Bomb3D, { BOMB_SLOTS, type SlotStatus } from './Bomb3D'
+import LockButton3D from './modules/LockButton3D'
 import { describeAnswer } from './describe'
 import type { ModuleDef } from './modules/types'
-import { planBomb, planForType, playableTypes, type PlannedModule } from './plan'
-import { QUESTION_TYPE_LABELS, QUESTION_TYPES } from './questionTypes'
+import { planBomb, type PlannedModule } from './plan'
 import { initialValue, isComplete, submitsImmediately, type AnyValue } from './primitives'
 
 const BOMB_SIZE = 5
 const BOMB_SECONDS = 300
 const MAX_STRIKES = 3
-
-type SlotStatus = 'active' | 'sending' | 'solved' | 'failed' | 'submitted'
 
 type Slot = PlannedModule & {
   value: AnyValue
@@ -27,38 +26,34 @@ type Load =
   | { status: 'error'; message: string }
   | { status: 'ready'; questions: Question[] }
 
-/** 'random' = normal bomb; a question type = every fitting module for that type once. */
-type Mode = 'random' | QuestionType
-
 function errorMessage(err: unknown) {
   return err instanceof Error ? err.message : String(err)
-}
-
-function formatTime(seconds: number) {
-  const s = Math.max(0, seconds)
-  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`
 }
 
 type BombProps = {
   /** Modules the bomb may use. */
   modules: ModuleDef[]
+  /** Fixed plan (e.g. seeded for koop) instead of a random one. */
+  plan?: (questions: Question[]) => PlannedModule[]
+  /** 'defuser': no prompts on the bomb (the expert has those); 'solo': prompt shown next to the zoomed module. */
+  view?: 'solo' | 'defuser'
 }
 
-export default function Bomb({ modules }: BombProps) {
+/** Full-screen 3D bomb, nothing else: click a module to zoom in and work on it. */
+export default function Bomb({ modules, plan: fixedPlan, view = 'solo' }: BombProps) {
   const [round, setRound] = useState(0)
   const [load, setLoad] = useState<Load>({ status: 'loading' })
   const [slots, setSlots] = useState<Slot[]>([])
   const [timeLeft, setTimeLeft] = useState(BOMB_SECONDS)
-  const [mode, setMode] = useState<Mode>('random')
-  /** Index of the module shown large; the others are collapsed. */
-  const [expanded, setExpanded] = useState<number | null>(0)
+  /** Index of the module shown large (zoomed in on the bomb); null = bomb overview. */
+  const [expanded, setExpanded] = useState<number | null>(null)
 
   useEffect(() => {
     const controller = new AbortController()
     fetchQuestions(controller.signal)
       .then((questions) => {
-        const plan =
-          mode === 'random' ? planBomb(questions, modules, BOMB_SIZE) : planForType(questions, modules, mode)
+        // Only as many modules as there are slots on the bomb.
+        const plan = (fixedPlan ? fixedPlan(questions) : planBomb(questions, modules, BOMB_SIZE)).slice(0, BOMB_SLOTS)
         setSlots(
           plan.map((p) => ({
             ...p,
@@ -67,14 +62,14 @@ export default function Bomb({ modules }: BombProps) {
           })),
         )
         setTimeLeft(BOMB_SECONDS)
-        setExpanded(0)
+        setExpanded(null)
         setLoad({ status: 'ready', questions })
       })
       .catch((err: unknown) => {
         if (!controller.signal.aborted) setLoad({ status: 'error', message: errorMessage(err) })
       })
     return () => controller.abort()
-  }, [modules, mode, round])
+  }, [modules, round, fixedPlan])
 
   const strikes = slots.filter((s) => s.status === 'failed').length
   const exploded = strikes >= MAX_STRIKES || timeLeft <= 0
@@ -90,11 +85,6 @@ export default function Bomb({ modules }: BombProps) {
   function restart() {
     setLoad({ status: 'loading' })
     setRound((r) => r + 1)
-  }
-
-  function changeMode(next: Mode) {
-    setLoad({ status: 'loading' })
-    setMode(next)
   }
 
   function updateSlot(index: number, patch: Partial<Slot>) {
@@ -118,107 +108,129 @@ export default function Bomb({ modules }: BombProps) {
     }
   }
 
-  if (load.status === 'loading') return <p className="mg-muted">Bombe wird scharf gemacht…</p>
+  function isImmediate(slot: Slot) {
+    return submitsImmediately(slot.task.primitive) && !slot.module.confirm
+  }
+
+  function changeValue(index: number, value: AnyValue) {
+    if (isImmediate(slots[index])) lockIn(index, value)
+    else updateSlot(index, { value })
+  }
+
+  /** The module's 3D controls, mounted directly on the bomb; only interactive while zoomed in. */
+  function render3d(slot: Slot, index: number) {
+    const Module3D = slot.module.component3d
+    if (!Module3D) return undefined
+    const active = slot.status === 'active' && !exploded
+    return (
+      <group key={`${round}-${index}`}>
+        <Module3D
+          primitive={slot.task.primitive}
+          value={slot.value}
+          onChange={(value) => changeValue(index, value)}
+          disabled={!active || expanded !== index}
+          onLockIn={() => lockIn(index)}
+        />
+        {/* Modules that need confirming get a real button on the plate (the defuser has no card). */}
+        {!isImmediate(slot) && (
+          <LockButton3D
+            enabled={active && expanded === index && isComplete(slot.task.primitive, slot.value)}
+            label={slot.status === 'sending' ? 'SENDE…' : slot.status === 'active' ? 'ABSCHLIESSEN' : 'ABGESCHLOSSEN'}
+            onPress={() => lockIn(index)}
+          />
+        )}
+      </group>
+    )
+  }
+
+  /** Card with prompt, controls and result. `onBomb`: the controls live on the 3D bomb, so leave them out. */
+  function renderModule(index: number, onBomb = false, hidePrompt = false) {
+    const slot = slots[index]
+    const Module = slot.module.component
+    const locked = slot.status !== 'active' || exploded
+    const immediate = isImmediate(slot)
+
+    return (
+      <section key={`${round}-${index}`} className={`bomb-module is-expanded is-${slot.status}`}>
+        <header className="bomb-module-head">
+          <span>{slot.module.icon} {slot.module.name}</span>
+          <span className={`bomb-led is-${slot.status}`} aria-label={slot.status} />
+        </header>
+        {!hidePrompt && <p className="mg-question">{slot.task.prompt}</p>}
+        {!onBomb && (
+          <Module
+            primitive={slot.task.primitive}
+            value={slot.value}
+            onChange={(value) => changeValue(index, value)}
+            disabled={locked}
+            onLockIn={() => lockIn(index)}
+          />
+        )}
+        {slot.error && <p className="bomb-error">⚠️ {slot.error}</p>}
+        {slot.submission && slot.result && (
+          <ResultPanel question={slot.question} submission={slot.submission} result={slot.result} />
+        )}
+        {immediate || onBomb ? (
+          slot.status === 'sending' && <p className="mg-muted bomb-lock">Sende…</p>
+        ) : (
+          <button
+            className="mg-button mg-primary bomb-lock"
+            disabled={locked || !isComplete(slot.task.primitive, slot.value)}
+            onClick={() => lockIn(index)}
+          >
+            {slot.status === 'sending' ? 'Sende…' : slot.status === 'active' ? 'Abschließen' : 'Abgeschlossen'}
+          </button>
+        )}
+      </section>
+    )
+  }
 
   if (load.status === 'error') {
     return (
-      <div className="mg-center">
-        <p>⚠️ {load.message}</p>
-        <button className="mg-button" onClick={restart}>Erneut versuchen</button>
+      <div className="bomb-screen">
+        <div className="bomb-screen-message">
+          <p>⚠️ {load.message}</p>
+          <button className="mg-button" onClick={restart}>Erneut versuchen</button>
+        </div>
       </div>
     )
   }
 
-  const playable = playableTypes(load.questions, modules)
+  if (load.status === 'loading') {
+    return (
+      <div className="bomb-screen">
+        <p className="bomb-screen-message">Bombe wird scharf gemacht…</p>
+      </div>
+    )
+  }
+
+  const focused = expanded
+  const focusedOnBomb = focused !== null && slots[focused]?.module.component3d !== undefined
+  const defuser = view === 'defuser'
+  // 3D modules are worked on directly; 2D modules still need their controls in a card.
+  const card =
+    focused === null || (defuser && focusedOnBomb) ? null : renderModule(focused, focusedOnBomb, defuser)
 
   return (
-    <div className={`bomb ${exploded ? 'is-exploded' : ''}`}>
-      <div className="bomb-bar">
-        <span className={`bomb-timer ${timeLeft <= 30 ? 'is-low' : ''}`}>{formatTime(timeLeft)}</span>
-        <span className="bomb-strikes" aria-label={`${strikes} von ${MAX_STRIKES} Fehlern`}>
-          {Array.from({ length: MAX_STRIKES }, (_, i) => (
-            <span key={i} className={`bomb-strike ${i < strikes ? 'is-hit' : ''}`}>✕</span>
-          ))}
-        </span>
-        <select
-          className="mg-select"
-          value={mode}
-          onChange={(e) => changeMode(e.target.value as Mode)}
-          aria-label="Fragetyp"
-        >
-          <option value="random">Zufällig</option>
-          {QUESTION_TYPES.map((type) => (
-            <option key={type} value={type} disabled={!playable.has(type)}>
-              {QUESTION_TYPE_LABELS[type]}{playable.has(type) ? '' : ' (kein Modul)'}
-            </option>
-          ))}
-        </select>
-        <button className="mg-button" onClick={restart}>Neue Bombe</button>
-      </div>
-
-      {slots.length === 0 && <p className="mg-muted">Keine passenden Fragen für diese Module gefunden.</p>}
-
+    <div className="bomb-screen">
+      <Bomb3D
+        bare
+        modules={slots.map((s, i) => ({ id: s.module.id, status: s.status, content3d: render3d(s, i) }))}
+        focused={focused}
+        overlay={focusedOnBomb ? 'side' : 'center'}
+        onSelect={setExpanded}
+        onBack={() => setExpanded(null)}
+        timeLeft={timeLeft}
+        strikes={strikes}
+      >
+        {card}
+      </Bomb3D>
       {(exploded || finished) && (
-        <div className={`bomb-result ${exploded ? 'is-bad' : 'is-good'}`}>
-          {exploded ? '💥 BOOM. Die Bombe ist explodiert.' : '✅ Bombe entschärft!'}
-        </div>
+        <button className={`bomb-screen-result ${exploded ? 'is-bad' : 'is-good'}`} onClick={restart}>
+          {exploded ? '💥 BOOM' : '✅ Entschärft'}
+          {!fixedPlan && <small>Neue Bombe</small>}
+        </button>
       )}
-
-      <div className="bomb-grid">
-        {slots.map((slot, index) => {
-          const Module = slot.module.component
-          const locked = slot.status !== 'active' || exploded
-          const immediate = submitsImmediately(slot.task.primitive) && !slot.module.confirm
-
-          if (expanded !== index) {
-            return (
-              <button
-                key={`${round}-${index}`}
-                className={`bomb-module is-collapsed is-${slot.status}`}
-                onClick={() => setExpanded(index)}
-              >
-                <span className="bomb-module-head">
-                  <span>{slot.module.icon} {slot.module.name}</span>
-                  <span className={`bomb-led is-${slot.status}`} aria-label={slot.status} />
-                </span>
-                <span className="bomb-module-prompt">{slot.task.prompt}</span>
-              </button>
-            )
-          }
-
-          return (
-            <section key={`${round}-${index}`} className={`bomb-module is-expanded is-${slot.status}`}>
-              <header className="bomb-module-head">
-                <span>{slot.module.icon} {slot.module.name}</span>
-                <span className={`bomb-led is-${slot.status}`} aria-label={slot.status} />
-              </header>
-              <p className="mg-question">{slot.task.prompt}</p>
-              <Module
-                primitive={slot.task.primitive}
-                value={slot.value}
-                onChange={(value) => (immediate ? lockIn(index, value) : updateSlot(index, { value }))}
-                disabled={locked}
-                onLockIn={() => lockIn(index)}
-              />
-              {slot.error && <p className="bomb-error">⚠️ {slot.error}</p>}
-              {slot.submission && slot.result && (
-                <ResultPanel question={slot.question} submission={slot.submission} result={slot.result} />
-              )}
-              {immediate ? (
-                slot.status === 'sending' && <p className="mg-muted bomb-lock">Sende…</p>
-              ) : (
-                <button
-                  className="mg-button mg-primary bomb-lock"
-                  disabled={locked || !isComplete(slot.task.primitive, slot.value)}
-                  onClick={() => lockIn(index)}
-                >
-                  {slot.status === 'sending' ? 'Sende…' : slot.status === 'active' ? 'Abschließen' : 'Abgeschlossen'}
-                </button>
-              )}
-            </section>
-          )
-        })}
-      </div>
     </div>
   )
 }

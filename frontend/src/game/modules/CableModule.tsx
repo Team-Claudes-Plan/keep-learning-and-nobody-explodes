@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type PointerEvent } from 'react'
 import type { ModuleProps } from './types'
 
-const CABLE_COLORS = ['#e5484d', '#3e63dd', '#f5d90a', '#30a46c', '#8e4ec6', '#f76b15', '#12a594', '#eeeeee']
+const CABLE_COLORS = ['#e5484d', '#3e63dd', '#eab308', '#30a46c', '#8e4ec6', '#f76b15', '#12a594', '#1f2937']
 
 type Pt = { x: number; y: number }
 type Geometry = { width: number; height: number; plugs: Pt[]; sockets: Pt[] }
