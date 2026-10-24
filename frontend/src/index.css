@@ -167,6 +167,12 @@ canvas {
   margin-bottom: 4px;
 }
 
+.hud-concept {
+  margin-left: 6px;
+  color: #6b7280;
+  font-size: 12px;
+}
+
 .hud-section {
   margin-top: 10px;
   font-weight: 600;
