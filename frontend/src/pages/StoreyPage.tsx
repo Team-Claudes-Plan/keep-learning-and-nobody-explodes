@@ -1,11 +1,14 @@
 import { useState } from 'react'
 import { Link, useParams } from 'react-router'
 import SceneCanvas from '../components/SceneCanvas'
-import { ISO_CAMERA } from '../components/cameras'
-import Room from '../components/Room'
-import { NO_FRONT_RIGHT } from '../components/roomWalls'
+import { ROOM_CAMERA, ROOM_PAN_LIMIT } from '../components/cameras'
+import RoomStage from '../components/RoomStage'
 import Hud from '../components/Hud'
 import { getHouse, getStorey } from '../data/houses'
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value))
+}
 
 export default function StoreyPage() {
   const { houseId = '', storeyId = '' } = useParams()
@@ -27,21 +30,24 @@ export default function StoreyPage() {
     )
   }
 
-  const [w, d] = house.footprint
   const selectedItem = storey.room.items.find((item) => item.id === selectedItemId)
 
   return (
     <>
       <SceneCanvas
-        camera={{ position: ISO_CAMERA.position, zoom: 320, near: 0.1, far: 1000 }}
-        controls={{ target: [0, 0.5, 0], minZoom: 60, maxZoom: 500 }}
+        camera={{ position: ROOM_CAMERA.position, zoom: ROOM_CAMERA.zoom, near: 0.1, far: 200 }}
+        controls={{
+          target: ROOM_CAMERA.target,
+          enableZoom: false,
+        }}
+        panBounds={{ clamp: (x, _z) => [clamp(x, -ROOM_PAN_LIMIT, ROOM_PAN_LIMIT), 0] }}
         onPointerMissed={() => setSelectedItemId(null)}
+        grid={false}
+        responsiveZoom={false}
       >
-        <Room
-          size={[w, storey.height, d]}
-          floorColor={storey.room.floorColor}
+        <RoomStage
           wallColor={storey.room.wallColor}
-          walls={NO_FRONT_RIGHT}
+          floorColor={storey.room.floorColor}
           items={storey.room.items}
           selectedItemId={selectedItemId}
           onSelectItem={setSelectedItemId}
@@ -53,7 +59,7 @@ export default function StoreyPage() {
           <Link to="/city">City</Link> / <Link to={`/houses/${house.id}`}>{house.name}</Link> /{' '}
           <span>{storey.label}</span>
         </div>
-        <div>Click an item to select &middot; click empty space to clear</div>
+        <div>Drag left or right to look around &middot; click an item to select</div>
         <div>
           Selected: <strong>{selectedItem ? selectedItem.label : 'none'}</strong>
         </div>
