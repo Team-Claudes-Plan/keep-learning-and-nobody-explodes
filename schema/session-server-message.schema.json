@@ -1,0 +1,244 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "session-server-message.schema.json",
+  "title": "SessionServerMessage",
+  "description": "Websocket message backend -> frontend on /api/sessions/ws, see session-protocol.md.",
+  "type": "object",
+  "required": ["type"],
+  "properties": {
+    "type": { "enum": ["welcome", "snapshot", "event", "briefing", "presence", "error"] }
+  },
+  "oneOf": [
+    { "$ref": "#/$defs/welcome" },
+    { "$ref": "#/$defs/snapshot" },
+    { "$ref": "#/$defs/event" },
+    { "$ref": "#/$defs/briefing" },
+    { "$ref": "#/$defs/presence" },
+    { "$ref": "#/$defs/error" }
+  ],
+  "$defs": {
+    "uuid": { "type": "string", "format": "uuid" },
+    "time": { "type": "string", "format": "date-time" },
+    "role": { "enum": ["defuser", "expert"] },
+    "seat": { "enum": [0, 1] },
+    "turn": { "type": "integer", "minimum": 0 },
+    "question_type": { "$ref": "answer-submission.schema.json#/properties/type" },
+    "end_reason": { "enum": ["all_resolved", "strikes", "timeout", "forfeit"] },
+
+    "welcome": {
+      "description": "After create/join. Keep the token to resume.",
+      "type": "object",
+      "required": ["type", "game_id", "player_id", "token", "seat"],
+      "properties": {
+        "type": { "const": "welcome" },
+        "game_id": { "$ref": "#/$defs/uuid" },
+        "player_id": { "$ref": "#/$defs/uuid" },
+        "token": { "$ref": "#/$defs/uuid" },
+        "seat": { "$ref": "#/$defs/seat" }
+      }
+    },
+    "snapshot": {
+      "type": "object",
+      "required": ["type", "state"],
+      "properties": {
+        "type": { "const": "snapshot" },
+        "state": { "$ref": "#/$defs/game_view" }
+      }
+    },
+    "game_view": {
+      "type": "object",
+      "required": ["game_id", "status", "topics", "players", "strikes", "max_strikes", "parts"],
+      "properties": {
+        "game_id": { "$ref": "#/$defs/uuid" },
+        "status": { "enum": ["waiting", "active", "won", "lost", "aborted"] },
+        "topics": { "type": "array", "items": { "$ref": "#/$defs/uuid" } },
+        "players": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["player_id", "seat", "online"],
+            "properties": {
+              "player_id": { "$ref": "#/$defs/uuid" },
+              "seat": { "$ref": "#/$defs/seat" },
+              "online": { "type": "boolean" }
+            }
+          }
+        },
+        "deadline": { "oneOf": [{ "$ref": "#/$defs/time" }, { "type": "null" }] },
+        "turn": { "oneOf": [{ "$ref": "#/$defs/turn" }, { "type": "null" }] },
+        "defuser": { "oneOf": [{ "$ref": "#/$defs/uuid" }, { "type": "null" }] },
+        "expert": { "oneOf": [{ "$ref": "#/$defs/uuid" }, { "type": "null" }] },
+        "strikes": { "type": "integer", "minimum": 0 },
+        "max_strikes": { "type": "integer" },
+        "parts": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["position", "question_type"],
+            "properties": {
+              "position": { "type": "integer", "minimum": 0 },
+              "question_type": { "$ref": "#/$defs/question_type" },
+              "result": { "enum": ["solved", "failed", null] }
+            }
+          }
+        },
+        "reason": { "oneOf": [{ "$ref": "#/$defs/end_reason" }, { "type": "null" }] },
+        "last_sequence": { "type": ["integer", "null"] }
+      }
+    },
+    "event": {
+      "description": "A persisted game event. sequence is gapless and increasing per game.",
+      "type": "object",
+      "required": ["type", "sequence", "at", "event"],
+      "properties": {
+        "type": { "const": "event" },
+        "sequence": { "type": "integer", "minimum": 0 },
+        "at": { "$ref": "#/$defs/time" },
+        "event": { "$ref": "#/$defs/game_event" }
+      }
+    },
+    "game_event": {
+      "type": "object",
+      "required": ["type"],
+      "oneOf": [
+        {
+          "properties": {
+            "type": { "const": "game_created" },
+            "topics": { "type": "array", "items": { "$ref": "#/$defs/uuid" } },
+            "question_count": { "type": "integer" },
+            "time_limit_secs": { "type": "integer" },
+            "created_by": { "$ref": "#/$defs/uuid" },
+            "parts": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": ["position", "task_id", "question_type"],
+                "properties": {
+                  "position": { "type": "integer" },
+                  "task_id": { "$ref": "#/$defs/uuid" },
+                  "question_type": { "$ref": "#/$defs/question_type" }
+                }
+              }
+            }
+          },
+          "required": ["type", "topics", "question_count", "time_limit_secs", "created_by", "parts"]
+        },
+        {
+          "properties": {
+            "type": { "const": "player_joined" },
+            "player_id": { "$ref": "#/$defs/uuid" },
+            "seat": { "$ref": "#/$defs/seat" },
+            "role": { "oneOf": [{ "$ref": "#/$defs/role" }, { "type": "null" }] }
+          },
+          "required": ["type", "player_id", "seat"]
+        },
+        {
+          "properties": {
+            "type": { "const": "game_started" },
+            "deadline": { "$ref": "#/$defs/time" },
+            "starting_defuser": { "$ref": "#/$defs/uuid" }
+          },
+          "required": ["type", "deadline", "starting_defuser"]
+        },
+        {
+          "properties": {
+            "type": { "const": "turn_started" },
+            "turn": { "$ref": "#/$defs/turn" },
+            "defuser": { "$ref": "#/$defs/uuid" },
+            "expert": { "$ref": "#/$defs/uuid" }
+          },
+          "required": ["type", "turn", "defuser", "expert"]
+        },
+        {
+          "properties": {
+            "type": { "const": "answer_submitted" },
+            "turn": { "$ref": "#/$defs/turn" },
+            "actor": { "$ref": "#/$defs/uuid" },
+            "answer": {
+              "description": "The submitted answer as { type, answer }, without questionId.",
+              "type": "object",
+              "required": ["type", "answer"],
+              "properties": {
+                "type": { "$ref": "#/$defs/question_type" },
+                "answer": {}
+              }
+            },
+            "correct": { "type": "boolean" },
+            "solution": { "description": "Same shape as the answer value (coords: { x, y, radius })." },
+            "strikes": { "type": "integer", "minimum": 0 }
+          },
+          "required": ["type", "turn", "actor", "answer", "correct", "solution", "strikes"]
+        },
+        {
+          "properties": {
+            "type": { "const": "game_ended" },
+            "outcome": { "enum": ["won", "lost", "aborted"] },
+            "reason": { "$ref": "#/$defs/end_reason" }
+          },
+          "required": ["type", "outcome", "reason"]
+        }
+      ]
+    },
+    "briefing": {
+      "description": "Private to one player, sent when a turn starts and after connecting.",
+      "type": "object",
+      "required": ["type", "turn", "role"],
+      "oneOf": [
+        {
+          "properties": {
+            "type": { "const": "briefing" },
+            "turn": { "$ref": "#/$defs/turn" },
+            "role": { "const": "defuser" },
+            "task": {
+              "description": "The question as in questions.schema.json, without prompt.",
+              "type": "object"
+            }
+          },
+          "required": ["task"]
+        },
+        {
+          "properties": {
+            "type": { "const": "briefing" },
+            "turn": { "$ref": "#/$defs/turn" },
+            "role": { "const": "expert" },
+            "question_type": { "$ref": "#/$defs/question_type" },
+            "prompt": { "description": "The question's prompt, null for types without one." },
+            "instruction": { "description": "The manual page for the module.", "type": "object" }
+          },
+          "required": ["question_type", "instruction"]
+        }
+      ]
+    },
+    "presence": {
+      "type": "object",
+      "required": ["type", "player_id", "online"],
+      "properties": {
+        "type": { "const": "presence" },
+        "player_id": { "$ref": "#/$defs/uuid" },
+        "online": { "type": "boolean" }
+      }
+    },
+    "error": {
+      "description": "Answers one rejected message; the connection stays open.",
+      "type": "object",
+      "required": ["type", "code", "message"],
+      "properties": {
+        "type": { "const": "error" },
+        "code": {
+          "enum": [
+            "bad_message",
+            "unknown_game",
+            "game_full",
+            "invalid_token",
+            "not_your_turn",
+            "stale_turn",
+            "invalid_state",
+            "no_tasks",
+            "internal"
+          ]
+        },
+        "message": { "type": "string" }
+      }
+    }
+  }
+}

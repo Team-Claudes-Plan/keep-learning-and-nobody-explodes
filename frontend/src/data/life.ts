@@ -1,0 +1,188 @@
+import {
+  BLOCK_SIZE,
+  FIELD_BLOCKS,
+  ROAD_LINES,
+  SIDEWALK_HEIGHT,
+  SIDEWALK_WIDTH,
+} from './city'
+
+export const ROAD_SURFACE_Y = 0.012
+export const LANE_OFFSET = 0.26
+
+export type Vec2 = [number, number]
+
+export type CarRoute = {
+  id: string
+  points: Vec2[]
+  speed: number
+  phase: number
+  color: string
+}
+
+export type ParkedCar = {
+  id: string
+  position: [number, number, number]
+  rotation: number
+  color: string
+}
+
+export type AnimalSpec = {
+  id: string
+  kind: 'dog' | 'cat'
+  points: Vec2[]
+  speed: number
+  phase: number
+  color: string
+  scale: number
+}
+
+export type BirdSpec = {
+  id: string
+  center: Vec2
+  radiusX: number
+  radiusZ: number
+  height: number
+  speed: number
+  phase: number
+  bob: number
+  color: string
+  scale: number
+}
+
+export type PerchedBird = {
+  id: string
+  position: [number, number, number]
+  rotation: number
+  color: string
+  scale: number
+}
+
+function mulberry32(seed: number) {
+  let state = seed >>> 0
+  return () => {
+    state = (state + 0x6d2b79f5) >>> 0
+    let t = state
+    t = Math.imul(t ^ (t >>> 15), t | 1)
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61)
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296
+  }
+}
+
+const CAR_COLORS = ['#8b939e', '#7c3f3f', '#3f4f6b']
+const DOG_COLORS = ['#8a6a4a', '#5f5347', '#a9855c']
+const CAT_COLORS = ['#8d8f93', '#b0793f', '#6f7074']
+const BIRD_COLORS = ['#3f4753', '#514741', '#2f3742', '#5a4b3d']
+
+function buildRoute(a: number, b: number, inset: number): Vec2[] {
+  const xa = a + inset
+  const xb = b - inset
+  return [
+    [xa, xa],
+    [xb, xa],
+    [xb, xb],
+    [xa, xb],
+  ]
+}
+
+function buildCarRoutes(): CarRoute[] {
+  const random = mulberry32(2024)
+  const a = ROAD_LINES[1]
+  const b = ROAD_LINES[2]
+
+  return [0, 1, 2].map((index) => ({
+    id: `car-${index}`,
+    points: buildRoute(a, b, LANE_OFFSET),
+    speed: 1.4 + random() * 0.6,
+    phase: random(),
+    color: CAR_COLORS[index % CAR_COLORS.length],
+  }))
+}
+
+export const CAR_ROUTES: CarRoute[] = buildCarRoutes()
+
+export const PARKED_CARS: ParkedCar[] = [
+  {
+    id: 'parked-0',
+    position: [ROAD_LINES[1] - LANE_OFFSET - 0.16, ROAD_SURFACE_Y, 0.9],
+    rotation: Math.PI / 2,
+    color: '#6f7885',
+  },
+  {
+    id: 'parked-1',
+    position: [ROAD_LINES[2] + LANE_OFFSET + 0.16, ROAD_SURFACE_Y, -0.9],
+    rotation: Math.PI / 2,
+    color: '#7c3f3f',
+  },
+]
+
+function sidewalkLoop(center: Vec2): Vec2[] {
+  const half = BLOCK_SIZE / 2 + SIDEWALK_WIDTH / 2
+  const [cx, cz] = center
+  return [
+    [cx - half, cz - half],
+    [cx + half, cz - half],
+    [cx + half, cz + half],
+    [cx - half, cz + half],
+  ]
+}
+
+const fieldBlocksByDistance = [...FIELD_BLOCKS].sort(
+  (left, right) =>
+    Math.hypot(left.center[0], left.center[1]) - Math.hypot(right.center[0], right.center[1]),
+)
+
+function buildAnimals(): AnimalSpec[] {
+  const random = mulberry32(7341)
+  return fieldBlocksByDistance.slice(0, 4).map((block, index) => {
+    const kind = index % 2 === 0 ? 'dog' : 'cat'
+    const palette = kind === 'dog' ? DOG_COLORS : CAT_COLORS
+    return {
+      id: `animal-${block.i}-${block.j}`,
+      kind,
+      points: sidewalkLoop(block.center),
+      speed: 0.32 + random() * 0.18,
+      phase: random(),
+      color: palette[Math.floor(random() * palette.length)],
+      scale: kind === 'dog' ? 0.68 : 0.6,
+    }
+  })
+}
+
+export const ANIMALS: AnimalSpec[] = buildAnimals()
+
+function buildBirds(): BirdSpec[] {
+  const random = mulberry32(5510)
+  return Array.from({ length: 4 }, (_, index) => ({
+    id: `bird-${index}`,
+    center: [(random() * 2 - 1) * 3.5, (random() * 2 - 1) * 3.5],
+    radiusX: 1.8 + random() * 1.6,
+    radiusZ: 1.8 + random() * 1.6,
+    height: 6.8 + random() * 2.4,
+    speed: 0.22 + random() * 0.14,
+    phase: random() * Math.PI * 2,
+    bob: 0.2 + random() * 0.25,
+    color: BIRD_COLORS[index % BIRD_COLORS.length],
+    scale: 0.85 + random() * 0.3,
+  }))
+}
+
+export const BIRDS: BirdSpec[] = buildBirds()
+
+function buildPerchedBirds(): PerchedBird[] {
+  const random = mulberry32(9182)
+  const half = BLOCK_SIZE / 2 + SIDEWALK_WIDTH / 2
+  return fieldBlocksByDistance.slice(-2).map((block, index) => {
+    const [cx, cz] = block.center
+    const signX = cx === 0 ? 1 : -Math.sign(cx)
+    const signZ = cz === 0 ? 1 : -Math.sign(cz)
+    return {
+      id: `perch-${block.i}-${block.j}`,
+      position: [cx + signX * half, SIDEWALK_HEIGHT, cz + signZ * half],
+      rotation: index % 2 === 0 ? Math.PI : 0,
+      color: BIRD_COLORS[Math.floor(random() * BIRD_COLORS.length)],
+      scale: 0.9,
+    }
+  })
+}
+
+export const PERCHED_BIRDS: PerchedBird[] = buildPerchedBirds()
