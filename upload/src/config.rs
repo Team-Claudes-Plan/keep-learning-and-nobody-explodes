@@ -10,7 +10,10 @@ const DEFAULT_MAX_UPLOAD_BYTES: usize = 256 * 1024 * 1024;
 /// Default bind address; loopback only so the dev service is not exposed.
 const DEFAULT_LISTEN_ADDR: &str = "127.0.0.1:8081";
 
-#[allow(clippy::doc_markdown, reason = "Clippy wants RustFS to be backticked, for whatever reason")]
+#[allow(
+    clippy::doc_markdown,
+    reason = "Clippy wants RustFS to be backticked, for whatever reason"
+)]
 /// Default S3 region. RustFS ignores it, but the SDK requires one.
 const DEFAULT_S3_REGION: &str = "us-east-1";
 
