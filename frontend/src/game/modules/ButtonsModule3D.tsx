@@ -47,10 +47,7 @@ function PushButton({ x, y, radius, width, label, color, step, disabled, onPress
         <mesh
           rotation={[Math.PI / 2, 0, 0]}
           onClick={click}
-          onPointerOver={(e) => {
-            e.stopPropagation()
-            setHover(true)
-          }}
+          onPointerOver={() => setHover(true)}
           onPointerOut={() => setHover(false)}
         >
           <cylinderGeometry args={[radius * 0.92, radius, 0.04, 40]} />

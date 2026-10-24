@@ -14,6 +14,12 @@ const WHEEL_Y = 0.02
 /** The wheels sit partly sunk into the plate, only the front shows. */
 const WHEEL_Z = FACE + 0.01
 const STEP = (2 * Math.PI) / 10
+/** Each of the ten faces of the decagonal wheel (WHEEL_RADIUS is the distance to a face). */
+const FACE_HEIGHT = 2 * WHEEL_RADIUS * Math.tan(STEP / 2)
+const FACE_THICKNESS = 0.01
+/** Spring the wheel turns on: quick, with a small overshoot before it settles on the digit. */
+const WHEEL_SPRING = 520
+const WHEEL_DAMPING = 30
 
 /** Keys go to the lock unless the player is typing somewhere else. */
 function isTypingElsewhere(target: EventTarget | null) {
@@ -31,28 +37,38 @@ type WheelProps = {
 
 /** One number wheel: click its upper half (or ▲) to turn up, lower half (or ▼) to turn down, or scroll. */
 function Wheel({ x, digit, cursor, disabled, onTurn, onFocus }: WheelProps) {
+  const axis = useRef<THREE.Group>(null)
   const wheel = useRef<THREE.Group>(null)
-  // Turns the short way round (9 → 0 rolls on instead of back through all digits).
-  const goal = useRef(digit * STEP)
-  // starting angle only, then useFrame turns the wheel (a changing prop would make it jump)
-  const [start] = useState(digit)
+  // Digit d faces the viewer at angle -d * STEP: turning up rolls the wheel's front upwards and the
+  // next digit comes up from below, like a real lock. Always the short way round (9 → 0 rolls on).
+  const goal = useRef(-digit * STEP)
+  const angle = useRef(-digit * STEP)
+  const speed = useRef(0)
   const shown = useRef(digit)
   useEffect(() => {
     const delta = ((((digit - shown.current) % 10) + 15) % 10) - 5
-    goal.current += delta * STEP
+    goal.current -= delta * STEP
     shown.current = digit
   }, [digit])
 
+  // The wheel rides a spring: it rolls over to the next digit, overshoots a touch and settles in.
   useFrame((_, delta) => {
-    if (wheel.current) wheel.current.rotation.x += (goal.current - wheel.current.rotation.x) * (1 - Math.exp(-delta * 16))
+    if (!wheel.current) return
+    const dt = Math.min(delta, 1 / 20)
+    const steps = Math.ceil(dt / (1 / 240))
+    for (let i = 0; i < steps; i++) {
+      speed.current += (WHEEL_SPRING * (goal.current - angle.current) - WHEEL_DAMPING * speed.current) * (dt / steps)
+      angle.current += speed.current * (dt / steps)
+    }
+    wheel.current.rotation.x = angle.current
   })
 
   function click(event: ThreeEvent<MouseEvent>) {
     event.stopPropagation()
-    if (disabled) return
+    if (disabled || !axis.current) return
     onFocus()
     // above the wheel's axis turns up, below turns down
-    const local = event.object.parent!.parent!.worldToLocal(event.point.clone())
+    const local = axis.current.worldToLocal(event.point.clone())
     onTurn(local.y > 0 ? 1 : -1)
   }
 
@@ -67,23 +83,33 @@ function Wheel({ x, digit, cursor, disabled, onTurn, onFocus }: WheelProps) {
 
   return (
     <group position={[x, 0, 0]}>
-      <group position={[0, WHEEL_Y, WHEEL_Z]}>
-        <group ref={wheel} rotation={[start * STEP, 0, 0]}>
-          <mesh rotation={[0, 0, Math.PI / 2]} onClick={click} onWheel={(e) => {
+      <group ref={axis} position={[0, WHEEL_Y, WHEEL_Z]}>
+        <group
+          ref={wheel}
+          onClick={click}
+          onWheel={(e) => {
             e.stopPropagation()
-            if (!disabled) onTurn(e.deltaY < 0 ? 1 : -1)
-          }}>
-            <cylinderGeometry args={[WHEEL_RADIUS, WHEEL_RADIUS, WHEEL_WIDTH, 40]} />
-            <meshStandardMaterial color="#20242b" metalness={0.5} roughness={0.45} />
+            // the wheel follows the scroll like a page does: content moving up rolls it up (next digit)
+            if (!disabled) onTurn(e.deltaY > 0 ? 1 : -1)
+          }}
+        >
+          {/* core, so no gaps show between the faces */}
+          <mesh rotation={[0, 0, Math.PI / 2]}>
+            <cylinderGeometry args={[WHEEL_RADIUS * 0.97, WHEEL_RADIUS * 0.97, WHEEL_WIDTH * 0.96, 10]} />
+            <meshStandardMaterial color="#0e1013" roughness={0.8} />
           </mesh>
           {Array.from({ length: 10 }, (_, d) => (
-            // Digit d faces the viewer when the wheel is turned to d * STEP.
-            <group key={d} rotation={[-d * STEP, 0, 0]}>
+            // ten flat faces make the decagon, one digit on each
+            <group key={d} rotation={[d * STEP, 0, 0]}>
+              <mesh position={[0, 0, WHEEL_RADIUS - FACE_THICKNESS / 2]}>
+                <boxGeometry args={[WHEEL_WIDTH, FACE_HEIGHT * 0.94, FACE_THICKNESS]} />
+                <meshStandardMaterial color="#23272e" metalness={0.55} roughness={0.4} flatShading />
+              </mesh>
               <Text
                 font={FONT_URL}
                 position={[0, 0, WHEEL_RADIUS + 0.001]}
                 raycast={() => null}
-                fontSize={0.075}
+                fontSize={FACE_HEIGHT * 0.82}
                 anchorX="center"
                 anchorY="middle"
                 color="#f2f4f7"
@@ -97,7 +123,7 @@ function Wheel({ x, digit, cursor, disabled, onTurn, onFocus }: WheelProps) {
       {/* metal rings on both sides of the wheel */}
       {[-1, 1].map((side) => (
         <mesh key={side} position={[(side * (WHEEL_WIDTH + 0.012)) / 2, WHEEL_Y, WHEEL_Z]} rotation={[0, 0, Math.PI / 2]}>
-          <cylinderGeometry args={[WHEEL_RADIUS * 1.04, WHEEL_RADIUS * 1.04, 0.01, 40]} />
+          <cylinderGeometry args={[WHEEL_RADIUS * 1.09, WHEEL_RADIUS * 1.09, 0.01, 40]} />
           <meshStandardMaterial color="#9aa0a6" metalness={0.9} roughness={0.3} />
         </mesh>
       ))}

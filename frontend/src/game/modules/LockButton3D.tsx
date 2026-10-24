@@ -47,10 +47,7 @@ export default function LockButton3D({ enabled, label, onPress }: Props) {
         <mesh
           position={[0, 0, 0.022]}
           onClick={press}
-          onPointerOver={(e) => {
-            e.stopPropagation()
-            setHover(true)
-          }}
+          onPointerOver={() => setHover(true)}
           onPointerOut={() => setHover(false)}
         >
           <boxGeometry args={[0.25, 0.058, 0.024]} />

@@ -814,6 +814,7 @@ canvas {
   border: 1px solid var(--mg-border-strong);
   background: var(--mg-well);
   color: inherit;
+  cursor: pointer;
 }
 
 /* Module: fuses */

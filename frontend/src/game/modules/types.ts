@@ -20,6 +20,8 @@ export type ModuleDef = {
   supports: (primitive: Primitive, questionType: QuestionType) => boolean
   /** Single choice normally submits on the first selection; true keeps the "Abschließen" button. */
   confirm?: boolean
+  /** Locks in by itself as soon as the answer is complete (no "Abschließen" button). */
+  submitWhenComplete?: boolean
   /** Starting value if the module needs a different one than the primitive default. */
   init?: (primitive: Primitive) => AnyValue
   component: ComponentType<ModuleProps<PrimitiveKind>>

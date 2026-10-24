@@ -54,6 +54,8 @@ export const MODULES: ModuleDef[] = [
     supports: (p, type) =>
       (p.kind === 'pick' && p.mode === 'many' && p.selects !== 'false') ||
       (p.kind === 'assign' && type !== 'matching' && p.targets.length <= 4),
+    // Slide switches start in the first column (counts as chosen), so it can be locked in straight away.
+    init: (p) => (p.kind === 'assign' ? p.items.map(() => 0) : initialValue(p)),
     component: SwitchModule as Component,
     component3d: SwitchModule3D as Component,
   },
@@ -66,8 +68,9 @@ export const MODULES: ModuleDef[] = [
       (p.kind === 'pick' && p.mode === 'one') || (p.kind === 'assign' && type !== 'matching' && p.targets.length <= 8),
     confirm: true,
     // The dial already points at the first answer when opened, so that counts as chosen: it can be
-    // locked in straight away. Item by item (true/false, grouping) every item starts on the first one.
-    init: (p) => (p.kind === 'pick' ? [0] : p.kind === 'assign' ? p.items.map(() => 0) : initialValue(p)),
+    // locked in straight away. Item by item (true/false, grouping) an item counts once it has been
+    // shown on the dial (see RotaryModule3D), so all of them have to be looked at before locking in.
+    init: (p) => (p.kind === 'pick' ? [0] : initialValue(p)),
     component: RotaryModule as Component,
     component3d: RotaryModule3D as Component,
   },
@@ -86,6 +89,8 @@ export const MODULES: ModuleDef[] = [
     icon: '🗂️',
     description: 'Gruppieren, Wahr/Falsch',
     supports: (p) => p.kind === 'assign' && !p.unique && p.targets.length <= 4,
+    // the last part sorted off the belt finishes it
+    submitWhenComplete: true,
     component: SorterModule as Component,
     component3d: SorterModule3D as Component,
   },

@@ -1,9 +1,9 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useFrame, type ThreeEvent } from '@react-three/fiber'
 import { Text } from '@react-three/drei'
 import type * as THREE from 'three'
 import type { AssignPrimitive, PickPrimitive } from '../primitives'
-import { FACE, FONT_URL, HINT_COLOR, labelSize, ROWS_TOP, rowLayout } from './module3d'
+import { FACE, FONT_URL, HINT_COLOR, labelSize, ROWS_TOP, rowLayout, useModulePointer } from './module3d'
 import type { ModuleProps } from './types'
 
 type Props = ModuleProps<'pick'> | ModuleProps<'assign'>
@@ -64,13 +64,38 @@ function Toggle({ y, isOn, size }: { y: number; isOn: boolean; size: number }) {
   )
 }
 
+/** Indicator lamp next to a toggle switch: glows while the switch is on. */
+function Lamp({ x, y, size, lit }: { x: number; y: number; size: number; lit: boolean }) {
+  const radius = size * 0.32
+  return (
+    <group position={[x, y, FACE]}>
+      {/* chrome bezel */}
+      <mesh position={[0, 0, 0.006]} rotation={[Math.PI / 2, 0, 0]}>
+        <cylinderGeometry args={[radius * 1.35, radius * 1.4, 0.012, 24]} />
+        <meshStandardMaterial color="#b9bec6" metalness={0.9} roughness={0.3} />
+      </mesh>
+      {/* glass dome */}
+      <mesh position={[0, 0, 0.012]} rotation={[Math.PI / 2, 0, 0]} scale={[1, 0.7, 1]}>
+        <sphereGeometry args={[radius, 24, 16, 0, Math.PI * 2, 0, Math.PI / 2]} />
+        <meshStandardMaterial
+          color={lit ? ACTIVE : '#3a2f22'}
+          emissive={lit ? ACTIVE : '#000000'}
+          emissiveIntensity={lit ? 1.6 : 0}
+          roughness={0.25}
+          toneMapped={!lit}
+        />
+      </mesh>
+    </group>
+  )
+}
+
 function ToggleSwitches({ primitive, value, onChange, disabled }: ModuleProps<'pick'> & { primitive: PickPrimitive }) {
   const on = primitive.onLabel ?? 'AN'
   const off = primitive.offLabel ?? 'AUS'
   const { step, ys } = rowLayout(primitive.items.length)
   const labelWidth = 0.52
   // the lever must stay within its own row, also when it points down at the next one
-  const size = Math.min(0.11, step * 0.62)
+  const size = Math.min(0.11, step * 0.55)
   const switchX = 0.2
 
   function flip(i: number) {
@@ -80,7 +105,7 @@ function ToggleSwitches({ primitive, value, onChange, disabled }: ModuleProps<'p
   return (
     <group>
       <Text font={FONT_URL} position={[LABEL_LEFT, 0.37, FACE + 0.012]} fontSize={0.032} maxWidth={0.72} anchorX="left" anchorY="middle" color={HINT_COLOR}>
-        Leg die Schalter auf {on} (oben) oder {off} (unten).
+        Schalter oben (Lampe an) = {on}, unten = {off}.
       </Text>
       <LabelStrip width={labelWidth} ys={ys} step={step} />
       {primitive.items.map((label, i) => {
@@ -103,22 +128,7 @@ function ToggleSwitches({ primitive, value, onChange, disabled }: ModuleProps<'p
             <group position={[switchX, 0, 0]}>
               <Toggle y={y} isOn={isOn} size={size} />
             </group>
-            {[
-              [on, isOn, 1],
-              [off, !isOn, -1],
-            ].map(([text, lit, side]) => (
-              <Text
-                key={String(side)}
-                font={FONT_URL}
-                position={[switchX + size * 0.8, y + (side as number) * size * 0.4, FACE + 0.012]}
-                fontSize={Math.min(0.03, step * 0.24)}
-                anchorX="left"
-                anchorY="middle"
-                color={lit ? ACTIVE : '#5b6270'}
-              >
-                {text as string}
-              </Text>
-            ))}
+            <Lamp x={switchX + size * 1.25} y={y} size={size} lit={isOn} />
             {/* the whole row flips the switch */}
             <mesh position={[0, y, FACE + 0.13]} onClick={stop(() => flip(i), disabled)}>
               <planeGeometry args={[0.88, step * 0.95]} />
@@ -132,18 +142,52 @@ function ToggleSwitches({ primitive, value, onChange, disabled }: ModuleProps<'p
 }
 
 /** Slide switch with one notch per target; the knob slides to the chosen one. */
-function Slide({ y, xs, position, size }: { y: number; xs: number[]; position: number | null; size: number }) {
+/** How far (share of the way to the midpoint) the knob follows the pointer before it snaps over. */
+const DETENT_HOLD = 0.35
+
+function nearestNotch(xs: number[], x: number) {
+  let best = 0
+  xs.forEach((notch, t) => {
+    if (Math.abs(notch - x) < Math.abs(xs[best] - x)) best = t
+  })
+  return best
+}
+
+/**
+ * Knob position while dragging: it lags behind the pointer around a notch and resists more the
+ * further it is pulled; past the midpoint it snaps over into the next notch.
+ */
+function detentX(xs: number[], raw: number) {
+  if (xs.length < 2) return xs[0]
+  const notch = xs[nearestNotch(xs, raw)]
+  const half = (xs[1] - xs[0]) / 2
+  const t = Math.min(1, Math.abs(raw - notch) / half)
+  return notch + Math.sign(raw - notch) * half * DETENT_HOLD * t ** 1.5
+}
+
+type SlideProps = {
+  y: number
+  xs: number[]
+  position: number | null
+  size: number
+  /** Pointer x while the knob is being dragged, null otherwise. */
+  dragX: number | null
+}
+
+function Slide({ y, xs, position, size, dragX }: SlideProps) {
   const knob = useRef<THREE.Group>(null)
   const left = xs[0]
   const right = xs[xs.length - 1]
   // Not set yet: the knob waits, dimmed, in the middle of the track.
-  const goal = position === null ? (left + right) / 2 : xs[position]
+  const goal = dragX !== null ? detentX(xs, dragX) : position === null ? (left + right) / 2 : xs[position]
   // starting position only, then useFrame slides it (a changing prop would make it jump)
   const [start] = useState(goal)
   useFrame((_, delta) => {
     const g = knob.current
-    if (g) g.position.x += (goal - g.position.x) * (1 - Math.exp(-delta * 18))
+    // snappy, so the click into a notch is felt
+    if (g) g.position.x += (goal - g.position.x) * (1 - Math.exp(-delta * (dragX !== null ? 35 : 22)))
   })
+  const shown = dragX !== null ? nearestNotch(xs, dragX) : position
   return (
     <group position={[0, y, FACE]}>
       <mesh position={[(left + right) / 2, 0, 0.006]}>
@@ -153,19 +197,19 @@ function Slide({ y, xs, position, size }: { y: number; xs: number[]; position: n
       {xs.map((x, t) => (
         <mesh key={t} position={[x, 0, 0.013]}>
           <circleGeometry args={[size * 0.08, 12]} />
-          <meshBasicMaterial color={t === position ? ACTIVE : '#5b6270'} toneMapped={false} />
+          <meshBasicMaterial color={t === shown ? ACTIVE : '#5b6270'} toneMapped={false} />
         </mesh>
       ))}
       <group ref={knob} position={[start, 0, 0]}>
         <mesh position={[0, 0, 0.03]}>
           <boxGeometry args={[size * 0.55, size * 0.75, 0.04]} />
           <meshStandardMaterial
-            color={position === null ? '#4a4f57' : '#c3c8cf'}
+            color={shown === null ? '#4a4f57' : '#c3c8cf'}
             metalness={0.85}
             roughness={0.3}
           />
         </mesh>
-        {position !== null && (
+        {shown !== null && (
           <mesh position={[0, 0, 0.051]}>
             <boxGeometry args={[size * 0.1, size * 0.6, 0.002]} />
             <meshBasicMaterial color={ACTIVE} toneMapped={false} />
@@ -187,14 +231,52 @@ function PositionSwitches({ primitive, value, onChange, disabled }: ModuleProps<
   const size = Math.min(0.09, step * 0.75)
   const columnWidth = Math.min(0.16, targetCount > 1 ? spacing * 1.05 : 0.3)
 
-  function set(item: number, target: number) {
-    onChange(value.map((v, i) => (i === item ? target : v)))
+  // Drag a knob left or right: it clicks from notch to notch and stays in the one it is let go in.
+  // A plain click puts it straight into the notch under the pointer.
+  const group = useRef<THREE.Group>(null)
+  const pointerOnModule = useModulePointer(group)
+  const [drag, setDrag] = useState<{ item: number; x: number } | null>(null)
+  const latest = useRef({ value, onChange, drag })
+  latest.current = { value, onChange, drag }
+  const clampX = (x: number) => Math.min(xs[xs.length - 1] + spacing * 0.3, Math.max(xs[0] - spacing * 0.3, x))
+
+  function grab(event: ThreeEvent<PointerEvent>, item: number) {
+    event.stopPropagation()
+    if (disabled) return
+    const p = pointerOnModule(event.clientX, event.clientY)
+    if (p) setDrag({ item, x: clampX(p.x) })
   }
 
+  const dragItem = drag?.item ?? null
+  useEffect(() => {
+    if (dragItem === null) return
+    const move = (e: PointerEvent) => {
+      const p = pointerOnModule(e.clientX, e.clientY)
+      if (p) setDrag((d) => d && { ...d, x: clampX(p.x) })
+    }
+    const up = () => {
+      const { value: current, onChange: change, drag: d } = latest.current
+      setDrag(null)
+      if (!d) return
+      const target = nearestNotch(xs, d.x)
+      if (current[d.item] !== target) change(current.map((v, i) => (i === d.item ? target : v)))
+    }
+    window.addEventListener('pointermove', move)
+    window.addEventListener('pointerup', up)
+    window.addEventListener('pointercancel', up)
+    return () => {
+      window.removeEventListener('pointermove', move)
+      window.removeEventListener('pointerup', up)
+      window.removeEventListener('pointercancel', up)
+    }
+    // pointerOnModule/xs only read layout that does not change during a drag
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dragItem])
+
   return (
-    <group>
+    <group ref={group}>
       <Text font={FONT_URL} position={[LABEL_LEFT, 0.37, FACE + 0.012]} fontSize={0.032} maxWidth={0.72} anchorX="left" anchorY="middle" color={HINT_COLOR}>
-        Schieb jeden Schalter auf die passende Spalte.
+        Zieh jeden Schalter in die passende Spalte.
       </Text>
       <LabelStrip width={labelWidth} ys={ys} step={step} />
       {/* column headings: the targets, on a dark strip */}
@@ -232,14 +314,16 @@ function PositionSwitches({ primitive, value, onChange, disabled }: ModuleProps<
           >
             {label}
           </Text>
-          <Slide y={ys[i]} xs={xs} position={value[i]} size={size} />
-          {/* one click target per notch */}
-          {xs.map((x, t) => (
-            <mesh key={t} position={[x, ys[i], FACE + 0.13]} onClick={stop(() => set(i, t), disabled)}>
-              <planeGeometry args={[targetCount > 1 ? spacing : 0.3, step * 0.95]} />
-              <meshBasicMaterial transparent opacity={0} depthWrite={false} />
-            </mesh>
-          ))}
+          <Slide y={ys[i]} xs={xs} position={value[i]} size={size} dragX={drag?.item === i ? drag.x : null} />
+          {/* the track is the handle: press anywhere on it to grab the knob */}
+          <mesh
+            position={[(xs[0] + xs[xs.length - 1]) / 2, ys[i], FACE + 0.13]}
+            onPointerDown={(e) => grab(e, i)}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <planeGeometry args={[xs[xs.length - 1] - xs[0] + Math.max(spacing, 0.3), step * 0.95]} />
+            <meshBasicMaterial transparent opacity={0} depthWrite={false} />
+          </mesh>
         </group>
       ))}
     </group>

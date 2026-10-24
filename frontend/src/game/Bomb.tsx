@@ -92,6 +92,12 @@ export default function Bomb({ modules, plan: fixedPlan, view = 'solo', testBar 
   const strikes = slots.filter((s) => s.status === 'failed').length
   const exploded = !testing && (strikes >= MAX_STRIKES || timeLeft <= 0)
   const finished = slots.length > 0 && slots.every((s) => s.status !== 'active' && s.status !== 'sending')
+  /**
+   * How the round ended. Strikes and time come first: a third mistake on the last module still
+   * blows the bomb up. Testing a question type has no strikes, so it ends with a tally instead.
+   */
+  const outcome = exploded ? 'boom' : !finished ? null : testing ? 'test' : 'defused'
+  const correct = slots.filter((s) => s.status === 'solved').length
   const running = load.status === 'ready' && slots.length > 0 && !exploded && !finished && !testing
 
   useEffect(() => {
@@ -131,12 +137,14 @@ export default function Bomb({ modules, plan: fixedPlan, view = 'solo', testBar 
     }
   }
 
+  /** Sends by itself, without "Abschließen": single choice on its first pick, or modules that finish when complete. */
   function isImmediate(slot: Slot) {
-    return submitsImmediately(slot.task.primitive) && !slot.module.confirm
+    return (submitsImmediately(slot.task.primitive) && !slot.module.confirm) || slot.module.submitWhenComplete === true
   }
 
   function changeValue(index: number, value: AnyValue) {
-    if (isImmediate(slots[index])) lockIn(index, value)
+    const slot = slots[index]
+    if (isImmediate(slot) && isComplete(slot.task.primitive, value)) lockIn(index, value)
     else updateSlot(index, { value })
   }
 
@@ -261,10 +269,15 @@ export default function Bomb({ modules, plan: fixedPlan, view = 'solo', testBar 
         />
       )}
       {slots.length === 0 && <p className="bomb-screen-message">Keine passenden Aufgaben für diese Module.</p>}
-      {(exploded || finished) && (
-        <button className={`bomb-screen-result ${exploded ? 'is-bad' : 'is-good'}`} onClick={restart}>
-          {exploded ? '💥 BOOM' : '✅ Entschärft'}
-          {!fixedPlan && <small>Neue Bombe</small>}
+      {outcome && (
+        <button className={`bomb-screen-result ${outcome === 'boom' ? 'is-bad' : 'is-good'}`} onClick={restart}>
+          {outcome === 'boom' ? '💥 BOOM' : outcome === 'defused' ? '✅ Entschärft' : '🧪 Test fertig'}
+          {outcome === 'test' && (
+            <small>
+              {correct} richtig · {strikes} falsch
+            </small>
+          )}
+          {!fixedPlan && <small>{outcome === 'test' ? 'Nochmal' : 'Neue Bombe'}</small>}
         </button>
       )}
     </div>

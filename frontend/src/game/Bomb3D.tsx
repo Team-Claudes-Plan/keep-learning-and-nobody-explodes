@@ -242,6 +242,16 @@ const SNAP_STRENGTH = 7
 /** How quickly a flick coasts out (per second). */
 const COAST_DAMPING = 6
 
+/**
+ * Turning weights per input. A finger sweeps far over a small screen and swipes fast, so on touch
+ * the bomb turns less per pixel, a flick carries less speed (capped) and coasts out sooner.
+ */
+const TURN_WEIGHTS = {
+  mouse: { perPixel: 1, maxFlick: 8, coast: COAST_DAMPING },
+  touch: { perPixel: 0.45, maxFlick: 3, coast: 9 },
+} as const
+type TurnWeights = (typeof TURN_WEIGHTS)[keyof typeof TURN_WEIGHTS]
+
 /** Camera orbit around the bomb centre: angles in radians, pitch unbounded. */
 type Orbit = {
   target: THREE.Vector3
@@ -250,6 +260,8 @@ type Orbit = {
   distance: number
   enabled: boolean
   dragging: boolean
+  /** Weights of the input that turned the view last (mouse or touch). */
+  weights: TurnWeights
   /** Snapping starts after the first real turn, so the opening view stays as it is. */
   snap: boolean
   x: number
@@ -270,6 +282,7 @@ function initialOrbit(): Orbit {
     distance,
     enabled: true,
     dragging: false,
+    weights: TURN_WEIGHTS.mouse,
     snap: false,
     x: 0,
     y: 0,
@@ -550,11 +563,12 @@ function BombModel({ modules, focused, onSelect, onBack, timeLeft, strikes, expl
     canvas.style.touchAction = 'none'
     const down = (e: PointerEvent) => {
       if (e.button !== 0 || !o.enabled) return
-      Object.assign(o, { dragging: true, x: e.clientX, y: e.clientY, t: e.timeStamp, vYaw: 0, vPitch: 0 })
+      const weights = e.pointerType === 'mouse' ? TURN_WEIGHTS.mouse : TURN_WEIGHTS.touch
+      Object.assign(o, { dragging: true, weights, x: e.clientX, y: e.clientY, t: e.timeStamp, vYaw: 0, vPitch: 0 })
     }
     const move = (e: PointerEvent) => {
       if (!o.dragging) return
-      const perPixel = (2 * Math.PI) / Math.max(canvas.clientHeight, 1)
+      const perPixel = ((2 * Math.PI) / Math.max(canvas.clientHeight, 1)) * o.weights.perPixel
       // upside down (past the top or bottom), sideways turns the other way round
       const dYaw = -(e.clientX - o.x) * perPixel * (Math.cos(o.pitch) >= 0 ? 1 : -1)
       const dPitch = (e.clientY - o.y) * perPixel
@@ -569,6 +583,10 @@ function BombModel({ modules, focused, onSelect, onBack, timeLeft, strikes, expl
       o.dragging = false
       // pointer held still before letting go: no flick
       if (e.timeStamp - o.t > 80) [o.vYaw, o.vPitch] = [0, 0]
+      // a flick never spins it wildly
+      const max = o.weights.maxFlick
+      o.vYaw = THREE.MathUtils.clamp(o.vYaw, -max, max)
+      o.vPitch = THREE.MathUtils.clamp(o.vPitch, -max, max)
     }
     const wheel = (e: WheelEvent) => {
       if (!o.enabled) return
@@ -596,7 +614,7 @@ function BombModel({ modules, focused, onSelect, onBack, timeLeft, strikes, expl
       const dt = Math.min(delta, 1 / 20)
       o.yaw += o.vYaw * dt
       o.pitch += o.vPitch * dt
-      const coast = Math.exp(-dt * COAST_DAMPING)
+      const coast = Math.exp(-dt * o.weights.coast)
       o.vYaw *= coast
       o.vPitch *= coast
       if (!o.snap) return applyOrbit(o, camera)
@@ -700,9 +718,24 @@ function BombModel({ modules, focused, onSelect, onBack, timeLeft, strikes, expl
     if (index !== null) onSelect(index)
   }
 
+  /** Whether the object (or a part it belongs to) reacts to clicks or drags: a control of a module. */
+  function isControl(object: THREE.Object3D | null) {
+    for (let o = object; o && o !== bomb; o = o.parent) {
+      const handlers = (o as THREE.Object3D & { __r3f?: { handlers?: Record<string, unknown> } }).__r3f?.handlers
+      if (handlers && (handlers.onClick || handlers.onPointerDown || handlers.onWheel)) return true
+    }
+    return false
+  }
+
   function handleHover(event: ThreeEvent<PointerEvent>) {
-    if (focused !== null || exploded) return // zoomed in: hovering is for the module's own controls
+    if (exploded) return
     event.stopPropagation()
+    // Zoomed in: a hand over every control of the open module, the plain pointer elsewhere.
+    // (The wire cutter hides the pointer over its module; it sets the cursor itself.)
+    if (focused !== null) {
+      document.body.style.cursor = planIndexOf(event.object) === focused && isControl(event.object) ? 'pointer' : ''
+      return
+    }
     const index = planIndexOf(event.object)
     setHovered(index)
     document.body.style.cursor = index !== null ? 'pointer' : ''
@@ -729,6 +762,15 @@ function BombModel({ modules, focused, onSelect, onBack, timeLeft, strikes, expl
                 {focused === i && !arrived && (
                   <mesh position={[0, 0, 0.3]} onClick={(e) => e.stopPropagation()} onPointerDown={(e) => e.stopPropagation()}>
                     <planeGeometry args={[1.1, 1.1]} />
+                    <meshBasicMaterial transparent opacity={0} depthWrite={false} />
+                  </mesh>
+                )}
+                {/* Any other module: a clear cover keeps its controls out of reach, so a click on it
+                    always reaches the bomb (zoom in, or out when another module is open) instead of
+                    being swallowed by a control that is not active yet. */}
+                {focused !== i && (
+                  <mesh position={[0, 0, 0.3]}>
+                    <planeGeometry args={[1.04, 1.04]} />
                     <meshBasicMaterial transparent opacity={0} depthWrite={false} />
                   </mesh>
                 )}

@@ -1,8 +1,8 @@
-import { useRef, useState } from 'react'
+import { useRef } from 'react'
 import { useFrame, type ThreeEvent } from '@react-three/fiber'
 import { Text } from '@react-three/drei'
 import type * as THREE from 'three'
-import { FACE, FONT_URL, HINT_COLOR, labelSize } from './module3d'
+import { FACE, FONT_URL, HINT_COLOR } from './module3d'
 import type { ModuleProps } from './types'
 
 const ACTIVE = '#ffb547'
@@ -11,7 +11,20 @@ const BELT_Y = 0.22
 const CHUTE_Y = 0.1
 const BIN_TOP = 0.055
 const BIN_BOTTOM = -0.345
-const CHIP_HEIGHT = 0.05
+/** Space between a part's text and the edge of its box. */
+const CHIP_PADDING = 0.03
+/** Average glyph width of the label font, as a share of the font size (with room for word wrapping). */
+const GLYPH_WIDTH = 0.62
+
+/**
+ * Font size and line count so a label fits a box of the given width in at most `maxLines` lines;
+ * the box then takes its height from that, so the text never runs out of it.
+ */
+function fitText(label: string, width: number, maxFont: number, maxLines: number) {
+  const fontSize = Math.min(maxFont, (maxLines * width) / (Math.max(label.length, 1) * GLYPH_WIDTH))
+  const lines = Math.max(1, Math.ceil((label.length * GLYPH_WIDTH * fontSize) / width))
+  return { fontSize, lines, height: lines * fontSize * 1.2 }
+}
 
 function stop(handler: () => void, enabled: boolean) {
   return (event: ThreeEvent<MouseEvent>) => {
@@ -20,36 +33,27 @@ function stop(handler: () => void, enabled: boolean) {
   }
 }
 
-/** Sorted part lying in a bin; it drops in from the chute when it arrives. Click to take it back. */
-function Chip({ label, y, width, enabled, onTakeBack }: { label: string; y: number; width: number; enabled: boolean; onTakeBack: () => void }) {
+/** Sorted part lying in its bin; it drops in from the chute when it arrives and then stays put. */
+function Chip({ label, y, width, height, fontSize }: { label: string; y: number; width: number; height: number; fontSize: number }) {
   const ref = useRef<THREE.Group>(null)
-  const [hover, setHover] = useState(false)
   useFrame((_, delta) => {
     if (ref.current) ref.current.position.y += (y - ref.current.position.y) * (1 - Math.exp(-delta * 14))
   })
   return (
     <group ref={ref} position={[0, CHUTE_Y, 0]}>
-      <mesh
-        position={[0, 0, 0.03]}
-        onClick={stop(onTakeBack, enabled)}
-        onPointerOver={(e) => {
-          e.stopPropagation()
-          setHover(true)
-        }}
-        onPointerOut={() => setHover(false)}
-      >
-        <boxGeometry args={[width, CHIP_HEIGHT * 0.86, 0.03]} />
-        <meshStandardMaterial color={hover && enabled ? '#d9a35a' : '#b9853f'} roughness={0.7} />
+      <mesh position={[0, 0, 0.03]}>
+        <boxGeometry args={[width, height - 0.006, 0.03]} />
+        <meshStandardMaterial color="#b9853f" roughness={0.7} />
       </mesh>
       <Text
         font={FONT_URL}
         position={[0, 0, 0.046]}
-        raycast={() => null}
-        fontSize={labelSize(label, width * 0.92, CHIP_HEIGHT * 1.3, 0.026)}
-        maxWidth={width * 0.92}
+        fontSize={fontSize}
+        maxWidth={width - CHIP_PADDING}
         anchorX="center"
         anchorY="middle"
         textAlign="center"
+        lineHeight={1.15}
         color="#1b1408"
       >
         {label}
@@ -60,7 +64,7 @@ function Chip({ label, y, width, enabled, onTakeBack }: { label: string; y: numb
 
 /**
  * Conveyor with a sorting gate on the bomb: the part on the belt goes into the bin whose chute you
- * click. Parts in a bin can be clicked to put them back on the belt.
+ * click. Sorted parts stay in their bin.
  */
 export default function SorterModule3D({ primitive, value, onChange, disabled }: ModuleProps<'assign'>) {
   const current = value.findIndex((v) => v === null)
@@ -68,14 +72,16 @@ export default function SorterModule3D({ primitive, value, onChange, disabled }:
   const binCount = primitive.targets.length
   const binWidth = PLATE_WIDTH / binCount
   const chipWidth = binWidth * 0.84
+  // the part on the belt: its crate grows with the text (up to the belt's length, then two lines)
+  const crate = current === -1 ? null : fitText(primitive.items[current], 0.68, 0.034, 2)
+  const crateWidth =
+    crate && crate.lines === 1
+      ? Math.max(0.22, primitive.items[current].length * GLYPH_WIDTH * crate.fontSize + 0.08)
+      : 0.76
 
   function sort(target: number) {
     if (current === -1) return
     onChange(value.map((v, i) => (i === current ? target : v)))
-  }
-
-  function takeBack(item: number) {
-    onChange(value.map((v, i) => (i === item ? null : v)))
   }
 
   return (
@@ -103,14 +109,15 @@ export default function SorterModule3D({ primitive, value, onChange, disabled }:
         ) : (
           <group key={current}>
             <mesh position={[0, 0, 0.04]}>
-              <boxGeometry args={[0.42, 0.072, 0.04]} />
+              <boxGeometry args={[crateWidth, Math.max(0.072, crate!.height + 0.03), 0.04]} />
               <meshStandardMaterial color="#c99447" roughness={0.7} />
             </mesh>
             <Text
               font={FONT_URL}
               position={[0, 0, 0.061]}
-              fontSize={labelSize(primitive.items[current], 0.4, 0.09, 0.034)}
-              maxWidth={0.4}
+              fontSize={crate!.fontSize}
+              maxWidth={crateWidth - 0.06}
+              lineHeight={1.15}
               anchorX="center"
               anchorY="middle"
               textAlign="center"
@@ -120,7 +127,8 @@ export default function SorterModule3D({ primitive, value, onChange, disabled }:
             </Text>
           </group>
         )}
-        <Text font={FONT_URL} position={[PLATE_WIDTH / 2 - 0.06, 0, 0.024]} fontSize={0.024} anchorX="right" anchorY="middle" color="#9aa3b2">
+        {/* above the belt on the left (the status LED sits top right), so a long part never covers it */}
+        <Text font={FONT_URL} position={[-PLATE_WIDTH / 2 + 0.01, 0.075, 0.012]} fontSize={0.024} anchorX="left" anchorY="bottom" color="#9aa3b2">
           {remaining} übrig
         </Text>
       </group>
@@ -140,8 +148,7 @@ export default function SorterModule3D({ primitive, value, onChange, disabled }:
               font={FONT_URL}
               position={[0, CHUTE_Y, 0.041]}
               raycast={() => null}
-              fontSize={labelSize(`↓ ${target}`, binWidth * 0.82, 0.07, 0.03)}
-              maxWidth={binWidth * 0.82}
+              fontSize={fitText(`↓ ${target}`, binWidth * 0.82, 0.03, 1).fontSize}
               anchorX="center"
               anchorY="middle"
               textAlign="center"
@@ -164,16 +171,18 @@ export default function SorterModule3D({ primitive, value, onChange, disabled }:
               <boxGeometry args={[binWidth * 0.9 + 0.012, 0.012, 0.05]} />
               <meshStandardMaterial color="#5b6270" metalness={0.6} roughness={0.4} />
             </mesh>
-            {inBin.map((item, k) => (
-              <Chip
-                key={item}
-                label={primitive.items[item]}
-                y={BIN_BOTTOM + 0.012 + CHIP_HEIGHT * (k + 0.5)}
-                width={chipWidth}
-                enabled={!disabled}
-                onTakeBack={() => takeBack(item)}
-              />
-            ))}
+            {(() => {
+              // stacked from the bottom up, each box as tall as its text needs
+              let bottom = BIN_BOTTOM + 0.006
+              return inBin.map((item) => {
+                const label = primitive.items[item]
+                const fit = fitText(label, chipWidth - CHIP_PADDING, 0.026, 3)
+                const height = fit.height + 0.02
+                const y = bottom + height / 2
+                bottom += height
+                return <Chip key={item} label={label} y={y} width={chipWidth} height={height} fontSize={fit.fontSize} />
+              })
+            })()}
           </group>
         )
       })}

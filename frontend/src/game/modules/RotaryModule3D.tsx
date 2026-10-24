@@ -289,6 +289,12 @@ function DialPerItem({ primitive, value, onChange, disabled }: ModuleProps<'assi
   const canStep = (by: number) => current + by >= 0 && current + by < count
   const step = (by: number) => setCurrent((c) => Math.min(count - 1, Math.max(0, c + by)))
 
+  // An item counts as answered once it is on the dial: it starts on the first group, which may
+  // already be right. Items not looked at yet stay open, so locking in needs every item seen.
+  useEffect(() => {
+    if (!disabled && value[current] === null) onChange(value.map((v, i) => (i === current ? 0 : v)))
+  }, [current, disabled, value, onChange])
+
   // Stays on the item after turning: the player moves on with the arrows when ready.
   function select(target: number) {
     onChange(value.map((v, i) => (i === current ? target : v)))
@@ -327,11 +333,11 @@ function DialPerItem({ primitive, value, onChange, disabled }: ModuleProps<'assi
         >
           {primitive.items[current]}
         </Text>
-        {/* position dots: the current item is the big white one */}
+        {/* dots: white = current item, amber = looked at (answered), grey = still open */}
         {primitive.items.map((_, i) => (
           <mesh key={i} position={[(i - (count - 1) / 2) * 0.03, -0.065, 0.006]} raycast={() => null}>
             <circleGeometry args={[i === current ? 0.009 : 0.007, 16]} />
-            <meshBasicMaterial color={i === current ? '#ffffff' : '#5b6270'} toneMapped={false} />
+            <meshBasicMaterial color={i === current ? '#ffffff' : value[i] !== null ? ACTIVE : '#5b6270'} toneMapped={false} />
           </mesh>
         ))}
       </group>

@@ -41,8 +41,10 @@ function Fuse({ x, top, width, holderHeight, label, inserted, stateLabel, disabl
     if (!disabled) onToggle()
   }
 
+  // The whole holder reacts: the glass fuse (wherever it sticks out), clips, labels and the space
+  // around them all toggle it.
   return (
-    <group position={[x, 0, FACE]}>
+    <group position={[x, 0, FACE]} onClick={click}>
       <Text
         font={FONT_URL}
         position={[0, top - 0.012, 0.012]}
@@ -103,8 +105,8 @@ function Fuse({ x, top, width, holderHeight, label, inserted, stateLabel, disabl
         {label}
       </Text>
 
-      {/* the whole cell is the click target */}
-      <mesh position={[0, top - (holderHeight + 0.14) / 2, 0.11]} onClick={click}>
+      {/* invisible plane just in front of the dark backing, so clicks into the empty part of the cell count too */}
+      <mesh position={[0, top - (holderHeight + 0.14) / 2, 0.0075]}>
         <planeGeometry args={[width * 0.94, holderHeight + 0.14]} />
         <meshBasicMaterial transparent opacity={0} depthWrite={false} />
       </mesh>
