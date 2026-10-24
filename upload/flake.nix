@@ -55,8 +55,9 @@
             S3_BUCKET = s3Bucket;
           };
 
-          # --- pinned stable Rust toolchain (latest stable + rust-analyzer) ---
-          toolchain = pkgs.rust-bin.stable.latest.default.override {
+          # --- pinned Rust toolchain, read from rust-toolchain.toml in the repo root ---
+          # rust-analyzer + rust-src are added on top for the dev shell/editor.
+          toolchain = (pkgs.rust-bin.fromRustupToolchainFile ../rust-toolchain.toml).override {
             extensions = [ "rust-src" "rust-analyzer" ];
           };
           craneLib = (inputs.crane.mkLib pkgs).overrideToolchain (_: toolchain);
