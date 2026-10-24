@@ -23,8 +23,12 @@ import { resolveDesign } from '../data/baseDesigns'
 import { resolveConcept } from '../data/storeyConcepts'
 import type { InteriorDesign } from '../data/interiorTypes'
 import { isDrag } from '../components/interaction'
+import KitFacade from '../components/facade/KitFacade'
+import { HOUSE_KITS, type HouseKitId } from '../data/houseKits'
 
 const WALL_THICKNESS = 0.08
+/** Gap between a room's outer wall and the kit shell around it. */
+const SHELL_GAP = 0.04
 
 type StoreyRoomProps = {
   house: House
@@ -35,6 +39,7 @@ type StoreyRoomProps = {
   outerSurface: SurfaceSpec
   innerSurface: SurfaceSpec
   parts: HouseParts
+  edgeColor: string
   decor: Decor
   ceiling?: boolean
   onClick: () => void
@@ -49,6 +54,7 @@ function StoreyRoom({
   outerSurface,
   innerSurface,
   parts,
+  edgeColor,
   decor,
   ceiling = false,
   onClick,
@@ -108,7 +114,7 @@ function StoreyRoom({
         innerSurface={innerSurface}
         floorSurface={floorSurface}
         ceilingSurface={innerSurface}
-        edgeColor={parts.edge}
+        edgeColor={edgeColor}
       />
 
       <group position={[0, h / 2, -d / 2 + WALL_THICKNESS / 2 + 0.005]}>
@@ -125,6 +131,45 @@ function StoreyRoom({
   )
 }
 
+type KitShellProps = {
+  kit: HouseKitId
+  /** Room size: width and depth, as the rooms are drawn. */
+  room: [number, number]
+  /** Kit depth to use, the house's real footprint depth. */
+  depth: number
+  storeyHeights: number[]
+}
+
+/**
+ * The house's city model wrapped around the stack of rooms, with the front cut open
+ * so the rooms show through. Rooms are centred on the origin; the kit's front lines up
+ * with the rooms' open front (minus the kit's recess).
+ */
+function KitShell({ kit, room, depth, storeyHeights }: KitShellProps) {
+  const [w, d] = room
+  const outer = WALL_THICKNESS / 2 + SHELL_GAP
+  const kitW = w + 2 * outer
+  const recess = (HOUSE_KITS[kit].frontRecess ?? 0) * depth
+  const front = d / 2 + outer + recess
+  const height = storeyHeights.reduce((sum, h) => sum + h, 0)
+  const footprint = useMemo<[number, number]>(() => [kitW, depth], [kitW, depth])
+
+  // Everything between the side walls, in front of the back wall, from the floor to the roof.
+  const cutaway = useMemo(
+    () => ({
+      min: [-w / 2 - WALL_THICKNESS / 2, -WALL_THICKNESS, -d / 2 - WALL_THICKNESS / 2] as [number, number, number],
+      max: [w / 2 + WALL_THICKNESS / 2, height, 1000] as [number, number, number],
+    }),
+    [w, d, height],
+  )
+
+  return (
+    <group position={[0, 0, front - depth / 2]}>
+      <KitFacade kit={kit} footprint={footprint} storeyHeights={storeyHeights} hovered={false} cutaway={cutaway} />
+    </group>
+  )
+}
+
 function HouseView({ house }: { house: House }) {
   const navigate = useNavigate()
   const design = resolveDesign(house.facade.design)
@@ -137,6 +182,8 @@ function HouseView({ house }: { house: House }) {
   const offsets = house.storeys.map((_, index) =>
     house.storeys.slice(0, index).reduce((sum, storey) => sum + storey.height, 0),
   )
+
+  const storeyHeights = useMemo(() => house.storeys.map((storey) => storey.height), [house])
 
   const focusIndex = Math.floor((house.storeys.length - 1) / 2)
   const focusY = offsets[focusIndex] + house.storeys[focusIndex].height / 2
@@ -175,6 +222,15 @@ function HouseView({ house }: { house: House }) {
           <Streets />
         </group>
 
+        {house.kit && (
+          <KitShell
+            kit={house.kit}
+            room={[w, d / 2]}
+            depth={d}
+            storeyHeights={storeyHeights}
+          />
+        )}
+
         {house.storeys.map((storey, index) => {
           const parts = resolveParts({ ...house.parts, ...storey.parts }, design.material.tint)
           const decor = decorForHouse(house.decorColor ?? house.facadeColor, index)
@@ -189,6 +245,7 @@ function HouseView({ house }: { house: House }) {
               outerSurface={outerSurface}
               innerSurface={innerSurface}
               parts={parts}
+              edgeColor={house.kit ? HOUSE_KITS[house.kit].trim : parts.edge}
               decor={decor}
               ceiling={index === house.storeys.length - 1}
               onClick={() => navigate(`/houses/${house.id}/storeys/${storey.id}`)}

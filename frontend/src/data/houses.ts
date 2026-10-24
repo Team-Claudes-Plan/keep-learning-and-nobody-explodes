@@ -1,6 +1,7 @@
 import type { FacadeConfig } from './facadeTypes'
 import type { HouseParts } from './houseParts'
 import { houseBlockCenter } from './city'
+import type { HouseKitId } from './houseKits'
 
 export type Room = {
   floorColor: string
@@ -22,6 +23,8 @@ export type House = {
   facadeColor: string
   decorColor?: string
   facade: FacadeConfig
+  /** Stackable 3D model for the city view; houses without one fall back to the textured facade. */
+  kit?: HouseKitId
   parts?: Partial<HouseParts>
   footprint: [number, number]
   position: [number, number]
@@ -31,8 +34,9 @@ export type House = {
 export const HOUSES: House[] = [
   {
     id: 'house-a',
-    name: 'House A',
+    name: 'Geography',
     facadeColor: '#4f8cff',
+    kit: 'geography',
     facade: { shape: 'tiered-setback', design: 'glass-grid', textures: 'house-a' },
     footprint: [2.4, 2.4],
     position: houseBlockCenter('house-a'),
@@ -44,8 +48,9 @@ export const HOUSES: House[] = [
   },
   {
     id: 'house-b',
-    name: 'House B',
+    name: 'Robotics',
     facadeColor: '#ff8f4f',
+    kit: 'robotics',
     facade: { shape: 'spire', design: 'panel', textures: 'house-b' },
     footprint: [2.8, 2.2],
     position: houseBlockCenter('house-b'),
@@ -56,8 +61,9 @@ export const HOUSES: House[] = [
   },
   {
     id: 'house-c',
-    name: 'House C',
+    name: 'Biology',
     facadeColor: '#4fd18b',
+    kit: 'biology',
     facade: { shape: 'tree-tower', design: 'organic-bark', textures: 'house-c' },
     footprint: [2.2, 2.8],
     position: houseBlockCenter('house-c'),
@@ -70,8 +76,9 @@ export const HOUSES: House[] = [
   },
   {
     id: 'house-math-tower',
-    name: 'Aged Prussian Blue Mathematical Academy Tower',
+    name: 'Mathematics',
     facadeColor: '#2d5e9f',
+    kit: 'math',
     facade: { shape: 'penthouse', design: 'house-math-tower', textures: 'house-math-tower', roofColor: '#263550' },
     footprint: [2.4, 2.4],
     position: houseBlockCenter('house-math-tower'),

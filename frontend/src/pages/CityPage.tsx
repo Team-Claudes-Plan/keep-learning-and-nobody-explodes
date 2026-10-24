@@ -10,14 +10,11 @@ import Animals from '../components/city/Animals'
 import Birds from '../components/city/Birds'
 import Hud from '../components/Hud'
 import { HOUSES } from '../data/houses'
-import { FACADE_SHAPES } from '../data/facadeShapes'
-import { BASE_DESIGNS } from '../data/baseDesigns'
 import { clampToShoreline } from '../data/island'
 
 export default function CityPage() {
   const navigate = useNavigate()
-  const [overrideShape, setOverrideShape] = useState<string | null>(null)
-  const [overrideDesign, setOverrideDesign] = useState<string | null>(null)
+  const [storeyDelta, setStoreyDelta] = useState(0)
 
   return (
     <>
@@ -37,8 +34,7 @@ export default function CityPage() {
           <Skyscraper
             key={house.id}
             house={house}
-            overrideShape={overrideShape}
-            overrideDesign={overrideDesign}
+            storeyDelta={storeyDelta}
             onClick={(id) => navigate(`/houses/${id}`)}
           />
         ))}
@@ -49,44 +45,16 @@ export default function CityPage() {
         <div>The rocky shore is the edge of the world</div>
         <div>Click a building to enter</div>
 
-        <div className="hud-section">Preview shape</div>
+        <div className="hud-section">Preview storeys</div>
         <div className="hud-buttons">
-          <button
-            type="button"
-            className={overrideShape === null ? 'active' : ''}
-            onClick={() => setOverrideShape(null)}
-          >
-            Per house
-          </button>
-          {Object.values(FACADE_SHAPES).map((shape) => (
+          {[-2, -1, 0, 1, 2, 4].map((delta) => (
             <button
-              key={shape.id}
+              key={delta}
               type="button"
-              className={overrideShape === shape.id ? 'active' : ''}
-              onClick={() => setOverrideShape(shape.id)}
+              className={storeyDelta === delta ? 'active' : ''}
+              onClick={() => setStoreyDelta(delta)}
             >
-              {shape.label}
-            </button>
-          ))}
-        </div>
-
-        <div className="hud-section">Preview design</div>
-        <div className="hud-buttons">
-          <button
-            type="button"
-            className={overrideDesign === null ? 'active' : ''}
-            onClick={() => setOverrideDesign(null)}
-          >
-            Per house
-          </button>
-          {Object.values(BASE_DESIGNS).map((design) => (
-            <button
-              key={design.id}
-              type="button"
-              className={overrideDesign === design.id ? 'active' : ''}
-              onClick={() => setOverrideDesign(design.id)}
-            >
-              {design.label}
+              {delta === 0 ? 'Actual' : delta > 0 ? `+${delta}` : delta}
             </button>
           ))}
         </div>

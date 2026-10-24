@@ -1,0 +1,94 @@
+.cloud-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  overflow: hidden;
+  pointer-events: auto;
+}
+
+.cloud-overlay[data-phase='idle'] {
+  display: none;
+}
+
+.cloud-fill {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at 50% 45%, #ffffff 0%, #eef4fb 60%, #dbe7f5 100%);
+  opacity: 1;
+}
+
+.cloud {
+  position: absolute;
+  width: var(--w);
+  height: calc(var(--w) * 0.62);
+  translate: -50% -50%;
+  will-change: transform;
+}
+
+.puff {
+  position: absolute;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background: radial-gradient(circle at 38% 30%, #ffffff 0 42%, #f1f6fc 64%, #cfdcee 100%);
+}
+
+.puff-1 { left: 0%; top: 34%; width: 42%; }
+.puff-2 { left: 18%; top: 2%; width: 50%; }
+.puff-3 { left: 46%; top: 12%; width: 46%; }
+.puff-4 { left: 62%; top: 38%; width: 38%; }
+.puff-5 { left: 26%; top: 36%; width: 48%; }
+
+/* Rush in */
+.cloud-overlay[data-phase='in'] .cloud {
+  animation: cloud-in 520ms cubic-bezier(0.15, 0.75, 0.3, 1.05) var(--din) both;
+}
+
+.cloud-overlay[data-phase='in'] .cloud-fill {
+  animation: cloud-fill-in 650ms linear both;
+}
+
+/* Part again */
+.cloud-overlay[data-phase='out'] .cloud {
+  animation: cloud-out 760ms cubic-bezier(0.55, 0, 0.8, 0.4) var(--dout) both;
+}
+
+.cloud-overlay[data-phase='out'] .cloud-fill {
+  animation: cloud-fill-out 260ms ease-out both;
+}
+
+@keyframes cloud-in {
+  from {
+    transform: translate(calc(var(--ox) * 1vmax), calc(var(--oy) * 1vmax)) scale(0.75);
+  }
+  to {
+    transform: none;
+  }
+}
+
+@keyframes cloud-out {
+  from {
+    transform: none;
+  }
+  to {
+    transform: translate(calc(var(--ox) * 1.1vmax), calc(var(--oy) * 1.1vmax)) scale(1.25);
+  }
+}
+
+@keyframes cloud-fill-in {
+  0%,
+  60% {
+    opacity: 0;
+  }
+  100% {
+    opacity: 1;
+  }
+}
+
+@keyframes cloud-fill-out {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}

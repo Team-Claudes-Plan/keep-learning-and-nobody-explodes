@@ -1,5 +1,12 @@
 # House Texture Generation Brief
 
+> **City view:** houses with a `kit` in `src/data/houses.ts` are drawn from stackable Blender models
+> (`scripts/blender/houses.py` → `public/models/houses/<topic>.glb`: `base`, repeating `middle`,
+> `top`). The textures below are still used for the room walls on the house and storey pages and
+> for city houses without a kit.
+>
+> Rebuild the kits: `flatpak run --filesystem=$PWD org.blender.Blender -b -P $PWD/frontend/scripts/blender/houses.py -- $PWD/frontend/public/models/houses [preview_prefix]`
+
 This document is a reusable brief for **design agents** (including text-to-image AI agents) that
 produce facade textures for the isometric city. Fill in the parameter block in
 [Design knobs](#5-design-knobs--style-constants), then generate the four PBR maps so they drop
