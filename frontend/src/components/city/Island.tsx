@@ -4,7 +4,7 @@ import {
   GRASS_CENTER,
   ISLAND_RING,
   ISLAND_ROCKS,
-  ISLAND_TERRACES,
+  TERRACE_RINGS,
   grassColorAt,
 } from '../../data/island'
 
@@ -13,14 +13,7 @@ const ROCK_COLORS = ['#6b7078', '#7c818a', '#5d6169', '#8b919a', '#6f6a5e']
 const colorFrom = (hex: string) => new THREE.Color(hex)
 
 function terraceRings(): THREE.Vector3[][] {
-  return ISLAND_TERRACES.map((terrace, ti) =>
-    ISLAND_RING.map((point, pi) => {
-      const jitter = 1 + 0.045 * Math.sin(pi * 2.3 + ti * 1.7)
-      const r = Math.hypot(point[0], point[1]) * terrace.scale * jitter
-      const theta = Math.atan2(point[1], point[0])
-      return new THREE.Vector3(Math.cos(theta) * r, terrace.y, Math.sin(theta) * r)
-    }),
-  )
+  return TERRACE_RINGS.map((ring) => ring.map(([x, y, z]) => new THREE.Vector3(x, y, z)))
 }
 
 function buildIslandTopGeometry(): THREE.BufferGeometry {

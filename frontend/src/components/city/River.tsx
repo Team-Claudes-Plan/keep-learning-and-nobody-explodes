@@ -5,14 +5,14 @@ import {
   LAKE_CENTER,
   LAKE_LEVEL,
   LAKE_RIM_SEGMENTS,
-  RIVER_EXIT_THETA,
   RIVER_LEVEL,
   RIVER_PATH,
   WATERFALL_BOTTOM,
+  cliffReach,
   grassColorAt,
   lakeRadiusAt,
-  shorePoint,
 } from '../../data/island'
+import { CITY_EXTENT } from '../../data/city'
 
 const TAU = Math.PI * 2
 
@@ -23,9 +23,49 @@ const LAKE_DEEP = new THREE.Color('#2f7fc0')
 const LAKE_EDGE = new THREE.Color('#57b6e4')
 const SHORE = new THREE.Color('#c6b184')
 
-const OUTSET = 0.26
 const SHORE_WIDTH = 0.34
+/** The lake shore stops this far before the cliff edge. */
+const SHORE_EDGE_MARGIN = 0.08
+/** The lake shore stops this far before the city's sidewalks and roads. */
+const CITY_EDGE_MARGIN = 0.1
+/** Narrowest sand strip kept where the lake is squeezed. */
+const MIN_SHORE = 0.32
+const MIN_LAKE_RADIUS = 0.5
 const CHANNEL_STATIONS = 64
+/** Vertices across the river; enough that cliff corners can't poke between them. */
+const COLUMNS = 5
+/** Rows per terrace step, so the sheet follows the cliff's bends. */
+const FALL_SUBSTEPS = 3
+/** How far the water sheet floats in front of the rock. */
+const LIP_OUTSET = 0.04
+const FALL_OUTSET = 0.06
+/** Cliff samples per side of each water grid cell when checking clearance. */
+const CELL_SAMPLES = 6
+/** How much wider the fall gets towards the bottom of the island. */
+const FALL_SPREAD = 0.15
+/** Outward drift of the free fall below the island. */
+const VOID_DRIFT = 0.3
+
+/** Distance from (ox, oz) along (dx, dz) to the city's square footprint. */
+function cityReach(ox: number, oz: number, dx: number, dz: number): number {
+  const e = CITY_EXTENT
+  let near = -Infinity
+  let far = Infinity
+  for (const [o, d] of [
+    [ox, dx],
+    [oz, dz],
+  ]) {
+    if (Math.abs(d) < 1e-9) {
+      if (Math.abs(o) > e) return Infinity
+      continue
+    }
+    const t1 = (-e - o) / d
+    const t2 = (e - o) / d
+    near = Math.max(near, Math.min(t1, t2))
+    far = Math.min(far, Math.max(t1, t2))
+  }
+  return near <= far && far > 0 ? Math.max(0, near) : Infinity
+}
 
 function buildLakeGeometry(): THREE.BufferGeometry {
   const [cx, cz] = LAKE_CENTER
@@ -55,16 +95,33 @@ function buildLakeGeometry(): THREE.BufferGeometry {
   positions.push(cx, LAKE_LEVEL, cz)
   colors.push(LAKE_DEEP.r, LAKE_DEEP.g, LAKE_DEEP.b)
 
+  const outerExtra = rings[rings.length - 1].extra
+
   for (let r = 1; r < rings.length; r += 1) {
     const ring = rings[r]
     for (let i = 0; i < segments; i += 1) {
       const angle = (i / segments) * TAU
+      const dx = Math.cos(angle)
+      const dz = Math.sin(angle)
       const widthScale = 1 + 0.4 * Math.sin(angle * 3 + 1.4)
+      const lakeRadius = lakeRadiusAt(angle)
+      const shoreWidth = outerExtra * widthScale
+
+      // Fit water + shore inside the room left by the cliff and the city.
+      const room = Math.min(
+        cliffReach(cx, cz, dx, dz, 0) - SHORE_EDGE_MARGIN,
+        cityReach(cx, cz, dx, dz) - CITY_EDGE_MARGIN,
+      )
+      const fitted = lakeRadius + shoreWidth > room
+      const waterEdge = fitted ? Math.max(MIN_LAKE_RADIUS, Math.min(lakeRadius, room - MIN_SHORE)) : lakeRadius
+      const shoreSpan = fitted ? Math.max(0, room - waterEdge) : shoreWidth
+
       const radius =
-        lakeRadiusAt(angle) * ring.factor +
-        (ring.kind === 'water' ? 0 : ring.extra * widthScale)
-      const x = cx + Math.cos(angle) * radius
-      const z = cz + Math.sin(angle) * radius
+        ring.kind === 'water'
+          ? waterEdge * ring.factor
+          : waterEdge + shoreSpan * (ring.extra / outerExtra)
+      const x = cx + dx * radius
+      const z = cz + dz * radius
       positions.push(x, ring.y, z)
 
       let color: THREE.Color
@@ -122,28 +179,28 @@ function buildRiverGeometry(): THREE.BufferGeometry {
   const pushQuad = (a: number, b: number, c: number, d: number) => {
     indices.push(a, b, d, a, d, c)
   }
+  const pushGrid = (rows: number[][]) => {
+    for (let k = 0; k < rows.length - 1; k += 1) {
+      for (let j = 0; j < COLUMNS - 1; j += 1) {
+        pushQuad(rows[k][j], rows[k][j + 1], rows[k + 1][j], rows[k + 1][j + 1])
+      }
+    }
+  }
 
-  const [lipX, lipZ] = shorePoint(RIVER_EXIT_THETA, 0)
-  const centers = [
-    ...RIVER_PATH.map((node) => new THREE.Vector3(node.x, RIVER_LEVEL, node.z)),
-    new THREE.Vector3(lipX, RIVER_LEVEL, lipZ),
-  ]
-  const widths = [
-    ...RIVER_PATH.map((node) => node.width),
-    RIVER_PATH[RIVER_PATH.length - 1].width,
-  ]
-
-  const curve = new THREE.CatmullRomCurve3(centers)
-
+  const curve = new THREE.CatmullRomCurve3(
+    RIVER_PATH.map((node) => new THREE.Vector3(node.x, RIVER_LEVEL, node.z)),
+  )
+  const widths = RIVER_PATH.map((node) => node.width)
   const widthAt = (t: number) => {
     const s = t * (widths.length - 1)
     const i = Math.min(widths.length - 2, Math.floor(s))
     const f = s - i
     return widths[i] * (1 - f) + widths[i + 1] * f
   }
+  const offsetFactor = (j: number) => 1 - (2 * j) / (COLUMNS - 1)
 
-  const rows = 3
-  const rowIndices: number[][] = []
+  // Channel across the island top.
+  const channel: number[][] = []
   for (let k = 0; k <= CHANNEL_STATIONS; k += 1) {
     const t = k / CHANNEL_STATIONS
     const point = curve.getPointAt(t)
@@ -151,74 +208,95 @@ function buildRiverGeometry(): THREE.BufferGeometry {
     const perp = new THREE.Vector3(-tangent.z, 0, tangent.x).normalize()
     const half = widthAt(t) / 2
     const row: number[] = []
-    for (let j = 0; j < rows; j += 1) {
-      const offset = half * (1 - (2 * j) / (rows - 1))
-      const p = point.clone().addScaledVector(perp, offset)
-      const color = LAKE_DEEP.clone().lerp(LAKE_EDGE, Math.abs(offset) / half)
-      row.push(pushVertex(p, color))
+    for (let j = 0; j < COLUMNS; j += 1) {
+      const factor = offsetFactor(j)
+      const color = LAKE_DEEP.clone().lerp(LAKE_EDGE, Math.abs(factor))
+      row.push(pushVertex(point.clone().addScaledVector(perp, half * factor), color))
     }
-    rowIndices.push(row)
+    channel.push(row)
   }
 
-  for (let k = 0; k < CHANNEL_STATIONS; k += 1) {
-    for (let j = 0; j < rows - 1; j += 1) {
-      pushQuad(rowIndices[k][j], rowIndices[k][j + 1], rowIndices[k + 1][j], rowIndices[k + 1][j + 1])
+  // Waterfall: each column runs straight on from the channel and hugs the
+  // measured cliff surface, so no rock can poke through the water.
+  const end = curve.getPointAt(1)
+  const dir = curve.getTangentAt(1).setY(0).normalize()
+  const perp = new THREE.Vector3(-dir.z, 0, dir.x)
+  const halfW = widths[widths.length - 1] / 2
+  const depth = RIVER_LEVEL - ISLAND_TERRACES[ISLAND_TERRACES.length - 1].y
+
+  const columnOrigin = (lateral: number) => end.clone().addScaledVector(perp, halfW * lateral)
+  const spreadAt = (y: number) =>
+    1 + Math.min(1, Math.max(0, (RIVER_LEVEL - y) / depth)) * FALL_SPREAD
+
+  const rows: { y: number; color: THREE.Color; outset: number }[] = [
+    { y: RIVER_LEVEL, color: FOAM.clone().lerp(FALL_TOP, 0.4), outset: LIP_OUTSET },
+  ]
+  for (let ti = 0; ti < ISLAND_TERRACES.length - 1; ti += 1) {
+    const yTop = ISLAND_TERRACES[ti].y
+    const yBottom = ISLAND_TERRACES[ti + 1].y
+    for (let s = 1; s <= FALL_SUBSTEPS; s += 1) {
+      const y = yTop + ((yBottom - yTop) * s) / FALL_SUBSTEPS
+      const color = FALL_TOP.clone().lerp(FALL_BOTTOM, (RIVER_LEVEL - y) / depth)
+      color.offsetHSL(0, 0, ti % 2 === 0 ? 0.02 : -0.015)
+      // A little white water where the fall hits each ledge.
+      if (s === FALL_SUBSTEPS) color.lerp(FOAM, 0.3)
+      rows.push({ y, color, outset: FALL_OUTSET })
     }
   }
+  rows.push({ y: WATERFALL_BOTTOM, color: FALL_BOTTOM.clone().lerp(FOAM, 0.25), outset: FALL_OUTSET + VOID_DRIFT })
 
-  const endTangent = curve.getTangentAt(1)
-  const perp = new THREE.Vector3(-endTangent.z, 0, endTangent.x).normalize()
-  const halfW = RIVER_PATH[RIVER_PATH.length - 1].width / 2
-
-  const band = (terraceIndex: number) => {
-    const y = ISLAND_TERRACES[terraceIndex].y
-    const [cx, cz] = shorePoint(RIVER_EXIT_THETA, terraceIndex)
-    const radial = new THREE.Vector3(cx, 0, cz).normalize()
-    const ox = cx + radial.x * OUTSET
-    const oz = cz + radial.z * OUTSET
-    const half = halfW * (1 + terraceIndex * 0.05)
-    return {
-      center: new THREE.Vector3(ox, y, oz),
-      left: new THREE.Vector3(ox + perp.x * half, y, oz + perp.z * half),
-      right: new THREE.Vector3(ox - perp.x * half, y, oz - perp.z * half),
+  // How far out the rock reaches anywhere inside each cell of the water grid.
+  // A vertex that clears every cell around it keeps the whole sheet in front
+  // of the rock, since the sheet between vertices is just a blend of them.
+  const lateralAt = (k: number, j: number) => offsetFactor(j) * spreadAt(rows[k].y)
+  const cellReach = (k: number, j: number) => {
+    let best = 0
+    for (let a = 0; a <= CELL_SAMPLES; a += 1) {
+      const v = a / CELL_SAMPLES
+      const y = rows[k].y + (rows[k + 1].y - rows[k].y) * v
+      for (let b = 0; b <= CELL_SAMPLES; b += 1) {
+        const u = b / CELL_SAMPLES
+        const lateral =
+          (lateralAt(k, j) * (1 - v) + lateralAt(k + 1, j) * v) * (1 - u) +
+          (lateralAt(k, j + 1) * (1 - v) + lateralAt(k + 1, j + 1) * v) * u
+        const origin = columnOrigin(lateral)
+        best = Math.max(best, cliffReach(origin.x, origin.z, dir.x, dir.z, y))
+      }
     }
+    return best
   }
-
-  const bands = ISLAND_TERRACES.map((_, i) => band(i))
-  const bandVertices = bands.map((b, i) => {
-    const color = FALL_TOP.clone().lerp(FALL_BOTTOM, i / (bands.length - 1))
-    color.offsetHSL(0, 0, i % 2 === 0 ? 0.02 : -0.015)
-    return [pushVertex(b.left, color), pushVertex(b.right, color)] as const
-  })
-
-  for (let i = 0; i < bandVertices.length - 1; i += 1) {
-    const [topLeft, topRight] = bandVertices[i]
-    const [bottomLeft, bottomRight] = bandVertices[i + 1]
-    pushQuad(topLeft, topRight, bottomLeft, bottomRight)
-  }
-
-  const lowest = bands[bands.length - 1]
-  const outward = new THREE.Vector3(lowest.center.x, 0, lowest.center.z).normalize()
-  const toVoid = (edge: THREE.Vector3) =>
-    new THREE.Vector3(
-      edge.x + outward.x * 0.22,
-      WATERFALL_BOTTOM,
-      edge.z + outward.z * 0.22,
-    )
-  const bottomColor = FALL_BOTTOM.clone().lerp(FOAM, 0.25)
-  const [lowLeft, lowRight] = bandVertices[bandVertices.length - 1]
-  const voidLeft = pushVertex(toVoid(lowest.left), bottomColor)
-  const voidRight = pushVertex(toVoid(lowest.right), bottomColor)
-  pushQuad(lowLeft, lowRight, voidLeft, voidRight)
-
-  const foamBack = new THREE.Vector3(lipX, RIVER_LEVEL + 0.012, lipZ).addScaledVector(
-    endTangent,
-    -0.5,
+  const cells = Array.from({ length: rows.length - 1 }, (_, k) =>
+    Array.from({ length: COLUMNS - 1 }, (_, j) => cellReach(k, j)),
   )
-  const foamLeft = pushVertex(foamBack.clone().addScaledVector(perp, halfW), FOAM)
-  const foamRight = pushVertex(foamBack.clone().addScaledVector(perp, -halfW), FOAM)
-  const [lipLeft, lipRight] = bandVertices[0]
-  pushQuad(foamLeft, foamRight, lipLeft, lipRight)
+  const reach = rows.map((row, k) =>
+    Array.from({ length: COLUMNS }, (_, j) => {
+      let best = 0
+      for (const ck of [k - 1, k]) {
+        for (const cj of [j - 1, j]) {
+          if (cells[ck]?.[cj] !== undefined) best = Math.max(best, cells[ck][cj])
+        }
+      }
+      return best + row.outset
+    }),
+  )
+
+  // Water only falls outward: never let a column tuck back under an overhang.
+  for (let k = 1; k < reach.length; k += 1) {
+    reach[k] = reach[k].map((r, j) => Math.max(r, reach[k - 1][j]))
+  }
+
+  const fall: number[][] = [
+    channel[channel.length - 1],
+    ...rows.map((row, k) =>
+      reach[k].map((r, j) => {
+        const p = columnOrigin(lateralAt(k, j)).addScaledVector(dir, r).setY(row.y)
+        return pushVertex(p, row.color)
+      }),
+    ),
+  ]
+
+  pushGrid(channel)
+  pushGrid(fall)
 
   const geometry = new THREE.BufferGeometry()
   geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3))
