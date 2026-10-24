@@ -7,7 +7,9 @@ edition.workspace = true
 apalis.workspace = true
 apalis-postgres.workspace = true
 grpc.workspace = true
-xberg = { workspace = true, features = ["full"] }
+serde.workspace = true
+tokio.workspace = true
+xberg = { workspace = true, features = ["ocr", "pdf"] }
 sqlx.workspace = true
 
 anyhow = "1"

@@ -77,6 +77,7 @@
           commonArgs = {
             inherit src;
             strict-deps = true;
+            SQLX_OFFLINE = true;
             nativeBuildInputs = nativeLibs;
             buildInputs = linkLibs;
           } // ortEnv;
@@ -143,7 +144,7 @@
           backend-run = pkgs.writeShellApplication {
             name = "backend-run";
             # stdenv.cc provides the `cc` linker cargo needs outside the crane build.
-            runtimeInputs = [ toolchain pkgs.cargo-watch pkgs.stdenv.cc ];
+            runtimeInputs = [ toolchain pkgs.cargo-watch pkgs.stdenv.cc pkgs.cmake pkgs.pkg-config ];
             text = ''
               exec cargo watch -x run
             '';

@@ -10,14 +10,14 @@ edition = "2024"
 grpc = { path = "common/grpc" }
 
 prost = "0.14.4"
-tokio = "1.54.1"
+serde = { version = "1", features = ["derive"] }
+tokio = { version = "1.54.1", features = ["macros", "rt-multi-thread", "signal"] }
 tonic = "0.14.6"
 tonic-prost = "0.14.6"
 tonic-prost-build = "0.14.6"
 xberg = "1.3.10"
 
-sqlx = { version = "0.9", features = ["runtime-tokio", "tls-none", "postgres"] }
-tokio = { version = "1.54.1", features = ["macros", "rt-multi-thread", "signal"] }
+sqlx = { version = "0.9", default-features = false, features = ["runtime-tokio", "tls-none", "postgres"] }
 
 apalis = "1"
 apalis-postgres = "1"

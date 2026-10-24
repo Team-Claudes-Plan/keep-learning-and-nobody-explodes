@@ -1,16 +1,23 @@
 use apalis::prelude::{BoxDynError, Monitor, TaskSink, WorkerBuilder};
 use apalis_postgres::{Config, PostgresStorage};
+use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
+use xberg::{ExtractInput, ExtractionConfig, extract};
 
 const OCR_QUEUE: &str = "ocr";
 
-pub async fn run(pool: PgPool) -> Result<(), BoxDynError> {
+#[derive(Debug, Serialize, Deserialize)]
+struct OcrJob {
+    uri: String,
+}
+
+pub async fn run(pool: PgPool, poc_uri: String) -> Result<(), BoxDynError> {
     PostgresStorage::setup(&pool).await?;
 
     let mut backend =
-        PostgresStorage::<()>::new(&pool).with_config(Config::default().queue(OCR_QUEUE));
+        PostgresStorage::<OcrJob>::new(&pool).with_config(Config::default().queue(OCR_QUEUE));
 
-    backend.push(()).await?;
+    backend.push(OcrJob { uri: poc_uri }).await?;
     println!("  enqueued proof-of-concept OCR job");
 
     Monitor::new()
@@ -25,7 +32,13 @@ pub async fn run(pool: PgPool) -> Result<(), BoxDynError> {
     Ok(())
 }
 
-async fn process_ocr(_job: ()) -> Result<(), BoxDynError> {
-    println!("  processed proof-of-concept OCR job");
+async fn process_ocr(job: OcrJob) -> Result<(), BoxDynError> {
+    let config = ExtractionConfig::default();
+    let output = Box::pin(extract(ExtractInput::from_uri(job.uri), &config)).await?;
+    let document = output.results.first().ok_or_else(|| {
+        std::io::Error::other(format!("Xberg returned no document: {:?}", output.errors))
+    })?;
+
+    println!("{}", document.content);
     Ok(())
 }
