@@ -256,7 +256,9 @@ mod tests {
                 .expect("job queue should be set up");
             let state = WebhookState {
                 db: db.clone(),
-                backend: worker::backend(&db),
+                backend: worker::OcrBackend::new(db.pool()).with_config(
+                    apalis_postgres::Config::default().queue("webhook-test"),
+                ),
                 bucket: BUCKET.to_owned(),
                 token: TOKEN.to_owned(),
             };
