@@ -53,6 +53,7 @@
             S3_ACCESS_KEY = s3AccessKey;
             S3_SECRET_KEY = s3SecretKey;
             S3_BUCKET = s3Bucket;
+            SQLX_OFFLINE = "true";
           };
 
           # --- pinned Rust toolchain, read from rust-toolchain.toml in the repo root ---
