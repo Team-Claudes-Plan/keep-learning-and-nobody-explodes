@@ -24,6 +24,14 @@ export const BASE_DESIGNS: Record<string, BaseDesign> = {
     maps: ['albedo', 'emissive'],
     tiling: { tileWidth: 1.3, tileHeight: 0.9 },
   },
+
+  'house-math-tower': {
+    id: 'house-math-tower',
+    label: 'Aged Prussian Blue Mathematical Academy Tower',
+    material: { tint: '#2d5e9f', roughness: 0.82, metalness: 0.18, emissiveIntensity: 0.8 },
+    maps: ['albedo', 'emissive', 'normal', 'roughness'],
+    tiling: { tileWidth: 1.0, tileHeight: 1.4 },
+  },
 }
 
 export function resolveDesign(id: string): BaseDesign {

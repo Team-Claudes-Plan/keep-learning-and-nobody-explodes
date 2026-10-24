@@ -86,14 +86,14 @@ function shade(hex, amount) {
   return hexToRgb(hex).map((c) => Math.max(0, Math.min(255, Math.round(c + amount * 255))))
 }
 
-function createBuffer(size) {
-  return { size, data: Buffer.alloc(size * size * 3), fill([r, g, b]) { this.data.fill(Buffer.from([r, g, b])) } }
+function createBuffer(width, height) {
+  return { width, height, data: Buffer.alloc(width * height * 3) }
 }
 
 function fillRect(buffer, x, y, w, h, [r, g, b]) {
-  for (let py = Math.max(0, y); py < Math.min(buffer.size, y + h); py += 1) {
-    for (let px = Math.max(0, x); px < Math.min(buffer.size, x + w); px += 1) {
-      const index = (py * buffer.size + px) * 3
+  for (let py = Math.max(0, y); py < Math.min(buffer.height, y + h); py += 1) {
+    for (let px = Math.max(0, x); px < Math.min(buffer.width, x + w); px += 1) {
+      const index = (py * buffer.width + px) * 3
       buffer.data[index] = r
       buffer.data[index + 1] = g
       buffer.data[index + 2] = b
@@ -101,29 +101,26 @@ function fillRect(buffer, x, y, w, h, [r, g, b]) {
   }
 }
 
-const SIZE = 256
+// Atlas layout (matches DEFAULT_WALL_ATLAS): outer wall = left half, inner wall = right half.
+const ATLAS_W = 512
+const ATLAS_H = 256
+const REGION_W = ATLAS_W / 2
 const COLS = 6
 const ROWS = 8
 
-function drawFacade({ tint, litColors, litChance, seed }) {
-  const random = mulberry32(hashString(seed))
-  const albedo = createBuffer(SIZE)
-  albedo.fill(shade(tint, -0.04))
-  const emissive = createBuffer(SIZE)
-  emissive.fill([0, 0, 0])
-
+function drawOuterRegion(albedo, emissive, { tint, litColors, litChance, random }, x0) {
   const windowColor = shade(tint, -0.28)
   const frameColor = shade(tint, 0.08)
-  const tile = SIZE / COLS
+  const tile = REGION_W / COLS
 
   for (let row = 0; row < ROWS; row += 1) {
-    const bandY = row * (SIZE / ROWS)
-    fillRect(albedo, 0, bandY, SIZE, SIZE / ROWS - tile * 0.6, frameColor)
+    const bandY = row * (ATLAS_H / ROWS)
+    fillRect(albedo, x0, bandY, REGION_W, ATLAS_H / ROWS - tile * 0.6, frameColor)
     for (let col = 0; col < COLS; col += 1) {
-      const x = col * tile + tile * 0.2
+      const x = x0 + col * tile + tile * 0.2
       const y = bandY + tile * 0.18
       const windowW = tile * 0.6
-      const windowH = SIZE / ROWS - tile * 0.9
+      const windowH = ATLAS_H / ROWS - tile * 0.9
       fillRect(albedo, x, y, windowW, windowH, windowColor)
       if (random() < litChance) {
         const color = hexToRgb(litColors[Math.floor(random() * litColors.length)])
@@ -131,20 +128,54 @@ function drawFacade({ tint, litColors, litChance, seed }) {
       }
     }
   }
-  return { albedo, emissive }
+}
+
+function drawInnerRegion(albedo, emissive, { tint, random }, x0) {
+  const base = shade(tint, 0.16)
+  const trim = shade(tint, -0.04)
+  const seam = shade(tint, 0.03)
+
+  fillRect(albedo, x0, 0, REGION_W, ATLAS_H, base)
+  fillRect(albedo, x0, ATLAS_H * 0.66, REGION_W, ATLAS_H * 0.34, trim)
+  fillRect(albedo, x0, ATLAS_H * 0.66, REGION_W, 6, shade(tint, 0.24))
+
+  const panels = 4
+  for (let i = 1; i < panels; i += 1) {
+    fillRect(albedo, x0 + i * (REGION_W / panels), 0, 4, ATLAS_H, seam)
+  }
+
+  if (random() < 0.7) {
+    fillRect(emissive, x0 + REGION_W * 0.12, ATLAS_H * 0.12, REGION_W * 0.76, 8, [255, 230, 163])
+  }
 }
 
 const HOUSES = [
   { id: 'house-a', tint: '#33405c', litColors: ['#6ea8fe', '#ffe6a3', '#bfe9ff'], litChance: 0.55 },
   { id: 'house-b', tint: '#4a5468', litColors: ['#ffb347', '#ff8f4f', '#ffe6a3'], litChance: 0.5 },
   { id: 'house-c', tint: '#4a6b3f', litColors: ['#8fe6a8', '#d7f7a3', '#bfe9ff'], litChance: 0.6 },
+  { id: 'house-math-tower', tint: '#2d5e9f', litColors: ['#4f8cff', '#bfe9ff', '#ffe6a3'], litChance: 0.5 },
 ]
 
 for (const house of HOUSES) {
-  const { albedo, emissive } = drawFacade({ ...house, seed: house.id })
+  const random = mulberry32(hashString(house.id))
+  const albedo = createBuffer(ATLAS_W, ATLAS_H)
+  const emissive = createBuffer(ATLAS_W, ATLAS_H)
+  const normal = createBuffer(ATLAS_W, ATLAS_H)
+  const roughness = createBuffer(ATLAS_W, ATLAS_H)
+
+  albedo.data.fill(Buffer.from(shade(house.tint, -0.04)))
+  emissive.data.fill(Buffer.from([0, 0, 0]))
+  normal.data.fill(Buffer.from([128, 128, 255]))
+  roughness.data.fill(Buffer.from([190, 190, 190]))
+
+  drawOuterRegion(albedo, emissive, { ...house, random }, 0)
+  drawInnerRegion(albedo, emissive, { ...house, random }, REGION_W)
+
   const dir = resolve(assetsDir, house.id)
   mkdirSync(dir, { recursive: true })
-  writeFileSync(resolve(dir, 'albedo.png'), encodePng(SIZE, SIZE, albedo.data))
-  writeFileSync(resolve(dir, 'emissive.png'), encodePng(SIZE, SIZE, emissive.data))
-  console.log(`generated ${house.id}/albedo.png + emissive.png`)
+  writeFileSync(resolve(dir, 'albedo.png'), encodePng(ATLAS_W, ATLAS_H, albedo.data))
+  writeFileSync(resolve(dir, 'emissive.png'), encodePng(ATLAS_W, ATLAS_H, emissive.data))
+  writeFileSync(resolve(dir, 'normal.png'), encodePng(ATLAS_W, ATLAS_H, normal.data))
+  writeFileSync(resolve(dir, 'roughness.png'), encodePng(ATLAS_W, ATLAS_H, roughness.data))
+  console.log(`generated ${house.id}/{albedo,emissive,normal,roughness}.png`)
 }
