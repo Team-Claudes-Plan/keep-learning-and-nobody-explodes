@@ -5,6 +5,8 @@ edition.workspace = true
 
 [dependencies]
 grpc.workspace = true
+tokio.workspace = true
+xberg = { workspace = true, features = ["full"] }
 
 [lints]
 workspace = true
