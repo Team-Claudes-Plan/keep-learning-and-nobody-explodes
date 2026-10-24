@@ -1,0 +1,54 @@
+[
+  {
+    "type": "single_choice",
+    "id": "questionid11117",
+    "prompt": "What is the correct answer?",
+    "options": ["This one", "No, this one", "Nope, its this", "... or this"]
+  },
+  {
+    "type": "multiple_choice",
+    "id": "questionid11118",
+    "prompt": "What are the correct answers?",
+    "options": ["This one", "No, this one", "Also, its this", "... and this"]
+  },
+  {
+    "type": "true_false",
+    "id": "questionid11119",
+    "statements": ["This sentence is false.", "Trees are humans.", "Water is blue.", "Hallo"]
+  },
+  {
+    "type": "text_input",
+    "id": "questionid11120",
+    "prompt": "What is my last name?"
+  },
+  {
+    "type": "number_input",
+    "id": "questionid11121",
+    "prompt": "2+2",
+    "unit": null
+  },
+  {
+    "type": "matching",
+    "id": "questionid11122",
+    "left": ["Begriff 1", "Begriff 2", "Begriff 3"],
+    "right": ["Definition 1", "Definition 2", "Definition 3"]
+  },
+  {
+    "type": "grouping",
+    "id": "questionid11123",
+    "categories": ["Gruppe 1", "Gruppe 2"],
+    "items": ["Ding 1", "Ding 2", "Ding 3", "Ding 4", "Ding 5"]
+  },
+  {
+    "type": "coords",
+    "id": "questionid11124",
+    "prompt": "Wo ist X?",
+    "image": "https://server/image.png"
+  },
+  {
+    "type": "order",
+    "id": "questionid11125",
+    "prompt": "Order these items",
+    "items": ["Ding 1", "Ding 2", "Ding 3"]
+  }
+]

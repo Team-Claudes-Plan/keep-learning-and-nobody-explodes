@@ -15,3 +15,6 @@ target/
 
 # Local dev service data (postgres, rustfs, logs)
 .data/
+
+# macOS
+.DS_Store

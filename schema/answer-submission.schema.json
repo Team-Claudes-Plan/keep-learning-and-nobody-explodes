@@ -1,0 +1,323 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "answer-submission.schema.json",
+  "title": "AnswerSubmission",
+  "description": "Request body of POST /questions/{questionId}/answer (frontend -> backend). `answer` is the value itself; indices refer to the arrays exactly as the question was delivered.",
+  "type": "object",
+  "required": [
+    "questionId",
+    "type",
+    "answer"
+  ],
+  "properties": {
+    "type": {
+      "enum": [
+        "single_choice",
+        "multiple_choice",
+        "true_false",
+        "text_input",
+        "number_input",
+        "matching",
+        "grouping",
+        "coords",
+        "order"
+      ]
+    }
+  },
+  "oneOf": [
+    {
+      "$ref": "#/$defs/submission_single_choice"
+    },
+    {
+      "$ref": "#/$defs/submission_multiple_choice"
+    },
+    {
+      "$ref": "#/$defs/submission_true_false"
+    },
+    {
+      "$ref": "#/$defs/submission_text_input"
+    },
+    {
+      "$ref": "#/$defs/submission_number_input"
+    },
+    {
+      "$ref": "#/$defs/submission_matching"
+    },
+    {
+      "$ref": "#/$defs/submission_grouping"
+    },
+    {
+      "$ref": "#/$defs/submission_coords"
+    },
+    {
+      "$ref": "#/$defs/submission_order"
+    }
+  ],
+  "$defs": {
+    "index": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "percent": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 100
+    },
+    "answer_single_choice": {
+      "description": "Index of the chosen option.",
+      "$ref": "#/$defs/index"
+    },
+    "answer_multiple_choice": {
+      "description": "Indices of all chosen options, ascending. Empty if none.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/index"
+      },
+      "uniqueItems": true
+    },
+    "answer_true_false": {
+      "description": "One value per statement, same order as `statements`.",
+      "type": "array",
+      "items": {
+        "type": "boolean"
+      },
+      "minItems": 1
+    },
+    "answer_text_input": {
+      "description": "Entered text, trimmed. Upper case unless the question has caseSensitive: true.",
+      "type": "string"
+    },
+    "answer_number_input": {
+      "description": "Entered number.",
+      "type": "number"
+    },
+    "answer_matching": {
+      "description": "Index into `right` for each element of `left`, same order as `left`.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/index"
+      }
+    },
+    "answer_grouping": {
+      "description": "Category index for each item, same order as `items`.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/index"
+      }
+    },
+    "answer_coords": {
+      "description": "Clicked position in percent of the image size (0 = left/top).",
+      "type": "object",
+      "required": [
+        "x",
+        "y"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "x": {
+          "$ref": "#/$defs/percent"
+        },
+        "y": {
+          "$ref": "#/$defs/percent"
+        }
+      }
+    },
+    "answer_order": {
+      "description": "Indices into `items` in the chosen order; every index exactly once.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/index"
+      },
+      "uniqueItems": true
+    },
+    "submission_single_choice": {
+      "type": "object",
+      "required": [
+        "questionId",
+        "type",
+        "answer"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "questionId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "type": {
+          "const": "single_choice"
+        },
+        "answer": {
+          "$ref": "#/$defs/answer_single_choice"
+        }
+      }
+    },
+    "submission_multiple_choice": {
+      "type": "object",
+      "required": [
+        "questionId",
+        "type",
+        "answer"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "questionId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "type": {
+          "const": "multiple_choice"
+        },
+        "answer": {
+          "$ref": "#/$defs/answer_multiple_choice"
+        }
+      }
+    },
+    "submission_true_false": {
+      "type": "object",
+      "required": [
+        "questionId",
+        "type",
+        "answer"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "questionId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "type": {
+          "const": "true_false"
+        },
+        "answer": {
+          "$ref": "#/$defs/answer_true_false"
+        }
+      }
+    },
+    "submission_text_input": {
+      "type": "object",
+      "required": [
+        "questionId",
+        "type",
+        "answer"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "questionId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "type": {
+          "const": "text_input"
+        },
+        "answer": {
+          "$ref": "#/$defs/answer_text_input"
+        }
+      }
+    },
+    "submission_number_input": {
+      "type": "object",
+      "required": [
+        "questionId",
+        "type",
+        "answer"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "questionId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "type": {
+          "const": "number_input"
+        },
+        "answer": {
+          "$ref": "#/$defs/answer_number_input"
+        }
+      }
+    },
+    "submission_matching": {
+      "type": "object",
+      "required": [
+        "questionId",
+        "type",
+        "answer"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "questionId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "type": {
+          "const": "matching"
+        },
+        "answer": {
+          "$ref": "#/$defs/answer_matching"
+        }
+      }
+    },
+    "submission_grouping": {
+      "type": "object",
+      "required": [
+        "questionId",
+        "type",
+        "answer"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "questionId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "type": {
+          "const": "grouping"
+        },
+        "answer": {
+          "$ref": "#/$defs/answer_grouping"
+        }
+      }
+    },
+    "submission_coords": {
+      "type": "object",
+      "required": [
+        "questionId",
+        "type",
+        "answer"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "questionId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "type": {
+          "const": "coords"
+        },
+        "answer": {
+          "$ref": "#/$defs/answer_coords"
+        }
+      }
+    },
+    "submission_order": {
+      "type": "object",
+      "required": [
+        "questionId",
+        "type",
+        "answer"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "questionId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "type": {
+          "const": "order"
+        },
+        "answer": {
+          "$ref": "#/$defs/answer_order"
+        }
+      }
+    }
+  }
+}
