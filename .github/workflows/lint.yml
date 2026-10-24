@@ -30,7 +30,6 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           cmd-format: "nix develop -c {0}"
-          key: ${{ hashFiles('flake.lock', 'flake.nix') }}
           cache-bin: false
           cache-on-failure: true
 
