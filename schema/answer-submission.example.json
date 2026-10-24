@@ -1,0 +1,47 @@
+[
+  {
+    "questionId": "questionid11117",
+    "type": "single_choice",
+    "answer": 1
+  },
+  {
+    "questionId": "questionid11118",
+    "type": "multiple_choice",
+    "answer": [0, 2, 3]
+  },
+  {
+    "questionId": "questionid11119",
+    "type": "true_false",
+    "answer": [false, false, true, true]
+  },
+  {
+    "questionId": "questionid11120",
+    "type": "text_input",
+    "answer": "MUSTERMANN"
+  },
+  {
+    "questionId": "questionid11121",
+    "type": "number_input",
+    "answer": 4
+  },
+  {
+    "questionId": "questionid11122",
+    "type": "matching",
+    "answer": [2, 0, 1]
+  },
+  {
+    "questionId": "questionid11123",
+    "type": "grouping",
+    "answer": [0, 1, 1, 0, 1]
+  },
+  {
+    "questionId": "questionid11124",
+    "type": "coords",
+    "answer": { "x": 62.5, "y": 40 }
+  },
+  {
+    "questionId": "questionid11125",
+    "type": "order",
+    "answer": [2, 0, 1]
+  }
+]

@@ -120,34 +120,28 @@ const COORDS_TOLERANCE = 8
 
 // Mock-only solutions so the UI can give feedback without a backend.
 const SOLUTIONS: Record<string, AnswerMap[QuestionType]> = {
-  'mock-single-1': { optionIndex: 1 },
-  'mock-single-2': { optionIndex: 1 },
-  'mock-multi-1': { optionIndices: [0, 2, 4] },
-  'mock-multi-2': { optionIndices: [0, 2] },
-  'mock-tf-1': { values: [true, false, true] },
-  'mock-text-1': { text: 'Paris' },
-  'mock-text-2': { text: 'Eisen' },
-  'mock-order-2': { order: [1, 3, 0, 2] },
-  'mock-match-2': { pairs: [{ left: 0, right: 1 }, { left: 1, right: 3 }, { left: 2, right: 0 }, { left: 3, right: 2 }] },
-  'mock-group-2': { assignments: [0, 1, 2, 0, 1, 2] },
-  'mock-tf-2': { values: [false, true] },
-  'mock-num-1': { value: 1440 },
-  'mock-num-2': { value: 8 },
-  'mock-match-1': { pairs: [{ left: 0, right: 1 }, { left: 1, right: 2 }, { left: 2, right: 0 }] },
-  'mock-group-1': { assignments: [0, 1, 0, 1, 0] },
-  'mock-order-1': { order: [1, 0, 2] },
+  'mock-single-1': 1,
+  'mock-single-2': 1,
+  'mock-multi-1': [0, 2, 4],
+  'mock-multi-2': [0, 2],
+  'mock-tf-1': [true, false, true],
+  'mock-text-1': 'Paris',
+  'mock-text-2': 'Eisen',
+  'mock-order-2': [1, 3, 0, 2],
+  'mock-match-2': [1, 3, 0, 2],
+  'mock-group-2': [0, 1, 2, 0, 1, 2],
+  'mock-tf-2': [false, true],
+  'mock-num-1': 1440,
+  'mock-num-2': 8,
+  'mock-match-1': [1, 2, 0],
+  'mock-group-1': [0, 1, 0, 1, 0],
+  'mock-order-1': [1, 0, 2],
 }
 
 function normalize(submission: AnswerSubmission): unknown {
-  const { answer } = submission
-  if (submission.type === 'text_input') return { text: submission.answer.text.trim().toLowerCase() }
-  if (submission.type === 'multiple_choice') {
-    return { optionIndices: [...submission.answer.optionIndices].sort((a, b) => a - b) }
-  }
-  if (submission.type === 'matching') {
-    return { pairs: [...submission.answer.pairs].sort((a, b) => a.left - b.left) }
-  }
-  return answer
+  if (submission.type === 'text_input') return submission.answer.trim().toLowerCase()
+  if (submission.type === 'multiple_choice') return [...submission.answer].sort((a, b) => a - b)
+  return submission.answer
 }
 
 function sameAnswer(submission: AnswerSubmission, solution: AnswerMap[QuestionType]) {

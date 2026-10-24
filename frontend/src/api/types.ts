@@ -78,20 +78,24 @@ export type Question =
 
 export type QuestionType = Question['type']
 
+/** The answer value itself per question type (see schema/answer-submission.schema.json). */
 export type AnswerMap = {
-  single_choice: { optionIndex: number }
-  multiple_choice: { optionIndices: number[] }
+  /** Index of the chosen option. */
+  single_choice: number
+  /** Indices of the chosen options, ascending. */
+  multiple_choice: number[]
   /** One value per statement, same order. */
-  true_false: { values: boolean[] }
-  text_input: { text: string }
-  number_input: { value: number }
-  matching: { pairs: { left: number; right: number }[] }
+  true_false: boolean[]
+  text_input: string
+  number_input: number
+  /** Index into `right` per element of `left`, same order as `left`. */
+  matching: number[]
   /** Category index per item, same order as items. */
-  grouping: { assignments: number[] }
+  grouping: number[]
   /** Percent of the image size. */
   coords: { x: number; y: number }
   /** Item indices in the chosen order. */
-  order: { order: number[] }
+  order: number[]
 }
 
 export type AnswerSubmission = {

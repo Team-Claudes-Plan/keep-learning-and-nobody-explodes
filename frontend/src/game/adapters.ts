@@ -28,7 +28,7 @@ export function tasksFor(question: Question): Task[] {
         task<'pick'>({
           prompt: question.prompt,
           primitive: { kind: 'pick', mode: 'one', items: question.options },
-          toSubmission: ([optionIndex]) => ({ questionId, type: 'single_choice', answer: { optionIndex } }),
+          toSubmission: ([optionIndex]) => ({ questionId, type: 'single_choice', answer: optionIndex }),
         }),
       ]
 
@@ -40,7 +40,7 @@ export function tasksFor(question: Question): Task[] {
           toSubmission: (optionIndices) => ({
             questionId,
             type: 'multiple_choice',
-            answer: { optionIndices: [...optionIndices].sort((a, b) => a - b) },
+            answer: [...optionIndices].sort((a, b) => a - b),
           }),
         }),
         task<'pick'>({
@@ -49,7 +49,7 @@ export function tasksFor(question: Question): Task[] {
           toSubmission: (wrong) => ({
             questionId,
             type: 'multiple_choice',
-            answer: { optionIndices: question.options.map((_, i) => i).filter((i) => !wrong.includes(i)) },
+            answer: question.options.map((_, i) => i).filter((i) => !wrong.includes(i)),
           }),
         }),
       ]
@@ -69,7 +69,7 @@ export function tasksFor(question: Question): Task[] {
           toSubmission: (picked) => ({
             questionId,
             type: 'true_false',
-            answer: { values: question.statements.map((_, i) => picked.includes(i)) },
+            answer: question.statements.map((_, i) => picked.includes(i)),
           }),
         }),
         task<'pick'>({
@@ -78,7 +78,7 @@ export function tasksFor(question: Question): Task[] {
           toSubmission: (picked) => ({
             questionId,
             type: 'true_false',
-            answer: { values: question.statements.map((_, i) => !picked.includes(i)) },
+            answer: question.statements.map((_, i) => !picked.includes(i)),
           }),
         }),
         task<'assign'>({
@@ -87,7 +87,7 @@ export function tasksFor(question: Question): Task[] {
           toSubmission: (targets) => ({
             questionId,
             type: 'true_false',
-            answer: { values: targets.map((t) => t === 0) },
+            answer: targets.map((t) => t === 0),
           }),
         }),
       ]
@@ -97,7 +97,7 @@ export function tasksFor(question: Question): Task[] {
         task<'number'>({
           prompt: question.prompt,
           primitive: { kind: 'number', unit: question.unit },
-          toSubmission: (value) => ({ questionId, type: 'number_input', answer: { value: value ?? 0 } }),
+          toSubmission: (value) => ({ questionId, type: 'number_input', answer: value ?? 0 }),
         }),
       ]
 
@@ -109,7 +109,7 @@ export function tasksFor(question: Question): Task[] {
           toSubmission: (targets) => ({
             questionId,
             type: 'matching',
-            answer: { pairs: targets.map((right, left) => ({ left, right: right ?? -1 })) },
+            answer: targets.map((right) => right ?? -1),
           }),
         }),
       ]
@@ -122,7 +122,7 @@ export function tasksFor(question: Question): Task[] {
           toSubmission: (targets) => ({
             questionId,
             type: 'grouping',
-            answer: { assignments: targets.map((t) => t ?? -1) },
+            answer: targets.map((t) => t ?? -1),
           }),
         }),
       ]
@@ -132,7 +132,7 @@ export function tasksFor(question: Question): Task[] {
         task<'text'>({
           prompt: question.prompt,
           primitive: { kind: 'text', uppercase: !question.caseSensitive },
-          toSubmission: (text) => ({ questionId, type: 'text_input', answer: { text: text.trim() } }),
+          toSubmission: (text) => ({ questionId, type: 'text_input', answer: text.trim() }),
         }),
       ]
 
@@ -141,7 +141,7 @@ export function tasksFor(question: Question): Task[] {
         task<'sequence'>({
           prompt: question.prompt,
           primitive: { kind: 'sequence', items: question.items },
-          toSubmission: (order) => ({ questionId, type: 'order', answer: { order } }),
+          toSubmission: (order) => ({ questionId, type: 'order', answer: order }),
         }),
       ]
 

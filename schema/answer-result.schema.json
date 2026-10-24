@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "answer-result.schema.json",
+  "title": "AnswerResult",
+  "description": "Response of POST /questions/{questionId}/answer (backend -> frontend).",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "correct": {
+      "type": "boolean",
+      "description": "Whether the answer was correct. If omitted, the frontend only shows 'Antwort gesendet'."
+    },
+    "solution": {
+      "description": "Optional: the correct answer in the same shape as the submitted `answer`, so the frontend can show what was wrong.",
+      "anyOf": [
+        {
+          "$ref": "answer-submission.schema.json#/$defs/answer_single_choice"
+        },
+        {
+          "$ref": "answer-submission.schema.json#/$defs/answer_multiple_choice"
+        },
+        {
+          "$ref": "answer-submission.schema.json#/$defs/answer_true_false"
+        },
+        {
+          "$ref": "answer-submission.schema.json#/$defs/answer_text_input"
+        },
+        {
+          "$ref": "answer-submission.schema.json#/$defs/answer_number_input"
+        },
+        {
+          "$ref": "answer-submission.schema.json#/$defs/answer_matching"
+        },
+        {
+          "$ref": "answer-submission.schema.json#/$defs/answer_grouping"
+        },
+        {
+          "$ref": "answer-submission.schema.json#/$defs/answer_coords"
+        },
+        {
+          "$ref": "answer-submission.schema.json#/$defs/answer_order"
+        }
+      ]
+    }
+  }
+}
