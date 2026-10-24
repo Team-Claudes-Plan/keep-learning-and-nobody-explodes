@@ -62,19 +62,33 @@ async fn upload(
         let Some(filename) = field.file_name().map(str::to_owned) else {
             continue;
         };
-        let content_type = field.content_type().unwrap_or(FALLBACK_CONTENT_TYPE).to_owned();
+        let content_type = field
+            .content_type()
+            .unwrap_or(FALLBACK_CONTENT_TYPE)
+            .to_owned();
         let data = field.bytes().await?;
         let size = data.len();
 
-        let key = format!("uploads/{}/{}", Uuid::new_v4(), sanitize_filename(&filename));
+        let key = format!(
+            "uploads/{}/{}",
+            Uuid::new_v4(),
+            sanitize_filename(&filename)
+        );
         store.put(&key, &content_type, data).await?;
 
         tracing::info!(name: "upload.stored", key = %key, size, "stored uploaded file");
-        objects.push(StoredObject { key, filename, content_type, size });
+        objects.push(StoredObject {
+            key,
+            filename,
+            content_type,
+            size,
+        });
     }
 
     if objects.is_empty() {
-        return Err(UploadError::invalid_request("no file part found in request"));
+        return Err(UploadError::invalid_request(
+            "no file part found in request",
+        ));
     }
     Ok(Json(UploadResponse { objects }))
 }
@@ -84,11 +98,21 @@ fn sanitize_filename(name: &str) -> String {
     let base = name.rsplit(['/', '\\']).next().unwrap_or(name);
     let cleaned: String = base
         .chars()
-        .map(|c| if c.is_alphanumeric() || matches!(c, '.' | '-' | '_') { c } else { '_' })
+        .map(|c| {
+            if c.is_alphanumeric() || matches!(c, '.' | '-' | '_') {
+                c
+            } else {
+                '_'
+            }
+        })
         .collect();
     let cleaned = cleaned.trim_start_matches('.');
 
-    if cleaned.is_empty() { FALLBACK_FILENAME.to_owned() } else { cleaned.to_owned() }
+    if cleaned.is_empty() {
+        FALLBACK_FILENAME.to_owned()
+    } else {
+        cleaned.to_owned()
+    }
 }
 
 #[cfg(test)]
