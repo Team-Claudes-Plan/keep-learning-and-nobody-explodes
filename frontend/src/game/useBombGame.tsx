@@ -1,12 +1,13 @@
 import { useEffect, useState } from 'react'
 import { fetchQuestions, submitAnswer } from '../api/client'
-import type { AnswerResult, AnswerSubmission, Question } from '../api/types'
+import type { AnswerResult, AnswerSubmission, Question, QuestionType } from '../api/types'
 import { submissionFor } from './adapters'
 import { BOMB_SLOTS, type SlotStatus } from './Bomb3D'
 import LockButton3D from './modules/LockButton3D'
 import { describeAnswer } from './describe'
+import { MODULES } from './modules'
 import type { ModuleDef } from './modules/types'
-import { planBomb, type PlannedModule } from './plan'
+import { planBomb, planForType, playableTypes, type PlannedModule } from './plan'
 import { initialValue, isComplete, submitsImmediately, type AnyValue } from './primitives'
 
 const BOMB_SIZE = 5
@@ -20,6 +21,9 @@ type Slot = PlannedModule & {
   submission?: AnswerSubmission
   result?: AnswerResult
 }
+
+/** Test bar: a random bomb, or every task variant of one question type in every fitting module. */
+export type Mode = 'random' | QuestionType
 
 type Load =
   | { status: 'loading' }
@@ -39,23 +43,43 @@ type BombGameOptions = {
   view?: 'solo' | 'defuser'
   /** Timer stands still, e.g. while the bomb is still lying on the table. */
   paused?: boolean
+  /** Shows the test bar to pick a question type and click through its tasks. */
+  testBar?: boolean
+  /** Practice round (e.g. koop with a question type): no timer, no explosion. */
+  practice?: boolean
 }
 
 /** Game state of one bomb: questions, modules on it, timer, strikes and the module that is zoomed in on. */
-export function useBombGame({ modules, plan: fixedPlan, view = 'solo', paused = false }: BombGameOptions) {
+export function useBombGame({
+  modules,
+  plan: fixedPlan,
+  view = 'solo',
+  paused = false,
+  testBar = false,
+  practice = false,
+}: BombGameOptions) {
   const [round, setRound] = useState(0)
   const [load, setLoad] = useState<Load>({ status: 'loading' })
   const [slots, setSlots] = useState<Slot[]>([])
   const [timeLeft, setTimeLeft] = useState(BOMB_SECONDS)
   /** Index of the module shown large (zoomed in on the bomb); null = bomb overview. */
   const [expanded, setExpanded] = useState<number | null>(null)
+  const [mode, setMode] = useState<Mode>('random')
+  /** Modules the plan had before it was cut down to the slots on the bomb. */
+  const [plannedCount, setPlannedCount] = useState(0)
 
   useEffect(() => {
     const controller = new AbortController()
     fetchQuestions(controller.signal)
       .then((questions) => {
         // Only as many modules as there are slots on the bomb.
-        const plan = (fixedPlan ? fixedPlan(questions) : planBomb(questions, modules, BOMB_SIZE)).slice(0, BOMB_SLOTS)
+        const full = fixedPlan
+          ? fixedPlan(questions)
+          : mode === 'random'
+            ? planBomb(questions, modules, BOMB_SIZE)
+            : planForType(questions, MODULES, mode) // testing a type: every module that can play it
+        setPlannedCount(full.length)
+        const plan = full.slice(0, BOMB_SLOTS)
         setSlots(
           plan.map((p) => ({
             ...p,
@@ -71,12 +95,20 @@ export function useBombGame({ modules, plan: fixedPlan, view = 'solo', paused = 
         if (!controller.signal.aborted) setLoad({ status: 'error', message: errorMessage(err) })
       })
     return () => controller.abort()
-  }, [modules, round, fixedPlan])
+  }, [modules, round, fixedPlan, mode])
 
+  /** Testing one question type: no timer and no explosion, so every module can be tried. */
+  const testing = practice || (testBar && mode !== 'random')
   const strikes = slots.filter((s) => s.status === 'failed').length
-  const exploded = strikes >= MAX_STRIKES || timeLeft <= 0
+  const exploded = !testing && (strikes >= MAX_STRIKES || timeLeft <= 0)
   const finished = slots.length > 0 && slots.every((s) => s.status !== 'active' && s.status !== 'sending')
-  const running = load.status === 'ready' && slots.length > 0 && !exploded && !finished && !paused
+  /**
+   * How the round ended. Strikes and time come first: a third mistake on the last module still
+   * blows the bomb up. Testing a question type has no strikes, so it ends with a tally instead.
+   */
+  const outcome = exploded ? 'boom' : !finished ? null : testing ? 'test' : 'defused'
+  const correct = slots.filter((s) => s.status === 'solved').length
+  const running = load.status === 'ready' && slots.length > 0 && !exploded && !finished && !testing && !paused
 
   useEffect(() => {
     if (!running) return
@@ -87,6 +119,11 @@ export function useBombGame({ modules, plan: fixedPlan, view = 'solo', paused = 
   function restart() {
     setLoad({ status: 'loading' })
     setRound((r) => r + 1)
+  }
+
+  function changeMode(next: Mode) {
+    setLoad({ status: 'loading' })
+    setMode(next)
   }
 
   function updateSlot(index: number, patch: Partial<Slot>) {
@@ -110,12 +147,14 @@ export function useBombGame({ modules, plan: fixedPlan, view = 'solo', paused = 
     }
   }
 
+  /** Sends by itself, without "Abschließen": single choice on its first pick, or modules that finish when complete. */
   function isImmediate(slot: Slot) {
-    return submitsImmediately(slot.task.primitive) && !slot.module.confirm
+    return (submitsImmediately(slot.task.primitive) && !slot.module.confirm) || slot.module.submitWhenComplete === true
   }
 
   function changeValue(index: number, value: AnyValue) {
-    if (isImmediate(slots[index])) lockIn(index, value)
+    const slot = slots[index]
+    if (isImmediate(slot) && isComplete(slot.task.primitive, value)) lockIn(index, value)
     else updateSlot(index, { value })
   }
 
@@ -132,6 +171,7 @@ export function useBombGame({ modules, plan: fixedPlan, view = 'solo', paused = 
           onChange={(value) => changeValue(index, value)}
           disabled={!active || expanded !== index}
           onLockIn={() => lockIn(index)}
+          heading={slot.heading === undefined ? slot.task.prompt : (slot.heading ?? undefined)}
         />
         {/* Modules that need confirming get a real button on the plate (the defuser has no card). */}
         {!isImmediate(slot) && (
@@ -187,7 +227,8 @@ export function useBombGame({ modules, plan: fixedPlan, view = 'solo', paused = 
     )
   }
 
-  const focused = load.status === 'ready' ? expanded : null
+  // When it goes off, leave the module so the whole explosion is in view.
+  const focused = load.status === 'ready' && !exploded ? expanded : null
   const focusedOnBomb = focused !== null && slots[focused]?.module.component3d !== undefined
   const defuser = view === 'defuser'
   // 3D modules are worked on directly; 2D modules still need their controls in a card.
@@ -201,6 +242,17 @@ export function useBombGame({ modules, plan: fixedPlan, view = 'solo', paused = 
     strikes,
     exploded,
     finished,
+    /** How the round ended: 'boom', 'defused', 'test' or null while it is still running. */
+    outcome,
+    /** Modules solved correctly (test tally). */
+    correct,
+    mode,
+    /** Types at least one module can play (test bar). */
+    playable: load.status === 'ready' ? playableTypes(load.questions, MODULES) : new Set<QuestionType>(),
+    /** Modules on the bomb, and how many the plan had (the bomb has only BOMB_SLOTS slots). */
+    shown: slots.length,
+    planned: plannedCount,
+    changeMode,
     focused,
     focusedOnBomb,
     /** Card for the focused module (prompt, 2D controls, result), shown over or beside it. */

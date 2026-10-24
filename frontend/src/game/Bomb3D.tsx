@@ -3,6 +3,9 @@ import { Canvas, createPortal, useFrame, useThree, type ThreeEvent } from '@reac
 import { useGLTF } from '@react-three/drei'
 import * as THREE from 'three'
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js'
+import { playBoom, playClank } from './boom'
+import { shatterBomb, stepDebris, type Piece } from './debris'
+import Explosion from './Explosion'
 import { makeEmptyBay } from './emptyBay'
 
 export const BOMB_BASE = '/models/bomb'
@@ -43,9 +46,13 @@ type Bomb3DProps = {
   onBack: () => void
   timeLeft: number
   strikes: number
+  /** The bomb went off: the camera zooms out to a wide view, then the bomb blows apart. */
+  exploded?: boolean
+  /** Internal: called the moment the blast happens (after the camera has zoomed out). */
+  onBlast?: () => void
   /** UI of the focused module, shown over the zoomed-in module. */
   children?: ReactNode
-  /** Only the bomb: no hint, no back button (press Esc to zoom out). */
+  /** Only the bomb: no hint, no back button (click beside the module or press Esc to zoom out). */
   bare?: boolean
 }
 
@@ -236,6 +243,16 @@ export const SNAP_STRENGTH = 7
 /** How quickly a flick coasts out (per second). */
 export const COAST_DAMPING = 6
 
+/**
+ * Turning weights per input. A finger sweeps far over a small screen and swipes fast, so on touch
+ * the bomb turns less per pixel, a flick carries less speed (capped) and coasts out sooner.
+ */
+const TURN_WEIGHTS = {
+  mouse: { perPixel: 1, maxFlick: 8, coast: COAST_DAMPING },
+  touch: { perPixel: 0.45, maxFlick: 3, coast: 9 },
+} as const
+type TurnWeights = (typeof TURN_WEIGHTS)[keyof typeof TURN_WEIGHTS]
+
 /** Camera orbit around the bomb centre: angles in radians, pitch unbounded. */
 type Orbit = {
   target: THREE.Vector3
@@ -244,6 +261,8 @@ type Orbit = {
   distance: number
   enabled: boolean
   dragging: boolean
+  /** Weights of the input that turned the view last (mouse or touch). */
+  weights: TurnWeights
   /** Snapping starts after the first real turn, so the opening view stays as it is. */
   snap: boolean
   x: number
@@ -264,6 +283,7 @@ function initialOrbit(): Orbit {
     distance,
     enabled: true,
     dragging: false,
+    weights: TURN_WEIGHTS.mouse,
     snap: false,
     x: 0,
     y: 0,
@@ -281,6 +301,19 @@ function applyOrbit(o: Orbit, camera: THREE.Camera) {
   camera.lookAt(o.target)
 }
 
+const noRaycast = () => {}
+
+/**
+ * Shows or hides a static part of a module model. Hidden parts must not catch clicks either:
+ * three.js raycasts invisible meshes too, and they sit in front of the 3D controls that replace them.
+ */
+function showPart(part: THREE.Object3D, visible: boolean) {
+  part.visible = visible
+  part.traverse((object) => {
+    if ((object as THREE.Mesh).isMesh) object.raycast = visible ? THREE.Mesh.prototype.raycast : noRaycast
+  })
+}
+
 /** Gives every mesh under `root` its own copy of its material, so changes don't reach other bombs. */
 function ownMaterialsOf(root: THREE.Object3D) {
   root.traverse((object) => {
@@ -294,6 +327,10 @@ export type BombContentProps = Pick<Bomb3DProps, 'modules' | 'focused' | 'onSele
   interactive?: boolean
   /** Own copies of the model materials (for a bomb that gets its own reflections). */
   ownMaterials?: boolean
+  /** The bomb went off: no more hovering, picking or zooming. */
+  exploded?: boolean
+  /** Zoomed in, a click beside the module zooms out (when the caller can zoom out). */
+  onBack?: () => void
 }
 
 /**
@@ -309,6 +346,8 @@ export function useBombContent({
   strikes,
   interactive = true,
   ownMaterials = false,
+  exploded = false,
+  onBack,
 }: BombContentProps) {
   const { scene } = useGLTF(BOMB_URL)
   const bomb = useMemo(() => {
@@ -337,7 +376,7 @@ export function useBombContent({
       if (framesKey[i] === '1') {
         // The GLB scene wraps one module node; hide its static controls, keep plate, screws and LED.
         const module = root.getObjectByProperty('name', root.children[0]?.name) ?? root
-        for (const part of module.children) part.visible = MODULE_FRAME_PARTS.test(part.name)
+        for (const part of module.children) showPart(part, MODULE_FRAME_PARTS.test(part.name))
       }
       const leds: THREE.MeshStandardMaterial[] = []
       root.traverse((object) => {
@@ -393,7 +432,7 @@ export function useBombContent({
     instances.forEach((inst, i) => {
       if (framesKey[i] === '1') return
       for (const part of inst.root.children[0]?.children ?? []) {
-        part.visible = i !== index || MODULE_FRAME_PARTS.test(part.name)
+        showPart(part, i !== index || MODULE_FRAME_PARTS.test(part.name))
       }
     })
   }, [instances, framesKey, arrived, focused])
@@ -462,17 +501,35 @@ export function useBombContent({
 
   function handleClick(event: ThreeEvent<MouseEvent>) {
     const index = planIndexOf(event.object)
-    // Inside the focused module the click belongs to its controls: let it reach them untouched.
-    if (focused !== null && index === focused) return
     event.stopPropagation()
-    if (event.delta > 4) return // was a drag to rotate
-    if (focused !== null) return // zoomed in, only Esc (or the back button) zooms out
+    if (exploded) return
+    // Inside the focused module the click belongs to its controls (they handled it before it bubbled
+    // up here). Stopping it also keeps it from reaching the hull behind the module, which would zoom out.
+    if (focused !== null && index === focused) return
+    // A drag (turning the bomb, or a cable/block dragged out of the module) is never a click.
+    if (event.delta > 4) return
+    if (focused !== null) return onBack?.() // zoomed in: a click beside the module zooms out
     if (index !== null) onSelect(index)
   }
 
+  /** Whether the object (or a part it belongs to) reacts to clicks or drags: a control of a module. */
+  function isControl(object: THREE.Object3D | null) {
+    for (let o = object; o && o !== bomb; o = o.parent) {
+      const handlers = (o as THREE.Object3D & { __r3f?: { handlers?: Record<string, unknown> } }).__r3f?.handlers
+      if (handlers && (handlers.onClick || handlers.onPointerDown || handlers.onWheel)) return true
+    }
+    return false
+  }
+
   function handleHover(event: ThreeEvent<PointerEvent>) {
-    if (focused !== null) return // zoomed in: hovering is for the module's own controls
+    if (exploded) return
     event.stopPropagation()
+    // Zoomed in: a hand over every control of the open module, the plain pointer elsewhere.
+    // (The wire cutter hides the pointer over its module; it sets the cursor itself.)
+    if (focused !== null) {
+      document.body.style.cursor = planIndexOf(event.object) === focused && isControl(event.object) ? 'pointer' : ''
+      return
+    }
     const index = planIndexOf(event.object)
     setHovered(index)
     document.body.style.cursor = index !== null ? 'pointer' : ''
@@ -500,6 +557,15 @@ export function useBombContent({
                 <meshBasicMaterial transparent opacity={0} depthWrite={false} />
               </mesh>
             )}
+            {/* Any other module: a clear cover keeps its controls out of reach, so a click on it
+                always reaches the bomb (zoom in, or out when another module is open) instead of
+                being swallowed by a control that is not active yet. */}
+            {focused !== i && (
+              <mesh position={[0, 0, 0.3]}>
+                <planeGeometry args={[1.04, 1.04]} />
+                <meshBasicMaterial transparent opacity={0} depthWrite={false} />
+              </mesh>
+            )}
           </group>,
           slot,
         )}
@@ -521,9 +587,18 @@ export function useBombContent({
   return { bomb, setArrived, dimOn, portals, handlers }
 }
 
+/** Camera for the explosion: far enough out to see the bomb blow apart and its parts land, from a little above. */
+const BLAST_DISTANCE = 11
+const BLAST_PITCH = 0.5
+/** Seconds between the camera being out of the module and the blast, so it is pulled back by then. */
+const BLAST_DELAY = 0.9
+
+/** Height of the bomb's centre, where the explosion starts. */
+const BOMB_CENTER: [number, number, number] = [0, 1.55, 0]
+
 /** Bomb seen through an orbiting camera: drag to turn the camera around it, click a module to fly in. */
 function BombModel(props: Bomb3DProps) {
-  const { focused } = props
+  const { focused, exploded = false, onBlast } = props
   const { bomb, setArrived, dimOn, portals, handlers } = useBombContent(props)
 
   // Camera: fly to the focused module's face, and back to where the overview was left.
@@ -600,11 +675,12 @@ function BombModel(props: Bomb3DProps) {
     canvas.style.touchAction = 'none'
     const down = (e: PointerEvent) => {
       if (e.button !== 0 || !o.enabled) return
-      Object.assign(o, { dragging: true, x: e.clientX, y: e.clientY, t: e.timeStamp, vYaw: 0, vPitch: 0 })
+      const weights = e.pointerType === 'mouse' ? TURN_WEIGHTS.mouse : TURN_WEIGHTS.touch
+      Object.assign(o, { dragging: true, weights, x: e.clientX, y: e.clientY, t: e.timeStamp, vYaw: 0, vPitch: 0 })
     }
     const move = (e: PointerEvent) => {
       if (!o.dragging) return
-      const perPixel = (2 * Math.PI) / Math.max(canvas.clientHeight, 1)
+      const perPixel = ((2 * Math.PI) / Math.max(canvas.clientHeight, 1)) * o.weights.perPixel
       // upside down (past the top or bottom), sideways turns the other way round
       const dYaw = -(e.clientX - o.x) * perPixel * (Math.cos(o.pitch) >= 0 ? 1 : -1)
       const dPitch = (e.clientY - o.y) * perPixel
@@ -619,6 +695,10 @@ function BombModel(props: Bomb3DProps) {
       o.dragging = false
       // pointer held still before letting go: no flick
       if (e.timeStamp - o.t > 80) [o.vYaw, o.vPitch] = [0, 0]
+      // a flick never spins it wildly
+      const max = o.weights.maxFlick
+      o.vYaw = THREE.MathUtils.clamp(o.vYaw, -max, max)
+      o.vPitch = THREE.MathUtils.clamp(o.vPitch, -max, max)
     }
     const wheel = (e: WheelEvent) => {
       if (!o.enabled) return
@@ -646,7 +726,7 @@ function BombModel(props: Bomb3DProps) {
       const dt = Math.min(delta, 1 / 20)
       o.yaw += o.vYaw * dt
       o.pitch += o.vPitch * dt
-      const coast = Math.exp(-dt * COAST_DAMPING)
+      const coast = Math.exp(-dt * o.weights.coast)
       o.vYaw *= coast
       o.vPitch *= coast
       if (!o.snap) return applyOrbit(o, camera)
@@ -657,9 +737,53 @@ function BombModel(props: Bomb3DProps) {
     applyOrbit(o, camera)
   })
 
+  // Explosion, in two steps so it can be watched: first the camera leaves the module and pulls back
+  // to a wide view, then the bomb is torn apart (see debris.ts) and the pieces crash onto the floor
+  // and clatter. The bomb is a fresh clone for every round, so nothing has to be put back.
+  const [blasted, setBlasted] = useState(false)
+  const countdown = useRef(0)
+  /** The player grabbed the view during the explosion: stop steering the camera. */
+  const cameraTaken = useRef(false)
+  const debris = useRef<Piece[]>([])
+  const clanks = useRef(0)
+  useEffect(() => {
+    if (!blasted) return
+    playBoom()
+    debris.current = shatterBomb(bomb)
+  }, [blasted, bomb])
+
+  useFrame((_, delta) => {
+    if (!exploded) return
+    const dt = Math.min(delta, 1 / 30)
+    const o = orbit.current
+    if (o.dragging) cameraTaken.current = true
+    if (!flight.current && !cameraTaken.current) {
+      // wide view on the bomb (no snapping meanwhile, it would pull against this and jitter)
+      o.snap = false
+      const k = 1 - Math.exp(-dt * 2.2)
+      o.distance += (BLAST_DISTANCE - o.distance) * k
+      o.pitch += (BLAST_PITCH - o.pitch) * k
+    }
+    if (!blasted) {
+      // out of the module and pulled back first, then it goes off
+      if (!flight.current) countdown.current += dt
+      if (countdown.current > BLAST_DELAY) {
+        setBlasted(true)
+        onBlast?.()
+      }
+      return
+    }
+    // at most a few clangs per frame, or it turns into noise
+    clanks.current = 0
+    stepDebris(debris.current, dt, (speed) => {
+      if (clanks.current++ < 3) playClank(speed)
+    })
+  })
+
   return (
     <>
       {portals}
+      {blasted && <Explosion center={BOMB_CENTER} />}
       <primitive object={bomb} {...handlers} />
     </>
   )
@@ -668,6 +792,8 @@ function BombModel(props: Bomb3DProps) {
 /** One view: rotate the bomb, click a module to zoom in on it and show its UI on top. */
 export default function Bomb3D(props: Bomb3DProps) {
   const { focused, overlay = 'center', onBack, children, bare = false } = props
+  /** The blast itself happened (comes a moment after `exploded`, once the camera has zoomed out). */
+  const [blasted, setBlasted] = useState(false)
 
   useEffect(() => {
     if (focused === null) return
@@ -676,20 +802,38 @@ export default function Bomb3D(props: Bomb3DProps) {
     return () => window.removeEventListener('keydown', onKey)
   }, [focused, onBack])
 
+  // Clicks into empty space (beside the bomb) zoom out too, but only real clicks: the pointer must
+  // not have moved between press and release, so drags that end out there do not count.
+  const downAt = useRef({ x: 0, y: 0 })
+
   return (
-    <div className={`bomb-stage-3d ${focused !== null ? 'is-focused' : ''}`}>
+    <div
+      className={`bomb-stage-3d ${focused !== null ? 'is-focused' : ''}`}
+      onPointerDownCapture={(e) => void (downAt.current = { x: e.clientX, y: e.clientY })}
+    >
       <Canvas
         camera={{ position: OVERVIEW_CAMERA, fov: 40 }}
         dpr={[1, 2]}
+        onPointerMissed={(e) => {
+          const moved = Math.hypot(e.clientX - downAt.current.x, e.clientY - downAt.current.y)
+          if (focused !== null && moved <= 4) onBack()
+        }}
       >
         <ambientLight intensity={0.35} />
         <directionalLight position={[4, 8, 6]} intensity={1.6} />
         <directionalLight position={[-5, 3, -4]} intensity={0.5} />
         <RoomEnv />
+        {/* floor the bomb stands on (and its parts land on when it blows up) */}
+        <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.001, 0]} raycast={() => null}>
+          <circleGeometry args={[80, 64]} />
+          <meshStandardMaterial color="#15181d" roughness={0.95} />
+        </mesh>
         <Suspense fallback={null}>
-          <BombModel {...props} />
+          <BombModel {...props} onBlast={() => setBlasted(true)} />
         </Suspense>
       </Canvas>
+      {/* blinding flash over the whole screen when it goes off */}
+      {blasted && <div className="bomb-flash" aria-hidden />}
 
       {focused === null
         ? !bare && <span className="bomb-stage-hint">Ziehen zum Drehen · Modul anklicken</span>

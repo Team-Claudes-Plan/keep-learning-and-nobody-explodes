@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { ThreeEvent } from '@react-three/fiber'
-import { Text } from '@react-three/drei'
 import * as THREE from 'three'
-import { FACE, FONT_URL, HINT_COLOR, labelSize, ROWS_BOTTOM, ROWS_TOP, rowLayout, useModulePointer } from './module3d'
+import { FACE, FONT_URL, labelSize, ROWS_BOTTOM, ROWS_TOP, rowLayout, useModulePointer } from './module3d'
+import { Label, ModuleHeading } from './Label3D'
 import type { ModuleProps } from './types'
 
 // Same palette as the 2D cable module.
@@ -20,6 +20,19 @@ const CABLE_RADIUS = 0.013
 const SNAP_IN = 0.06
 /** ...and only snaps back out once pulled this far away, so it does not chatter at the edge. */
 const SNAP_OUT = 0.09
+
+/**
+ * Grouping (1:n) looks different from matching (1:1): instead of one round socket per target, each
+ * group is a terminal strip with a coloured tag and a port for every cable, so it is plain to see
+ * that several cables go into one group.
+ */
+const STRIP_LEFT = 0.0
+const STRIP_RIGHT = 0.21
+const STRIP_LABEL_X = 0.24
+const STRIP_LABEL_WIDTH = 0.2
+const STRIP_TAG = 0.018
+const STRIP_SNAP = 0.03
+const GROUP_COLORS = ['#5b8def', '#e0a83a', '#43b97f', '#c85dd8', '#e5484d', '#12a594']
 
 /** Cable in hand: the pointer position and the socket its end is snapped into, if any. */
 type Drag = { item: number; at: THREE.Vector3; snapped: number | null }
@@ -58,7 +71,7 @@ function Cable({ from, to, color, layer }: { from: THREE.Vector3; to: THREE.Vect
  * Patch panel on the bomb: drag a plug from the left onto a socket on the right.
  * Matching allows one cable per socket; grouping lets several cables share one.
  */
-export default function CableModule3D({ primitive, value, onChange, disabled }: ModuleProps<'assign'>) {
+export default function CableModule3D({ primitive, value, onChange, disabled, heading }: ModuleProps<'assign'>) {
   const group = useRef<THREE.Group>(null)
   const [drag, setDrag] = useState<Drag | null>(null)
 
@@ -68,6 +81,29 @@ export default function CableModule3D({ primitive, value, onChange, disabled }: 
   const right = useMemo(() => rowLayout(targetCount, 0.16), [targetCount])
   const plugs = useMemo(() => left.ys.map((y) => new THREE.Vector3(PLUG_X, y, Z)), [left])
   const sockets = useMemo(() => right.ys.map((y) => new THREE.Vector3(SOCKET_X, y, Z)), [right])
+  const grouping = !primitive.unique
+
+  // Terminal strips (grouping): one port per item, in a grid of up to three per row.
+  const strip = useMemo(() => {
+    const cols = Math.min(itemCount, 3)
+    const rows = Math.ceil(itemCount / cols)
+    const height = Math.min(0.22, right.step * 0.86, rows * 0.075)
+    const width = STRIP_RIGHT - STRIP_LEFT - STRIP_TAG
+    const port = (group: number, k: number) =>
+      new THREE.Vector3(
+        STRIP_LEFT + STRIP_TAG + (width / cols) * ((k % cols) + 0.5),
+        right.ys[group] + height / 2 - (height / rows) * (Math.floor(k / cols) + 0.5),
+        Z,
+      )
+    return { cols, rows, height, width, port, radius: Math.min(0.022, width / cols / 2.6, height / rows / 2.6) }
+  }, [itemCount, right])
+
+  /** Where item i's plugged-in cable ends: its socket, or its own port on the group's strip. */
+  function endOf(item: number, target: number, values: (number | null)[]) {
+    if (!grouping) return sockets[target]
+    const rank = values.slice(0, item).filter((v) => v === target).length
+    return strip.port(target, rank)
+  }
 
   // Dragging follows the real pointer (window events + a ray onto the module plate), so it never
   // breaks off when the pointer moves fast, leaves the module or passes over the HTML card.
@@ -75,8 +111,18 @@ export default function CableModule3D({ primitive, value, onChange, disabled }: 
   const latest = useRef({ value, onChange, unique: primitive.unique })
   latest.current = { value, onChange, unique: primitive.unique }
 
-  /** Socket the cable end at p is snapped into: stays in while close, else the nearest one in reach. */
+  /** Socket (or strip) the cable end at p is snapped into: stays in while close, else the nearest in reach. */
   function snapFor(p: THREE.Vector3, snapped: number | null) {
+    if (grouping) {
+      // anywhere on a strip (plus a margin; a wider one to leave it again)
+      const onStrip = (j: number, margin: number) =>
+        p.x > STRIP_LEFT - margin &&
+        p.x < STRIP_RIGHT + margin &&
+        Math.abs(p.y - right.ys[j]) < strip.height / 2 + margin
+      if (snapped !== null && onStrip(snapped, STRIP_SNAP * 2)) return snapped
+      const hit = right.ys.findIndex((_, j) => onStrip(j, STRIP_SNAP))
+      return hit === -1 ? null : hit
+    }
     const dist = (j: number) => Math.hypot(p.x - sockets[j].x, p.y - sockets[j].y)
     if (snapped !== null && dist(snapped) < SNAP_OUT) return snapped
     let best: number | null = null
@@ -136,19 +182,20 @@ export default function CableModule3D({ primitive, value, onChange, disabled }: 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dragItem])
 
+  const rightLabelX = grouping ? STRIP_LABEL_X : RIGHT_LABEL_X
+  const rightLabelWidth = grouping ? STRIP_LABEL_WIDTH : RIGHT_LABEL_WIDTH
+
   return (
     <group ref={group}>
-      <Text font={FONT_URL} position={[-0.44, 0.37, FACE + 0.012]} fontSize={0.032} anchorX="left" anchorY="middle" color={HINT_COLOR}>
-        Stecker in die passende Buchse ziehen.
-      </Text>
+      <ModuleHeading text={heading} />
 
       {/* dark label strips */}
       <mesh position={[LEFT_LABEL_X + LEFT_LABEL_WIDTH / 2 - 0.01, (ROWS_TOP + ROWS_BOTTOM) / 2, FACE + 0.004]}>
         <boxGeometry args={[LEFT_LABEL_WIDTH + 0.03, ROWS_TOP - ROWS_BOTTOM + 0.1, 0.008]} />
         <meshStandardMaterial color="#0d1014" roughness={0.8} />
       </mesh>
-      <mesh position={[RIGHT_LABEL_X + RIGHT_LABEL_WIDTH / 2 - 0.01, (ROWS_TOP + ROWS_BOTTOM) / 2, FACE + 0.004]}>
-        <boxGeometry args={[RIGHT_LABEL_WIDTH + 0.03, ROWS_TOP - ROWS_BOTTOM + 0.1, 0.008]} />
+      <mesh position={[rightLabelX + rightLabelWidth / 2 - 0.01, (ROWS_TOP + ROWS_BOTTOM) / 2, FACE + 0.004]}>
+        <boxGeometry args={[rightLabelWidth + 0.03, ROWS_TOP - ROWS_BOTTOM + 0.1, 0.008]} />
         <meshStandardMaterial color="#0d1014" roughness={0.8} />
       </mesh>
 
@@ -157,7 +204,7 @@ export default function CableModule3D({ primitive, value, onChange, disabled }: 
         const color = CABLE_COLORS[i % CABLE_COLORS.length]
         return (
           <group key={`item-${i}`}>
-            <Text
+            <Label
               font={FONT_URL}
               position={[LEFT_LABEL_X, left.ys[i], FACE + 0.012]}
               fontSize={labelSize(label, LEFT_LABEL_WIDTH, left.step)}
@@ -168,7 +215,7 @@ export default function CableModule3D({ primitive, value, onChange, disabled }: 
               color="#f2f4f7"
             >
               {label}
-            </Text>
+            </Label>
             {/* the whole row (label + plug) is the grab handle */}
             <mesh
               position={[(LEFT_LABEL_X + PLUG_X + 0.04) / 2, left.ys[i], Z + 0.03]}
@@ -186,33 +233,49 @@ export default function CableModule3D({ primitive, value, onChange, disabled }: 
                 emissiveIntensity={drag?.item === i ? 0.5 : 0}
               />
             </mesh>
-            {connected && <Cable from={plugs[i]} to={sockets[value[i]!]} color={color} layer={i} />}
+            {connected && <Cable from={plugs[i]} to={endOf(i, value[i]!, value)} color={color} layer={i} />}
           </group>
         )
       })}
 
       {primitive.targets.map((label, j) => (
         <group key={`target-${j}`}>
-          <mesh position={sockets[j]} rotation={[Math.PI / 2, 0, 0]}>
-            <cylinderGeometry args={[0.032, 0.032, 0.03, 20]} />
-            <meshStandardMaterial
-              color="#1b1e24"
-              metalness={0.6}
-              roughness={0.35}
-            />
-          </mesh>
-          <Text
+          {grouping ? (
+            // terminal strip: coloured group tag, metal body, a port for every cable
+            <group>
+              <mesh position={[(STRIP_LEFT + STRIP_RIGHT) / 2, right.ys[j], FACE + 0.012]}>
+                <boxGeometry args={[STRIP_RIGHT - STRIP_LEFT, strip.height, 0.024]} />
+                <meshStandardMaterial color="#2a2f37" metalness={0.5} roughness={0.45} />
+              </mesh>
+              <mesh position={[STRIP_LEFT + STRIP_TAG / 2, right.ys[j], FACE + 0.025]}>
+                <boxGeometry args={[STRIP_TAG, strip.height, 0.004]} />
+                <meshBasicMaterial color={GROUP_COLORS[j % GROUP_COLORS.length]} toneMapped={false} />
+              </mesh>
+              {Array.from({ length: itemCount }, (_, k) => (
+                <mesh key={k} position={strip.port(j, k).setZ(FACE + 0.025)}>
+                  <circleGeometry args={[strip.radius, 16]} />
+                  <meshStandardMaterial color="#0b0c0f" roughness={0.9} />
+                </mesh>
+              ))}
+            </group>
+          ) : (
+            <mesh position={sockets[j]} rotation={[Math.PI / 2, 0, 0]}>
+              <cylinderGeometry args={[0.032, 0.032, 0.03, 20]} />
+              <meshStandardMaterial color="#1b1e24" metalness={0.6} roughness={0.35} />
+            </mesh>
+          )}
+          <Label
             font={FONT_URL}
-            position={[RIGHT_LABEL_X, right.ys[j], FACE + 0.012]}
-            fontSize={labelSize(label, RIGHT_LABEL_WIDTH, right.step)}
-            maxWidth={RIGHT_LABEL_WIDTH - 0.02}
+            position={[rightLabelX, right.ys[j], FACE + 0.012]}
+            fontSize={labelSize(label, rightLabelWidth, right.step)}
+            maxWidth={rightLabelWidth - 0.02}
             anchorX="left"
             anchorY="middle"
             lineHeight={1.1}
             color="#f2f4f7"
           >
             {label}
-          </Text>
+          </Label>
         </group>
       ))}
 
@@ -221,7 +284,13 @@ export default function CableModule3D({ primitive, value, onChange, disabled }: 
           {/* the cable in hand follows the pointer, above all plugged-in ones */}
           <Cable
             from={plugs[drag.item]}
-            to={drag.snapped !== null ? sockets[drag.snapped] : drag.at}
+            to={
+              drag.snapped === null
+                ? drag.at
+                : grouping
+                  ? strip.port(drag.snapped, value.filter((v, i) => v === drag.snapped && i !== drag.item).length)
+                  : sockets[drag.snapped]
+            }
             color={CABLE_COLORS[drag.item % CABLE_COLORS.length]}
             layer={primitive.items.length}
           />

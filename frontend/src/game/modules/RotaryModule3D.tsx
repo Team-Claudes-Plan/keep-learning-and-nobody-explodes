@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
 import { useFrame, type ThreeEvent } from '@react-three/fiber'
-import { Text } from '@react-three/drei'
 import * as THREE from 'three'
 import type { AssignPrimitive, PickPrimitive } from '../primitives'
-import { FACE, FONT_URL, HINT_COLOR, useModulePointer } from './module3d'
+import { FACE, FONT_URL, useModulePointer } from './module3d'
+import { Label, ModuleHeading } from './Label3D'
 import type { ModuleProps } from './types'
 
 type Props = ModuleProps<'pick'> | ModuleProps<'assign'>
@@ -244,7 +244,7 @@ function Dial({ center, labels, position, onSelect, disabled }: DialProps) {
           const side = sin < -0.2 ? 'right' : sin > 0.2 ? 'left' : 'center'
           const room = side === 'center' ? 0.3 : PLATE_EDGE - Math.abs(center[0] + x)
           return (
-            <Text
+            <Label
               key={i}
               font={FONT_URL}
               position={[x, cos * LABEL_RADIUS, 0.016]}
@@ -261,7 +261,7 @@ function Dial({ center, labels, position, onSelect, disabled }: DialProps) {
               }}
             >
               {label}
-            </Text>
+            </Label>
           )
         })}
       </group>
@@ -285,19 +285,25 @@ function SingleDial({ primitive, value, onChange, disabled }: ModuleProps<'pick'
 function DialPerItem({ primitive, value, onChange, disabled }: ModuleProps<'assign'> & { primitive: AssignPrimitive }) {
   const [current, setCurrent] = useState(0)
   const count = primitive.items.length
-  const step = (by: number) => setCurrent((c) => (c + by + count) % count)
+  // stops at the first and last item, no wrapping round
+  const canStep = (by: number) => current + by >= 0 && current + by < count
+  const step = (by: number) => setCurrent((c) => Math.min(count - 1, Math.max(0, c + by)))
 
+  // An item counts as answered once it is on the dial: it starts on the first group, which may
+  // already be right. Items not looked at yet stay open, so locking in needs every item seen.
+  useEffect(() => {
+    if (!disabled && value[current] === null) onChange(value.map((v, i) => (i === current ? 0 : v)))
+  }, [current, disabled, value, onChange])
+
+  // Stays on the item after turning: the player moves on with the arrows when ready.
   function select(target: number) {
-    const next = value.map((v, i) => (i === current ? target : v))
-    onChange(next)
-    const open = next.findIndex((v, i) => v === null && i !== current)
-    if (open !== -1) setTimeout(() => setCurrent(open), 350)
+    onChange(value.map((v, i) => (i === current ? target : v)))
   }
 
   function arrow(by: number) {
     return (event: ThreeEvent<MouseEvent>) => {
       event.stopPropagation()
-      if (!disabled) step(by)
+      if (!disabled && canStep(by)) step(by)
     }
   }
 
@@ -312,10 +318,10 @@ function DialPerItem({ primitive, value, onChange, disabled }: ModuleProps<'assi
         {[-1, 1].map((by) => (
           <mesh key={by} position={[by * 0.35, 0, 0.012]} rotation={[0, 0, by < 0 ? Math.PI : 0]} onClick={arrow(by)}>
             <circleGeometry args={[0.028, 3]} />
-            <meshBasicMaterial color={ACTIVE} toneMapped={false} />
+            <meshBasicMaterial color={canStep(by) ? ACTIVE : '#4a4f57'} toneMapped={false} />
           </mesh>
         ))}
-        <Text
+        <Label
           font={FONT_URL}
           position={[0, 0.005, 0.012]}
           fontSize={Math.min(0.04, 1 / Math.max(primitive.items[current].length, 10))}
@@ -326,12 +332,12 @@ function DialPerItem({ primitive, value, onChange, disabled }: ModuleProps<'assi
           color="#f2f4f7"
         >
           {primitive.items[current]}
-        </Text>
-        {/* progress dots: filled = assigned, ring = current */}
+        </Label>
+        {/* dots: white = current item, amber = looked at (answered), grey = still open */}
         {primitive.items.map((_, i) => (
           <mesh key={i} position={[(i - (count - 1) / 2) * 0.03, -0.065, 0.006]} raycast={() => null}>
             <circleGeometry args={[i === current ? 0.009 : 0.007, 16]} />
-            <meshBasicMaterial color={value[i] !== null ? ACTIVE : i === current ? '#ffffff' : '#5b6270'} toneMapped={false} />
+            <meshBasicMaterial color={i === current ? '#ffffff' : value[i] !== null ? ACTIVE : '#5b6270'} toneMapped={false} />
           </mesh>
         ))}
       </group>
@@ -351,9 +357,7 @@ function DialPerItem({ primitive, value, onChange, disabled }: ModuleProps<'assi
 export default function RotaryModule3D(props: Props) {
   return (
     <group>
-      <Text font={FONT_URL} position={[-0.44, 0.37, FACE + 0.012]} fontSize={0.032} anchorX="left" anchorY="middle" color={HINT_COLOR}>
-        {props.primitive.kind === 'pick' ? 'Dreh den Schalter auf die Antwort.' : 'Dreh für jeden Begriff auf die Gruppe.'}
-      </Text>
+      <ModuleHeading text={props.heading} />
       {props.primitive.kind === 'pick' ? (
         <SingleDial {...(props as ModuleProps<'pick'>)} />
       ) : (
