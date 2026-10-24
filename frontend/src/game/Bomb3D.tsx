@@ -1,12 +1,13 @@
-import { Fragment, Suspense, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { Fragment, Suspense, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { Canvas, createPortal, useFrame, useThree, type ThreeEvent } from '@react-three/fiber'
 import { useGLTF } from '@react-three/drei'
 import * as THREE from 'three'
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js'
+import { makeEmptyBay } from './emptyBay'
 
-const BASE = '/models/bomb'
-const BOMB_URL = `${BASE}/bomb.glb`
-const moduleUrl = (id: string) => `${BASE}/modules/${id}.glb`
+export const BOMB_BASE = '/models/bomb'
+const BOMB_URL = `${BOMB_BASE}/bomb.glb`
+const moduleUrl = (id: string) => `${BOMB_BASE}/modules/${id}.glb`
 
 /** Module ids that have a model in public/models/bomb/modules; others fall back to the blank cover. */
 const MODEL_IDS = new Set([
@@ -49,7 +50,7 @@ type Bomb3DProps = {
 }
 
 /** Module face (1×1 m) plus a small margin; zoomed in, this fills the screen. */
-const MODULE_FIT_SIZE = 1.04
+export const MODULE_FIT_SIZE = 1.04
 const OVERVIEW_TARGET: [number, number, number] = [0, 1.4, 0]
 
 /** Parts of a module model kept when its 3D controls are generated from the task. */
@@ -69,13 +70,13 @@ function rotateUp(f: Flight, t: number) {
   return f.fromUp.clone().applyAxisAngle(axis.normalize(), angle * t)
 }
 
-const FLIGHT_SECONDS = 0.9
+export const FLIGHT_SECONDS = 0.9
 const OVERVIEW_MIN_DISTANCE = 3.5
 const OVERVIEW_MAX_DISTANCE = 10
 const OVERVIEW_CAMERA: [number, number, number] = [2.6, 3.2, 5.6]
 const ARC_CENTER = new THREE.Vector3(...OVERVIEW_TARGET)
 
-const easeInOutCubic = (t: number) => (t < 0.5 ? 4 * t * t * t : 1 - (-2 * t + 2) ** 3 / 2)
+export const easeInOutCubic = (t: number) => (t < 0.5 ? 4 * t * t * t : 1 - (-2 * t + 2) ** 3 / 2)
 
 /** Point between a and b on an arc around the bomb centre: direction slerped, distance lerped. */
 function arcPoint(a: THREE.Vector3, b: THREE.Vector3, t: number) {
@@ -118,7 +119,7 @@ function RoomEnv() {
 const DIM_OPACITY = 0.7
 const DIM_Z = 0.25
 /** Front face of a module plate, in slot space. */
-const FACE_Z = 0.08
+export const FACE_Z = 0.08
 
 /** Camera distance at which the module face just fits the viewport (height or width, whichever is tighter). */
 function moduleDistance(camera: THREE.PerspectiveCamera, size: { width: number; height: number }) {
@@ -133,7 +134,7 @@ const DIM_SOFTNESS = 0.14
 /** Seconds the darkness takes to come up (and, twice as fast, to go away again). */
 const DIM_SECONDS = 0.35
 /** The darkness starts while the camera is still landing (share of the flight), so both blend into each other. */
-const DIM_START = 0.75
+export const DIM_START = 0.75
 
 /**
  * Dark plane in front of the focused module that dims the rest of the bomb. The module stays bright;
@@ -228,12 +229,12 @@ function makeTimerDisplay() {
  * Overview turning snaps lightly when you let go: around the bomb to quarter turns, up and down to
  * the hull faces (60° apart). Up and down has no stop, it carries on over the top and underneath.
  */
-const YAW_STEP = Math.PI / 2
-const PITCH_STEP = Math.PI / 3
+export const YAW_STEP = Math.PI / 2
+export const PITCH_STEP = Math.PI / 3
 /** How hard the view is pulled into the nearest stop once released (per second). */
-const SNAP_STRENGTH = 7
+export const SNAP_STRENGTH = 7
 /** How quickly a flick coasts out (per second). */
-const COAST_DAMPING = 6
+export const COAST_DAMPING = 6
 
 /** Camera orbit around the bomb centre: angles in radians, pitch unbounded. */
 type Orbit = {
@@ -280,67 +281,41 @@ function applyOrbit(o: Orbit, camera: THREE.Camera) {
   camera.lookAt(o.target)
 }
 
-const BAY_SIZE = 1.02
-const BAY_RIM = 0.035
-const BAY_DEPTH = 0.06
-
-/**
- * Unused slot: no module screwed in, just the open bay. A rim around a dark pit, the four empty
- * mounting posts and the bare connector a module would plug into.
- */
-function makeEmptyBay() {
-  const bay = new THREE.Group()
-  bay.userData.planIndex = null
-  const rim = new THREE.MeshStandardMaterial({ color: '#3a3f47', metalness: 0.7, roughness: 0.45 })
-  const pit = new THREE.MeshStandardMaterial({ color: '#08090b', roughness: 0.95 })
-  const wall = new THREE.MeshStandardMaterial({ color: '#16181c', metalness: 0.3, roughness: 0.8 })
-  const brass = new THREE.MeshStandardMaterial({ color: '#b08d57', metalness: 0.9, roughness: 0.3 })
-  const add = (geometry: THREE.BufferGeometry, material: THREE.Material, x: number, y: number, z: number) => {
-    const mesh = new THREE.Mesh(geometry, material)
-    mesh.position.set(x, y, z)
-    bay.add(mesh)
-    return mesh
-  }
-
-  // floor of the pit, just above the hull's recess plate
-  add(new THREE.BoxGeometry(BAY_SIZE - BAY_RIM, BAY_SIZE - BAY_RIM, 0.004), pit, 0, 0, 0.007)
-  // rim on all four sides; its dark inner face reads as the pit wall
-  const half = BAY_SIZE / 2 - BAY_RIM / 2
-  for (const [w, h, x, y] of [
-    [BAY_SIZE, BAY_RIM, 0, half],
-    [BAY_SIZE, BAY_RIM, 0, -half],
-    [BAY_RIM, BAY_SIZE - BAY_RIM * 2, half, 0],
-    [BAY_RIM, BAY_SIZE - BAY_RIM * 2, -half, 0],
-  ]) {
-    add(new THREE.BoxGeometry(w, h, BAY_DEPTH), rim, x, y, BAY_DEPTH / 2 + 0.005)
-    const inset = (BAY_RIM / 2 + 0.004) * (x === 0 ? Math.sign(y) : Math.sign(x))
-    add(
-      new THREE.BoxGeometry(x === 0 ? w - BAY_RIM * 2 : 0.006, x === 0 ? 0.006 : h, BAY_DEPTH - 0.008),
-      wall,
-      x === 0 ? 0 : x - inset,
-      x === 0 ? y - inset : 0,
-      BAY_DEPTH / 2 + 0.006,
-    )
-  }
-  // empty threaded posts where the module screws would go
-  const post = new THREE.CylinderGeometry(0.03, 0.034, 0.04, 20).rotateX(Math.PI / 2)
-  const hole = new THREE.CylinderGeometry(0.012, 0.012, 0.002, 16).rotateX(Math.PI / 2)
-  for (const x of [-0.44, 0.44]) {
-    for (const y of [-0.44, 0.44]) {
-      add(post, rim, x, y, 0.029)
-      add(hole, pit, x, y, 0.05)
-    }
-  }
-  // bare connector at the bottom of the pit
-  add(new THREE.BoxGeometry(0.34, 0.07, 0.03), wall, 0, -0.3, 0.024)
-  const pin = new THREE.BoxGeometry(0.012, 0.012, 0.024)
-  for (let k = 0; k < 10; k++) add(pin, brass, -0.135 + k * 0.03, -0.3, 0.045)
-  return bay
+/** Gives every mesh under `root` its own copy of its material, so changes don't reach other bombs. */
+function ownMaterialsOf(root: THREE.Object3D) {
+  root.traverse((object) => {
+    const mesh = object as THREE.Mesh
+    if (mesh.isMesh && !Array.isArray(mesh.material)) mesh.material = mesh.material.clone()
+  })
 }
 
-function BombModel({ modules, focused, onSelect, timeLeft, strikes }: Bomb3DProps) {
+export type BombContentProps = Pick<Bomb3DProps, 'modules' | 'focused' | 'onSelect' | 'timeLeft' | 'strikes'> & {
+  /** Hover frame and module clicks; off e.g. while the bomb lies on the table. */
+  interactive?: boolean
+  /** Own copies of the model materials (for a bomb that gets its own reflections). */
+  ownMaterials?: boolean
+}
+
+/**
+ * Everything on the bomb that does not depend on how it is looked at: modules in their slots,
+ * status LEDs, hover frame, dimming around the focused module, timer, strikes and module clicks.
+ * The caller moves the camera (or the bomb) and reports when the focused module is reached via `setArrived`.
+ */
+export function useBombContent({
+  modules,
+  focused,
+  onSelect,
+  timeLeft,
+  strikes,
+  interactive = true,
+  ownMaterials = false,
+}: BombContentProps) {
   const { scene } = useGLTF(BOMB_URL)
-  const bomb = useMemo(() => scene.clone(true), [scene])
+  const bomb = useMemo(() => {
+    const clone = scene.clone(true)
+    if (ownMaterials) ownMaterialsOf(clone)
+    return clone
+  }, [scene, ownMaterials])
 
   const idsKey = modules
     .slice(0, BOMB_SLOTS)
@@ -357,6 +332,7 @@ function BombModel({ modules, focused, onSelect, timeLeft, strikes }: Bomb3DProp
     return Array.from({ length: BOMB_SLOTS }, (_, i) => {
       if (i >= planned.length) return { root: makeEmptyBay(), leds: [] }
       const root = sources.get(planned[i])!.clone(true)
+      if (ownMaterials) ownMaterialsOf(root)
       root.userData.planIndex = i < planned.length ? i : null
       if (framesKey[i] === '1') {
         // The GLB scene wraps one module node; hide its static controls, keep plate, screws and LED.
@@ -374,7 +350,7 @@ function BombModel({ modules, focused, onSelect, timeLeft, strikes }: Bomb3DProp
       })
       return { root, leds }
     })
-  }, [ids, gltfs, idsKey, framesKey])
+  }, [ids, gltfs, idsKey, framesKey, ownMaterials])
 
   useEffect(() => {
     instances.forEach((inst, i) => bomb.getObjectByName(`Slot_${i + 1}`)?.add(inst.root))
@@ -397,38 +373,166 @@ function BombModel({ modules, focused, onSelect, timeLeft, strikes }: Bomb3DProp
   const [hovered, setHovered] = useState<number | null>(null)
   const frame = useMemo(() => makeSelectionFrame(), [])
   useEffect(() => {
-    if (hovered === null || focused !== null) return
+    if (hovered === null || focused !== null || !interactive) return
     bomb.getObjectByName(`Slot_${hovered + 1}`)?.add(frame)
     return () => {
       frame.removeFromParent()
     }
-  }, [bomb, frame, hovered, focused])
+  }, [bomb, frame, hovered, focused, interactive])
+
+  const camera = useThree((state) => state.camera)
+  const size = useThree((state) => state.size)
+  /** The view has reached the focused module; only then is it dimmed and playable. */
+  const [arrived, setArrived] = useState(false)
+  /** Darkness requested: set shortly before the view lands. */
+  const dimOn = useRef(false)
+
+  // A focused 2D module shows its minigame on a blank plate: hide its static controls meanwhile.
+  useEffect(() => {
+    const index = arrived ? focused : null
+    instances.forEach((inst, i) => {
+      if (framesKey[i] === '1') return
+      for (const part of inst.root.children[0]?.children ?? []) {
+        part.visible = i !== index || MODULE_FRAME_PARTS.test(part.name)
+      }
+    })
+  }, [instances, framesKey, arrived, focused])
+
+  // Zoomed in, the rest of the bomb is dimmed by a dark frame with a module-sized hole in front of the module.
+  const dim = useMemo(() => makeDimFrame(), [])
+  useEffect(() => {
+    if (focused === null) return
+    bomb.getObjectByName(`Slot_${focused + 1}`)?.add(dim)
+    dim.visible = true
+    // With perspective the frame sits closer to the camera than the module face, so shrink it
+    // until its hole lines up with the module edge on screen.
+    const perspective = camera as THREE.PerspectiveCamera
+    const distance = perspective.isPerspectiveCamera ? moduleDistance(perspective, size) : 0
+    dim.scale.setScalar(distance ? (distance - (DIM_Z - FACE_Z)) / distance : 1)
+  }, [bomb, camera, dim, focused, size])
+
+  useFrame((_, delta) => {
+    // Sequence: fly to the module first, then bring up the darkness; on the way back it goes first.
+    const opacity = (dim.material as THREE.ShaderMaterial).uniforms.uOpacity
+    const goal = focused !== null && dimOn.current ? DIM_OPACITY : 0
+    const step = (DIM_OPACITY / DIM_SECONDS) * delta
+    opacity.value = goal > opacity.value ? Math.min(goal, opacity.value + step) : Math.max(goal, opacity.value - step * 2)
+    if (focused === null && opacity.value === 0) {
+      dim.visible = false
+      dim.removeFromParent()
+    }
+  })
+
+  // Live timer and strike marks on the fixed timer module
+  const timer = useMemo(() => makeTimerDisplay(), [])
+  useEffect(() => {
+    const digits = bomb.getObjectByName('Timer_Digits')
+    if (!digits?.parent) return
+    digits.visible = false
+    timer.mesh.position.copy(digits.position)
+    timer.mesh.position.z += 0.005
+    digits.parent.add(timer.mesh)
+    return () => {
+      timer.mesh.removeFromParent()
+      digits.visible = true
+    }
+  }, [bomb, timer])
+
+  useEffect(() => {
+    timer.draw(formatTime(timeLeft), timeLeft <= 30)
+  }, [timer, timeLeft])
+
+  useEffect(() => {
+    ;['Timer_Strike0', 'Timer_Strike1'].forEach((name, i) => {
+      const mesh = bomb.getObjectByName(name) as THREE.Mesh | undefined
+      if (!mesh?.isMesh) return
+      const material = mesh.material as THREE.MeshStandardMaterial
+      const hit = strikes > i
+      material.emissive.set(hit ? '#ff2020' : '#000000')
+      material.emissiveIntensity = hit ? 4 : 0
+    })
+  }, [bomb, strikes])
+
+  function planIndexOf(object: THREE.Object3D | null): number | null {
+    for (let o = object; o; o = o.parent) {
+      if (o.userData.planIndex !== undefined) return o.userData.planIndex
+    }
+    return null
+  }
+
+  function handleClick(event: ThreeEvent<MouseEvent>) {
+    const index = planIndexOf(event.object)
+    // Inside the focused module the click belongs to its controls: let it reach them untouched.
+    if (focused !== null && index === focused) return
+    event.stopPropagation()
+    if (event.delta > 4) return // was a drag to rotate
+    if (focused !== null) return // zoomed in, only Esc (or the back button) zooms out
+    if (index !== null) onSelect(index)
+  }
+
+  function handleHover(event: ThreeEvent<PointerEvent>) {
+    if (focused !== null) return // zoomed in: hovering is for the module's own controls
+    event.stopPropagation()
+    const index = planIndexOf(event.object)
+    setHovered(index)
+    document.body.style.cursor = index !== null ? 'pointer' : ''
+  }
+
+  useEffect(() => () => void (document.body.style.cursor = ''), [])
+
+  const slotObjects = useMemo(
+    () => Array.from({ length: BOMB_SLOTS }, (_, i) => bomb.getObjectByName(`Slot_${i + 1}`)),
+    [bomb],
+  )
+
+  const portals = modules.slice(0, BOMB_SLOTS).map((m, i) => {
+    const slot = slotObjects[i]
+    if (!m.content3d || !slot) return null
+    return (
+      <Fragment key={i}>
+        {createPortal(
+          <group userData={{ planIndex: i }}>
+            {m.content3d}
+            {/* Until the view has arrived, a clear shield in front of the module swallows clicks. */}
+            {focused === i && !arrived && (
+              <mesh position={[0, 0, 0.3]} onClick={(e) => e.stopPropagation()} onPointerDown={(e) => e.stopPropagation()}>
+                <planeGeometry args={[1.1, 1.1]} />
+                <meshBasicMaterial transparent opacity={0} depthWrite={false} />
+              </mesh>
+            )}
+          </group>,
+          slot,
+        )}
+      </Fragment>
+    )
+  })
+
+  const handlers = interactive
+    ? {
+        onClick: handleClick,
+        onPointerMove: handleHover,
+        onPointerOut: () => {
+          setHovered(null)
+          document.body.style.cursor = ''
+        },
+      }
+    : {}
+
+  return { bomb, setArrived, dimOn, portals, handlers }
+}
+
+/** Bomb seen through an orbiting camera: drag to turn the camera around it, click a module to fly in. */
+function BombModel(props: Bomb3DProps) {
+  const { focused } = props
+  const { bomb, setArrived, dimOn, portals, handlers } = useBombContent(props)
 
   // Camera: fly to the focused module's face, and back to where the overview was left.
   // The flight is an eased arc around the bomb centre, so the camera never cuts through the bomb.
-  // Zoomed in, the rest of the bomb is dimmed by a dark frame with a module-sized hole in front of the module.
   const camera = useThree((state) => state.camera)
   const size = useThree((state) => state.size)
   const orbit = useRef(initialOrbit())
   const flight = useRef<Flight | null>(null)
   const overview = useRef<CameraGoal | null>(null)
-  /** The camera has reached the focused module; only then is it dimmed and playable. */
-  const [arrived, setArrived] = useState(false)
-  /** Darkness requested: set shortly before the camera lands. */
-  const dimOn = useRef(false)
-
-  const isolate = useCallback(
-    (index: number | null) => {
-      // A focused 2D module shows its minigame on a blank plate: hide its static controls meanwhile.
-      instances.forEach((inst, i) => {
-        if (framesKey[i] === '1') return
-        for (const part of inst.root.children[0]?.children ?? []) {
-          part.visible = i !== index || MODULE_FRAME_PARTS.test(part.name)
-        }
-      })
-    },
-    [instances, framesKey],
-  )
 
   useEffect(() => {
     const controls = orbit.current
@@ -447,7 +551,6 @@ function BombModel({ modules, focused, onSelect, timeLeft, strikes }: Bomb3DProp
       // Keep the module upright on screen, also on the back and underside of the bomb.
       toUp = new THREE.Vector3(0, 1, 0).applyQuaternion(slot.getWorldQuaternion(new THREE.Quaternion()))
     } else if (overview.current) {
-      isolate(null)
       to = overview.current
       toUp = overview.current.up ?? WORLD_UP
       overview.current = null
@@ -464,30 +567,7 @@ function BombModel({ modules, focused, onSelect, timeLeft, strikes }: Bomb3DProp
       t: 0,
       zoomingOut: focused === null,
     }
-  }, [bomb, camera, focused, isolate, size])
-
-  const dim = useMemo(() => makeDimFrame(), [])
-  useEffect(() => {
-    if (focused === null) return
-    bomb.getObjectByName(`Slot_${focused + 1}`)?.add(dim)
-    dim.visible = true
-    // The frame sits closer to the camera than the module face, so shrink it until its hole
-    // lines up with the module edge on screen.
-    const distance = moduleDistance(camera as THREE.PerspectiveCamera, size)
-    dim.scale.setScalar((distance - (DIM_Z - FACE_Z)) / distance)
-  }, [bomb, camera, dim, focused, size])
-
-  useFrame((_, delta) => {
-    // Sequence: fly to the module first, then bring up the darkness; on the way back it goes first.
-    const opacity = (dim.material as THREE.ShaderMaterial).uniforms.uOpacity
-    const goal = focused !== null && dimOn.current ? DIM_OPACITY : 0
-    const step = (DIM_OPACITY / DIM_SECONDS) * delta
-    opacity.value = goal > opacity.value ? Math.min(goal, opacity.value + step) : Math.max(goal, opacity.value - step * 2)
-    if (focused === null && opacity.value === 0) {
-      dim.visible = false
-      dim.removeFromParent()
-    }
-  })
+  }, [bomb, camera, focused, size, setArrived, dimOn])
 
   useFrame((_, delta) => {
     const f = flight.current
@@ -507,7 +587,6 @@ function BombModel({ modules, focused, onSelect, timeLeft, strikes }: Bomb3DProp
     if (f.zoomingOut) {
       controls.enabled = true
     } else {
-      isolate(focused)
       setArrived(true)
     }
   })
@@ -578,100 +657,10 @@ function BombModel({ modules, focused, onSelect, timeLeft, strikes }: Bomb3DProp
     applyOrbit(o, camera)
   })
 
-  // Live timer and strike marks on the fixed timer module
-  const timer = useMemo(() => makeTimerDisplay(), [])
-  useEffect(() => {
-    const digits = bomb.getObjectByName('Timer_Digits')
-    if (!digits?.parent) return
-    digits.visible = false
-    timer.mesh.position.copy(digits.position)
-    timer.mesh.position.z += 0.005
-    digits.parent.add(timer.mesh)
-    return () => {
-      timer.mesh.removeFromParent()
-      digits.visible = true
-    }
-  }, [bomb, timer])
-
-  useEffect(() => {
-    timer.draw(formatTime(timeLeft), timeLeft <= 30)
-  }, [timer, timeLeft])
-
-  useEffect(() => {
-    ;['Timer_Strike0', 'Timer_Strike1'].forEach((name, i) => {
-      const mesh = bomb.getObjectByName(name) as THREE.Mesh | undefined
-      if (!mesh?.isMesh) return
-      const material = mesh.material as THREE.MeshStandardMaterial
-      const hit = strikes > i
-      material.emissive.set(hit ? '#ff2020' : '#000000')
-      material.emissiveIntensity = hit ? 4 : 0
-    })
-  }, [bomb, strikes])
-
-  function planIndexOf(object: THREE.Object3D | null): number | null {
-    for (let o = object; o; o = o.parent) {
-      if (o.userData.planIndex !== undefined) return o.userData.planIndex
-    }
-    return null
-  }
-
-  function handleClick(event: ThreeEvent<MouseEvent>) {
-    const index = planIndexOf(event.object)
-    // Inside the focused module the click belongs to its controls: let it reach them untouched.
-    if (focused !== null && index === focused) return
-    event.stopPropagation()
-    if (event.delta > 4) return // was a drag to rotate
-    if (focused !== null) return // zoomed in, only Esc (or the back button) zooms out
-    if (index !== null) onSelect(index)
-  }
-
-  function handleHover(event: ThreeEvent<PointerEvent>) {
-    if (focused !== null) return // zoomed in: hovering is for the module's own controls
-    event.stopPropagation()
-    const index = planIndexOf(event.object)
-    setHovered(index)
-    document.body.style.cursor = index !== null ? 'pointer' : ''
-  }
-
-  useEffect(() => () => void (document.body.style.cursor = ''), [])
-
-  const slotObjects = useMemo(
-    () => Array.from({ length: BOMB_SLOTS }, (_, i) => bomb.getObjectByName(`Slot_${i + 1}`)),
-    [bomb],
-  )
-
   return (
     <>
-      {modules.slice(0, BOMB_SLOTS).map((m, i) => {
-        const slot = slotObjects[i]
-        if (!m.content3d || !slot) return null
-        return (
-          <Fragment key={i}>
-            {createPortal(
-              <group userData={{ planIndex: i }}>
-                {m.content3d}
-                {/* Until the camera has arrived, a clear shield in front of the module swallows clicks. */}
-                {focused === i && !arrived && (
-                  <mesh position={[0, 0, 0.3]} onClick={(e) => e.stopPropagation()} onPointerDown={(e) => e.stopPropagation()}>
-                    <planeGeometry args={[1.1, 1.1]} />
-                    <meshBasicMaterial transparent opacity={0} depthWrite={false} />
-                  </mesh>
-                )}
-              </group>,
-              slot,
-            )}
-          </Fragment>
-        )
-      })}
-      <primitive
-        object={bomb}
-        onClick={handleClick}
-        onPointerMove={handleHover}
-        onPointerOut={() => {
-          setHovered(null)
-          document.body.style.cursor = ''
-        }}
-      />
+      {portals}
+      <primitive object={bomb} {...handlers} />
     </>
   )
 }
