@@ -5,6 +5,11 @@
 # direnv
 .direnv/
 
+# Environment files
+.env
+.env.*
+!.env.example
+
 # Rust build artifacts
 target/
 
