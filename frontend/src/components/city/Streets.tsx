@@ -1,17 +1,14 @@
 import {
-  BLOCK_SIZE,
   CITY_BLOCKS,
   CITY_EXTENT,
   FIELD_PROPS,
   ROAD_LINES,
   ROAD_WIDTH,
-  SIDEWALK_HEIGHT,
-  SIDEWALK_WIDTH,
   type FieldProp,
 } from '../../data/city'
+import GrassBlock from './GrassBlock'
 
 const ROAD_COLOR = '#262b33'
-const SIDEWALK_COLOR = '#5b6270'
 const MARKING_COLOR = '#e6e2d0'
 const DASH_LENGTH = 0.32
 const DASH_GAP = 0.36
@@ -35,29 +32,6 @@ function buildDashes(): Dash[] {
 }
 
 const DASHES = buildDashes()
-
-function GrassBlock({
-  center,
-  color,
-}: {
-  center: [number, number]
-  color: string
-}) {
-  const [x, z] = center
-  const baseSize = BLOCK_SIZE + 2 * SIDEWALK_WIDTH
-  return (
-    <group position={[x, 0, z]}>
-      <mesh position={[0, SIDEWALK_HEIGHT / 2, 0]} castShadow receiveShadow raycast={() => null}>
-        <boxGeometry args={[baseSize, SIDEWALK_HEIGHT, baseSize]} />
-        <meshStandardMaterial color={SIDEWALK_COLOR} roughness={0.9} />
-      </mesh>
-      <mesh rotation-x={-Math.PI / 2} position={[0, SIDEWALK_HEIGHT + 0.003, 0]} receiveShadow raycast={() => null}>
-        <planeGeometry args={[BLOCK_SIZE, BLOCK_SIZE]} />
-        <meshStandardMaterial color={color} roughness={1} />
-      </mesh>
-    </group>
-  )
-}
 
 function Road({ axis, offset }: { axis: 'x' | 'z'; offset: number }) {
   const length = CITY_EXTENT * 2
