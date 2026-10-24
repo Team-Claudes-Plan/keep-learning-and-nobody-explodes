@@ -117,7 +117,10 @@ async fn uploads_file_to_object_store() {
         key.starts_with("uploads/") && key.ends_with("/my_notes.txt"),
         "unexpected key {key}"
     );
-    assert_eq!(store.get(key).await, content);
+    assert_eq!(
+        store.get(key).await.expect("download should succeed").bytes,
+        content.to_vec()
+    );
 }
 
 #[test]
