@@ -25,6 +25,13 @@ jobs:
         with:
           components: rustfmt, clippy
           rustflags: ""
+          cache: false
+
+      - name: Cache Rust
+        uses: Swatinem/rust-cache@v2
+        with:
+          cache-bin: false
+          cache-on-failure: true
 
       - name: Install native build dependencies
         run: |
