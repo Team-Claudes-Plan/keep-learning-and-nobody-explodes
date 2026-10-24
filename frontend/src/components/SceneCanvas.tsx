@@ -216,7 +216,7 @@ export default function SceneCanvas({
     <Canvas
       orthographic={orthographic}
       camera={camera}
-      gl={{ alpha: true, antialias: true }}
+      gl={{ alpha: true, antialias: true, localClippingEnabled: true }}
       onPointerMissed={onPointerMissed}
     >
       <hemisphereLight args={['#cfe6ff', '#9fb98a', 0.75]} />
