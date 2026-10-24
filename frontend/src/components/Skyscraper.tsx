@@ -1,19 +1,24 @@
-import { useState } from 'react'
-import { Edges } from '@react-three/drei'
+import { Suspense, useState } from 'react'
 import type { ThreeEvent } from '@react-three/fiber'
 import type { House } from '../data/houses'
 import { houseHeight } from '../data/houses'
+import Facade from './facade/Facade'
 
 type SkyscraperProps = {
   house: House
   onClick: (id: string) => void
+  overrideShape?: string | null
+  overrideDesign?: string | null
 }
 
-export default function Skyscraper({ house, onClick }: SkyscraperProps) {
+export default function Skyscraper({ house, onClick, overrideShape, overrideDesign }: SkyscraperProps) {
   const [hovered, setHovered] = useState(false)
   const [w, d] = house.footprint
   const height = houseHeight(house)
   const [x, z] = house.position
+
+  const shapeId = overrideShape ?? house.facade.shape
+  const designId = overrideDesign ?? house.facade.design
 
   const handleClick = (event: ThreeEvent<MouseEvent>) => {
     event.stopPropagation()
@@ -32,21 +37,33 @@ export default function Skyscraper({ house, onClick }: SkyscraperProps) {
   }
 
   return (
-    <mesh
-      position={[x, height / 2, z]}
+    <group
+      position={[x, 0, z]}
       onClick={handleClick}
       onPointerOver={handlePointerOver}
       onPointerOut={handlePointerOut}
     >
-      <boxGeometry args={[w, height, d]} />
-      <meshStandardMaterial
-        color={house.facadeColor}
-        emissive={house.facadeColor}
-        emissiveIntensity={hovered ? 0.35 : 0.05}
-        roughness={0.5}
-        metalness={0.15}
-      />
-      <Edges color="#e8ecf3" threshold={15} />
-    </mesh>
+      <Suspense
+        fallback={
+          <mesh position={[0, height / 2, 0]}>
+            <boxGeometry args={[w, height, d]} />
+            <meshStandardMaterial color={house.facadeColor} roughness={0.5} metalness={0.15} />
+          </mesh>
+        }
+      >
+        <Facade
+          house={house}
+          shapeId={shapeId}
+          designId={designId}
+          hovered={hovered}
+          roofColor={house.facade.roofColor}
+        />
+      </Suspense>
+
+      <mesh position={[0, height / 2, 0]}>
+        <boxGeometry args={[w, height, d]} />
+        <meshStandardMaterial transparent opacity={0} depthWrite={false} colorWrite={false} />
+      </mesh>
+    </group>
   )
 }

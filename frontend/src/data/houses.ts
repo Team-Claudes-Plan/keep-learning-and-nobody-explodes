@@ -1,3 +1,6 @@
+import type { FacadeConfig } from './facadeTypes'
+import { houseBlockCenter } from './city'
+
 export type RoomItem = {
   id: string
   label: string
@@ -22,6 +25,7 @@ export type House = {
   id: string
   name: string
   facadeColor: string
+  facade: FacadeConfig
   footprint: [number, number]
   position: [number, number]
   storeys: Storey[]
@@ -56,8 +60,9 @@ export const HOUSES: House[] = [
     id: 'house-a',
     name: 'House A',
     facadeColor: '#4f8cff',
+    facade: { shape: 'tiered-setback', design: 'glass-grid', textures: 'house-a' },
     footprint: [2.4, 2.4],
-    position: [-3, -2],
+    position: houseBlockCenter('house-a'),
     storeys: [
       { id: 'ground', label: 'Ground floor', height: 1.6, room: { floorColor: '#2b3550', wallColor: '#3d4a6b', items: livingRoomItems } },
       { id: 'first', label: 'First floor', height: 1.4, room: { floorColor: '#2b3550', wallColor: '#3d4a6b', items: kitchenItems } },
@@ -68,8 +73,9 @@ export const HOUSES: House[] = [
     id: 'house-b',
     name: 'House B',
     facadeColor: '#ff8f4f',
+    facade: { shape: 'spire', design: 'panel', textures: 'house-b' },
     footprint: [2.8, 2.2],
-    position: [2, -3],
+    position: houseBlockCenter('house-b'),
     storeys: [
       { id: 'ground', label: 'Ground floor', height: 1.8, room: { floorColor: '#3a2f24', wallColor: '#5a4a38', items: livingRoomItems } },
       { id: 'first', label: 'First floor', height: 1.5, room: { floorColor: '#3a2f24', wallColor: '#5a4a38', items: studyItems } },
@@ -79,8 +85,9 @@ export const HOUSES: House[] = [
     id: 'house-c',
     name: 'House C',
     facadeColor: '#4fd18b',
+    facade: { shape: 'tree-tower', design: 'organic-bark', textures: 'house-c' },
     footprint: [2.2, 2.8],
-    position: [0, 2.5],
+    position: houseBlockCenter('house-c'),
     storeys: [
       { id: 'ground', label: 'Ground floor', height: 1.7, room: { floorColor: '#24332a', wallColor: '#38604a', items: kitchenItems } },
       { id: 'first', label: 'First floor', height: 1.5, room: { floorColor: '#24332a', wallColor: '#38604a', items: bedroomItems } },
