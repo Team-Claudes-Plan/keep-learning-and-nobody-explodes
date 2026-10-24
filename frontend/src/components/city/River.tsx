@@ -16,7 +16,6 @@ import {
 
 const TAU = Math.PI * 2
 
-const SURFACE_COLORS = ['#3f9fd6', '#4aa8dc', '#54b0e0', '#46a4d8']
 const FALL_TOP = new THREE.Color('#6fb6e0')
 const FALL_BOTTOM = new THREE.Color('#3a83ba')
 const FOAM = new THREE.Color('#d3ecfa')
@@ -26,6 +25,7 @@ const SHORE = new THREE.Color('#c6b184')
 
 const OUTSET = 0.26
 const SHORE_WIDTH = 0.34
+const CHANNEL_STATIONS = 64
 
 function buildLakeGeometry(): THREE.BufferGeometry {
   const [cx, cz] = LAKE_CENTER
@@ -111,20 +111,16 @@ function buildLakeGeometry(): THREE.BufferGeometry {
 function buildRiverGeometry(): THREE.BufferGeometry {
   const positions: number[] = []
   const colors: number[] = []
+  const indices: number[] = []
 
-  const tri = (a: THREE.Vector3, b: THREE.Vector3, c: THREE.Vector3, color: THREE.Color) => {
-    positions.push(a.x, a.y, a.z, b.x, b.y, b.z, c.x, c.y, c.z)
-    for (let i = 0; i < 3; i += 1) colors.push(color.r, color.g, color.b)
+  const pushVertex = (p: THREE.Vector3, color: THREE.Color) => {
+    const index = positions.length / 3
+    positions.push(p.x, p.y, p.z)
+    colors.push(color.r, color.g, color.b)
+    return index
   }
-  const quad = (
-    a: THREE.Vector3,
-    b: THREE.Vector3,
-    c: THREE.Vector3,
-    d: THREE.Vector3,
-    color: THREE.Color,
-  ) => {
-    tri(a, b, c, color)
-    tri(a, c, d, color)
+  const pushQuad = (a: number, b: number, c: number, d: number) => {
+    indices.push(a, b, d, a, d, c)
   }
 
   const [lipX, lipZ] = shorePoint(RIVER_EXIT_THETA, 0)
@@ -138,7 +134,6 @@ function buildRiverGeometry(): THREE.BufferGeometry {
   ]
 
   const curve = new THREE.CatmullRomCurve3(centers)
-  const segments = centers.length * 12
 
   const widthAt = (t: number) => {
     const s = t * (widths.length - 1)
@@ -147,22 +142,28 @@ function buildRiverGeometry(): THREE.BufferGeometry {
     return widths[i] * (1 - f) + widths[i + 1] * f
   }
 
-  let prevLeft: THREE.Vector3 | null = null
-  let prevRight: THREE.Vector3 | null = null
-  for (let k = 0; k <= segments; k += 1) {
-    const t = k / segments
+  const rows = 3
+  const rowIndices: number[][] = []
+  for (let k = 0; k <= CHANNEL_STATIONS; k += 1) {
+    const t = k / CHANNEL_STATIONS
     const point = curve.getPointAt(t)
     const tangent = curve.getTangentAt(t)
     const perp = new THREE.Vector3(-tangent.z, 0, tangent.x).normalize()
     const half = widthAt(t) / 2
-    const left = point.clone().addScaledVector(perp, half)
-    const right = point.clone().addScaledVector(perp, -half)
-    if (prevLeft && prevRight) {
-      const color = new THREE.Color(SURFACE_COLORS[k % SURFACE_COLORS.length])
-      quad(prevLeft, prevRight, right, left, color)
+    const row: number[] = []
+    for (let j = 0; j < rows; j += 1) {
+      const offset = half * (1 - (2 * j) / (rows - 1))
+      const p = point.clone().addScaledVector(perp, offset)
+      const color = LAKE_DEEP.clone().lerp(LAKE_EDGE, Math.abs(offset) / half)
+      row.push(pushVertex(p, color))
     }
-    prevLeft = left
-    prevRight = right
+    rowIndices.push(row)
+  }
+
+  for (let k = 0; k < CHANNEL_STATIONS; k += 1) {
+    for (let j = 0; j < rows - 1; j += 1) {
+      pushQuad(rowIndices[k][j], rowIndices[k][j + 1], rowIndices[k + 1][j], rowIndices[k + 1][j + 1])
+    }
   }
 
   const endTangent = curve.getTangentAt(1)
@@ -177,7 +178,6 @@ function buildRiverGeometry(): THREE.BufferGeometry {
     const oz = cz + radial.z * OUTSET
     const half = halfW * (1 + terraceIndex * 0.05)
     return {
-      y,
       center: new THREE.Vector3(ox, y, oz),
       left: new THREE.Vector3(ox + perp.x * half, y, oz + perp.z * half),
       right: new THREE.Vector3(ox - perp.x * half, y, oz - perp.z * half),
@@ -185,13 +185,16 @@ function buildRiverGeometry(): THREE.BufferGeometry {
   }
 
   const bands = ISLAND_TERRACES.map((_, i) => band(i))
+  const bandVertices = bands.map((b, i) => {
+    const color = FALL_TOP.clone().lerp(FALL_BOTTOM, i / (bands.length - 1))
+    color.offsetHSL(0, 0, i % 2 === 0 ? 0.02 : -0.015)
+    return [pushVertex(b.left, color), pushVertex(b.right, color)] as const
+  })
 
-  for (let i = 0; i < bands.length - 1; i += 1) {
-    const top = bands[i]
-    const bottom = bands[i + 1]
-    const color = FALL_TOP.clone().lerp(FALL_BOTTOM, (i + 0.5) / (bands.length - 1))
-    color.offsetHSL(0, 0, i % 2 === 0 ? 0.025 : -0.02)
-    quad(top.left, top.right, bottom.right, bottom.left, color)
+  for (let i = 0; i < bandVertices.length - 1; i += 1) {
+    const [topLeft, topRight] = bandVertices[i]
+    const [bottomLeft, bottomRight] = bandVertices[i + 1]
+    pushQuad(topLeft, topRight, bottomLeft, bottomRight)
   }
 
   const lowest = bands[bands.length - 1]
@@ -203,20 +206,24 @@ function buildRiverGeometry(): THREE.BufferGeometry {
       edge.z + outward.z * 0.22,
     )
   const bottomColor = FALL_BOTTOM.clone().lerp(FOAM, 0.25)
-  quad(lowest.left, lowest.right, toVoid(lowest.right), toVoid(lowest.left), bottomColor)
+  const [lowLeft, lowRight] = bandVertices[bandVertices.length - 1]
+  const voidLeft = pushVertex(toVoid(lowest.left), bottomColor)
+  const voidRight = pushVertex(toVoid(lowest.right), bottomColor)
+  pushQuad(lowLeft, lowRight, voidLeft, voidRight)
 
-  const lip = bands[0]
   const foamBack = new THREE.Vector3(lipX, RIVER_LEVEL + 0.012, lipZ).addScaledVector(
     endTangent,
     -0.5,
   )
-  const foamLeft = foamBack.clone().addScaledVector(perp, halfW)
-  const foamRight = foamBack.clone().addScaledVector(perp, -halfW)
-  quad(foamLeft, foamRight, lip.right, lip.left, FOAM)
+  const foamLeft = pushVertex(foamBack.clone().addScaledVector(perp, halfW), FOAM)
+  const foamRight = pushVertex(foamBack.clone().addScaledVector(perp, -halfW), FOAM)
+  const [lipLeft, lipRight] = bandVertices[0]
+  pushQuad(foamLeft, foamRight, lipLeft, lipRight)
 
   const geometry = new THREE.BufferGeometry()
   geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3))
   geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3))
+  geometry.setIndex(indices)
   geometry.computeVertexNormals()
   return geometry
 }
@@ -238,7 +245,6 @@ export default function River() {
       <mesh geometry={riverGeometry} raycast={() => null}>
         <meshStandardMaterial
           vertexColors
-          flatShading
           roughness={0.35}
           metalness={0.05}
           side={THREE.DoubleSide}

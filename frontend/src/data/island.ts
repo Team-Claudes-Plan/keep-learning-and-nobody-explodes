@@ -181,7 +181,7 @@ export type RiverNode = {
 
 const RIVER_SOURCE_RADIUS = 9.5
 const RIVER_NODE_COUNT = 6
-const RIVER_MEANDER = 0.06
+const RIVER_MEANDER = 0
 
 export const RIVER_PATH: RiverNode[] = Array.from({ length: RIVER_NODE_COUNT }, (_, i) => {
   const f = i / (RIVER_NODE_COUNT - 1)
