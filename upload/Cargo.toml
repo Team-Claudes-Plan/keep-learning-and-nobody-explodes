@@ -8,7 +8,9 @@ apalis.workspace = true
 apalis-postgres.workspace = true
 grpc.workspace = true
 serde.workspace = true
+serde_json = "1"
 tokio.workspace = true
+urlencoding = "2"
 xberg = { workspace = true, features = ["ocr", "pdf"] }
 sqlx.workspace = true
 
@@ -24,7 +26,6 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 uuid = { version = "1", features = ["v4"] }
 
 [dev-dependencies]
-serde_json = "1"
 tower = { version = "0.5", features = ["util"] }
 
 [lints]

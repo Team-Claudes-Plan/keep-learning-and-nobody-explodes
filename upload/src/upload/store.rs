@@ -2,6 +2,7 @@
 
 use std::sync::Arc;
 
+use anyhow::Context;
 use aws_credential_types::Credentials;
 use aws_sdk_s3::{Client, config::Region, primitives::ByteStream};
 use axum::body::Bytes;
@@ -18,16 +19,20 @@ pub struct ObjectStore {
     bucket: Arc<str>,
 }
 
+/// Object data downloaded from the store.
+#[derive(Debug)]
+pub struct DownloadedObject {
+    /// Object contents.
+    pub bytes: Bytes,
+    /// Content type recorded when the object was uploaded.
+    pub content_type: Option<String>,
+}
+
 impl ObjectStore {
     /// Connects to the object store described by `config`.
     pub async fn connect(config: &S3Config) -> Self {
-        let credentials = Credentials::new(
-            &config.access_key,
-            &config.secret_key,
-            None,
-            None,
-            "env",
-        );
+        let credentials =
+            Credentials::new(&config.access_key, &config.secret_key, None, None, "env");
         let sdk_config = aws_config::defaults(aws_config::BehaviorVersion::latest())
             .region(Region::new(config.region.clone()))
             .credentials_provider(credentials)
@@ -63,9 +68,8 @@ impl ObjectStore {
         Ok(())
     }
 
-    /// Reads the object at `key`; used by tests to verify uploads.
-    #[cfg(test)]
-    pub async fn get(&self, key: &str) -> Vec<u8> {
+    /// Downloads an object and its content type.
+    pub async fn get(&self, key: &str) -> anyhow::Result<DownloadedObject> {
         let output = self
             .client
             .get_object()
@@ -73,7 +77,18 @@ impl ObjectStore {
             .key(key)
             .send()
             .await
-            .expect("object should exist");
-        output.body.collect().await.expect("body should be readable").to_vec()
+            .with_context(|| format!("failed to download object {key}"))?;
+        let content_type = output.content_type().map(str::to_owned);
+        let bytes = output
+            .body
+            .collect()
+            .await
+            .with_context(|| format!("failed to read object body for {key}"))?
+            .into_bytes();
+
+        Ok(DownloadedObject {
+            bytes,
+            content_type,
+        })
     }
 }
