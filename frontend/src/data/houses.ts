@@ -1,4 +1,5 @@
 import type { FacadeConfig } from './facadeTypes'
+import type { HouseParts } from './houseParts'
 import { houseBlockCenter } from './city'
 
 export type RoomItem = {
@@ -18,6 +19,8 @@ export type Storey = {
   id: string
   label: string
   height: number
+  concept?: string
+  parts?: Partial<HouseParts>
   room: Room
 }
 
@@ -25,7 +28,9 @@ export type House = {
   id: string
   name: string
   facadeColor: string
+  decorColor?: string
   facade: FacadeConfig
+  parts?: Partial<HouseParts>
   footprint: [number, number]
   position: [number, number]
   storeys: Storey[]
@@ -64,9 +69,9 @@ export const HOUSES: House[] = [
     footprint: [2.4, 2.4],
     position: houseBlockCenter('house-a'),
     storeys: [
-      { id: 'ground', label: 'Ground floor', height: 1.6, room: { floorColor: '#2b3550', wallColor: '#3d4a6b', items: livingRoomItems } },
-      { id: 'first', label: 'First floor', height: 1.4, room: { floorColor: '#2b3550', wallColor: '#3d4a6b', items: kitchenItems } },
-      { id: 'second', label: 'Second floor', height: 1.4, room: { floorColor: '#2b3550', wallColor: '#3d4a6b', items: bedroomItems } },
+      { id: 'ground', label: 'Ground floor', height: 1.6, concept: 'foundations', room: { floorColor: '#2b3550', wallColor: '#3d4a6b', items: livingRoomItems } },
+      { id: 'first', label: 'First floor', height: 1.4, concept: 'patterns', room: { floorColor: '#2b3550', wallColor: '#3d4a6b', items: kitchenItems } },
+      { id: 'second', label: 'Second floor', height: 1.4, concept: 'structures', room: { floorColor: '#2b3550', wallColor: '#3d4a6b', items: bedroomItems } },
     ],
   },
   {
@@ -77,8 +82,8 @@ export const HOUSES: House[] = [
     footprint: [2.8, 2.2],
     position: houseBlockCenter('house-b'),
     storeys: [
-      { id: 'ground', label: 'Ground floor', height: 1.8, room: { floorColor: '#3a2f24', wallColor: '#5a4a38', items: livingRoomItems } },
-      { id: 'first', label: 'First floor', height: 1.5, room: { floorColor: '#3a2f24', wallColor: '#5a4a38', items: studyItems } },
+      { id: 'ground', label: 'Ground floor', height: 1.8, concept: 'foundations', room: { floorColor: '#3a2f24', wallColor: '#5a4a38', items: livingRoomItems } },
+      { id: 'first', label: 'First floor', height: 1.5, concept: 'networks', room: { floorColor: '#3a2f24', wallColor: '#5a4a38', items: studyItems } },
     ],
   },
   {
@@ -89,10 +94,24 @@ export const HOUSES: House[] = [
     footprint: [2.2, 2.8],
     position: houseBlockCenter('house-c'),
     storeys: [
-      { id: 'ground', label: 'Ground floor', height: 1.7, room: { floorColor: '#24332a', wallColor: '#38604a', items: kitchenItems } },
-      { id: 'first', label: 'First floor', height: 1.5, room: { floorColor: '#24332a', wallColor: '#38604a', items: bedroomItems } },
-      { id: 'second', label: 'Second floor', height: 1.5, room: { floorColor: '#24332a', wallColor: '#38604a', items: studyItems } },
-      { id: 'third', label: 'Attic', height: 1.2, room: { floorColor: '#24332a', wallColor: '#38604a', items: livingRoomItems } },
+      { id: 'ground', label: 'Ground floor', height: 1.7, concept: 'structures', room: { floorColor: '#24332a', wallColor: '#38604a', items: kitchenItems } },
+      { id: 'first', label: 'First floor', height: 1.5, concept: 'analysis', room: { floorColor: '#24332a', wallColor: '#38604a', items: bedroomItems } },
+      { id: 'second', label: 'Second floor', height: 1.5, concept: 'patterns', room: { floorColor: '#24332a', wallColor: '#38604a', items: studyItems } },
+      { id: 'third', label: 'Attic', height: 1.2, concept: 'systems', room: { floorColor: '#24332a', wallColor: '#38604a', items: livingRoomItems } },
+    ],
+  },
+  {
+    id: 'house-math-tower',
+    name: 'Aged Prussian Blue Mathematical Academy Tower',
+    facadeColor: '#2d5e9f',
+    facade: { shape: 'penthouse', design: 'house-math-tower', textures: 'house-math-tower', roofColor: '#263550' },
+    footprint: [2.4, 2.4],
+    position: houseBlockCenter('house-math-tower'),
+    storeys: [
+      { id: 'ground', label: 'Ground floor', height: 1.8, concept: 'foundations', room: { floorColor: '#1f2d4a', wallColor: '#2d5e9f', items: livingRoomItems } },
+      { id: 'first', label: 'First floor', height: 1.6, concept: 'patterns', room: { floorColor: '#1f2d4a', wallColor: '#2d5e9f', items: studyItems } },
+      { id: 'second', label: 'Second floor', height: 1.6, concept: 'structures', room: { floorColor: '#1f2d4a', wallColor: '#2d5e9f', items: kitchenItems } },
+      { id: 'third', label: 'Observatory', height: 1.4, concept: 'analysis', room: { floorColor: '#1f2d4a', wallColor: '#2d5e9f', items: bedroomItems } },
     ],
   },
 ]

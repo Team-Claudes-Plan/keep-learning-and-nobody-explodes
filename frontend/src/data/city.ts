@@ -23,6 +23,7 @@ export const HOUSE_BLOCKS = [
   { id: 'house-a', i: -1, j: -1 },
   { id: 'house-b', i: 1, j: -1 },
   { id: 'house-c', i: 0, j: 0 },
+  { id: 'house-math-tower', i: -1, j: 1 },
 ] as const
 
 const occupiedKeys = new Set(HOUSE_BLOCKS.map((block) => `${block.i}:${block.j}`))

@@ -58,6 +58,23 @@ export const FACADE_SHAPES: Record<string, FacadeShape> = {
       ]),
   },
 
+  penthouse: {
+    id: 'penthouse',
+    label: 'Penthouse',
+    roof: 'flat',
+    roofColor: '#263550',
+    details: [
+      { kind: 'dish', color: '#c9d4e6', tier: 2, offset: [-0.4, 0.5, 0.4] },
+      { kind: 'solarFin', color: '#4fd1d1', tier: 1, offset: [0.7, 0.5, 0] },
+    ],
+    buildTiers: (footprint, totalHeight) =>
+      stack(footprint, totalHeight, [
+        { frac: 0.75, scaleW: 1, scaleD: 1 },
+        { frac: 0.15, scaleW: 1.15, scaleD: 1.15 },
+        { frac: 0.1, scaleW: 0.7, scaleD: 0.7 },
+      ]),
+  },
+
   'tree-tower': {
     id: 'tree-tower',
     label: 'Tree tower',
