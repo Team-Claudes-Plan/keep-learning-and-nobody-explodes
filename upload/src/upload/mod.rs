@@ -8,11 +8,16 @@
 //! streamed to the object store. A request therefore does not retain the whole
 //! file in memory, and concurrent uploads cannot multiply the body limit into
 //! a larger resident set.
+//!
+//! Each file is stored on its own. A part that fails does not remove files
+//! already stored and does not stop later parts when the multipart stream is
+//! still readable. The response lists the stored objects and the parts that
+//! failed. A request that stores nothing still returns an error.
 
 mod error;
 mod store;
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use axum::{
     Json, Router,
@@ -48,8 +53,23 @@ pub struct StoredObject {
 /// Response body of `POST /upload`.
 #[derive(Debug, Serialize)]
 pub struct UploadResponse {
-    /// All files stored by the request, in request order.
+    /// Files stored by the request, in request order.
     pub objects: Vec<StoredObject>,
+    /// File parts that were not stored, in request order.
+    pub failures: Vec<FailedUpload>,
+}
+
+/// A file part that was not stored.
+#[derive(Debug, Serialize)]
+pub struct FailedUpload {
+    /// Filename as sent by the client.
+    ///
+    /// Absent when the multipart stream failed before the next part's headers
+    /// were available.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub filename: Option<String>,
+    /// Why this part was not stored.
+    pub message: String,
 }
 
 /// Builds the upload routes, rejecting bodies larger than `max_body_bytes`.
@@ -60,13 +80,52 @@ pub fn router(store: ObjectStore, max_body_bytes: usize) -> Router {
         .with_state(store)
 }
 
+/// Stores the objects produced by one upload request.
+trait UploadStore: Send + Sync {
+    /// Streams the file at `path` to `key`.
+    fn put(
+        &self,
+        key: &str,
+        content_type: &str,
+        path: &Path,
+        len: usize,
+    ) -> impl Future<Output = Result<(), UploadError>> + Send;
+}
+
 async fn upload(
     State(store): State<ObjectStore>,
-    mut multipart: Multipart,
+    multipart: Multipart,
 ) -> Result<Json<UploadResponse>, UploadError> {
-    let mut objects = Vec::new();
+    accept_upload(&store, multipart).await.map(Json)
+}
 
-    while let Some(mut field) = multipart.next_field().await? {
+async fn accept_upload(
+    store: &impl UploadStore,
+    multipart: Multipart,
+) -> Result<UploadResponse, UploadError> {
+    store_parts(store, multipart).await
+}
+
+async fn store_parts(
+    store: &impl UploadStore,
+    mut multipart: Multipart,
+) -> Result<UploadResponse, UploadError> {
+    let mut objects = Vec::new();
+    let mut failures = Vec::new();
+
+    loop {
+        let mut field = match multipart.next_field().await {
+            Ok(Some(field)) => field,
+            Ok(None) => break,
+            Err(err) => {
+                let upload_err = UploadError::from(err);
+                if objects.is_empty() {
+                    return Err(upload_err);
+                }
+                failures.push(failed_part(None, &upload_err));
+                return Ok(UploadResponse { objects, failures });
+            }
+        };
         let Some(filename) = field.file_name().map(str::to_owned) else {
             continue;
         };
@@ -74,16 +133,37 @@ async fn upload(
             .content_type()
             .unwrap_or(FALLBACK_CONTENT_TYPE)
             .to_owned();
-        // Hold at most one chunk in memory; the rest of the part lives on disk.
-        let spooled = spool_field(&mut field).await?;
-        let size = spooled.len;
 
+        // Hold at most one chunk in memory; the rest of the part lives on disk.
+        // A read error leaves the multipart stream unusable, so later parts stop.
+        let spooled = match spool_field(&mut field).await {
+            Ok(spooled) => spooled,
+            Err(err) => {
+                if objects.is_empty() {
+                    return Err(err);
+                }
+                failures.push(failed_part(Some(filename), &err));
+                return Ok(UploadResponse { objects, failures });
+            }
+        };
+        let size = spooled.len;
         let key = format!(
             "uploads/{}/{}",
             Uuid::new_v4(),
             sanitize_filename(&filename)
         );
-        store.put(&key, &content_type, &spooled.path, size).await?;
+        // The temporary file is removed when `spooled` drops, including when
+        // the object store rejects this part. Earlier objects stay.
+        if let Err(err) = store.put(&key, &content_type, &spooled.path, size).await {
+            tracing::error!(
+                name: "upload.part_failed",
+                filename = %filename,
+                error = ?err,
+                "failed to store file part"
+            );
+            failures.push(failed_part(Some(filename), &err));
+            continue;
+        }
 
         tracing::info!(name: "upload.stored", key = %key, size, "stored uploaded file");
         objects.push(StoredObject {
@@ -95,11 +175,25 @@ async fn upload(
     }
 
     if objects.is_empty() {
-        return Err(UploadError::invalid_request(
-            "no file part found in request",
-        ));
+        if failures.is_empty() {
+            return Err(UploadError::invalid_request(
+                "no file part found in request",
+            ));
+        }
+        return Err(UploadError::storage(std::io::Error::other(
+            "failed to store file",
+        )));
     }
-    Ok(Json(UploadResponse { objects }))
+    Ok(UploadResponse { objects, failures })
+}
+
+fn failed_part(filename: Option<String>, err: &UploadError) -> FailedUpload {
+    let message = if err.is_storage() {
+        "failed to store file".to_owned()
+    } else {
+        err.to_string()
+    };
+    FailedUpload { filename, message }
 }
 
 /// A file part written to disk so it can be streamed to the object store.

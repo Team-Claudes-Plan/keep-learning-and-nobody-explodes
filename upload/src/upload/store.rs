@@ -5,7 +5,7 @@ use std::{path::Path, sync::Arc};
 use aws_credential_types::Credentials;
 use aws_sdk_s3::{Client, config::Region, primitives::ByteStream};
 
-use super::error::UploadError;
+use super::{UploadStore, error::UploadError};
 use crate::config::S3Config;
 
 /// Handle to the S3 bucket that receives uploaded files.
@@ -20,13 +20,8 @@ pub struct ObjectStore {
 impl ObjectStore {
     /// Connects to the object store described by `config`.
     pub async fn connect(config: &S3Config) -> Self {
-        let credentials = Credentials::new(
-            &config.access_key,
-            &config.secret_key,
-            None,
-            None,
-            "env",
-        );
+        let credentials =
+            Credentials::new(&config.access_key, &config.secret_key, None, None, "env");
         let sdk_config = aws_config::defaults(aws_config::BehaviorVersion::latest())
             .region(Region::new(config.region.clone()))
             .credentials_provider(credentials)
@@ -94,5 +89,17 @@ impl ObjectStore {
             .await
             .expect("body should be readable")
             .to_vec()
+    }
+}
+
+impl UploadStore for ObjectStore {
+    fn put(
+        &self,
+        key: &str,
+        content_type: &str,
+        path: &Path,
+        len: usize,
+    ) -> impl Future<Output = Result<(), UploadError>> + Send {
+        ObjectStore::put(self, key, content_type, path, len)
     }
 }

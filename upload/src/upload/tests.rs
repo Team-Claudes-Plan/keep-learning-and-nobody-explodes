@@ -8,6 +8,14 @@
 //! cargo test -- --ignored            # in a shell with the dev env (nix develop)
 //! ```
 
+use std::{
+    path::Path,
+    sync::{
+        Mutex,
+        atomic::{AtomicUsize, Ordering},
+    },
+};
+
 use axum::{
     Router,
     body::{Body, to_bytes},
@@ -16,7 +24,7 @@ use axum::{
 };
 use tower::ServiceExt;
 
-use super::{ObjectStore, router, sanitize_filename};
+use super::{ObjectStore, UploadError, UploadStore, router, sanitize_filename};
 use crate::config::{Config, S3Config};
 
 const BOUNDARY: &str = "test-boundary";
@@ -34,7 +42,7 @@ async fn offline_store() -> ObjectStore {
     .await
 }
 
-fn multipart_request(parts: &[(&str, Option<&str>, &[u8])]) -> Request<Body> {
+fn multipart_bytes(parts: &[(&str, Option<&str>, &[u8])]) -> Vec<u8> {
     let mut body = Vec::new();
     for (name, filename, data) in parts {
         body.extend_from_slice(format!("--{BOUNDARY}\r\n").as_bytes());
@@ -54,14 +62,63 @@ fn multipart_request(parts: &[(&str, Option<&str>, &[u8])]) -> Request<Body> {
         body.extend_from_slice(b"\r\n");
     }
     body.extend_from_slice(format!("--{BOUNDARY}--\r\n").as_bytes());
+    body
+}
 
+fn multipart_request(parts: &[(&str, Option<&str>, &[u8])]) -> Request<Body> {
     Request::post("/upload")
         .header(
             header::CONTENT_TYPE,
             format!("multipart/form-data; boundary={BOUNDARY}"),
         )
-        .body(Body::from(body))
+        .body(Body::from(multipart_bytes(parts)))
         .expect("request should build")
+}
+
+/// Store that records successful writes without talking to S3.
+///
+/// `fail_attempt` is the zero-based `put` call that returns a storage error.
+struct RecordingStore {
+    fail_attempt: Option<usize>,
+    attempts: AtomicUsize,
+    puts: Mutex<Vec<String>>,
+}
+
+impl RecordingStore {
+    fn ok() -> Self {
+        Self::fail_on_attempt(None)
+    }
+
+    fn fail_on_attempt(fail_attempt: Option<usize>) -> Self {
+        Self {
+            fail_attempt,
+            attempts: AtomicUsize::new(0),
+            puts: Mutex::new(Vec::new()),
+        }
+    }
+
+    fn puts(&self) -> Vec<String> {
+        self.puts.lock().expect("puts lock").clone()
+    }
+}
+
+impl UploadStore for RecordingStore {
+    async fn put(
+        &self,
+        key: &str,
+        _content_type: &str,
+        _path: &Path,
+        _len: usize,
+    ) -> Result<(), UploadError> {
+        let attempt = self.attempts.fetch_add(1, Ordering::SeqCst);
+        if self.fail_attempt == Some(attempt) {
+            return Err(UploadError::storage(std::io::Error::other(
+                "injected storage failure",
+            )));
+        }
+        self.puts.lock().expect("puts lock").push(key.to_owned());
+        Ok(())
+    }
 }
 
 async fn send(app: Router, request: Request<Body>) -> (StatusCode, Vec<u8>) {
@@ -122,6 +179,89 @@ async fn spools_file_bytes_to_a_temp_file() {
         !path.exists(),
         "temp file should be removed after the spool is dropped"
     );
+}
+
+#[tokio::test]
+async fn keeps_objects_when_every_part_is_stored() {
+    let store = RecordingStore::ok();
+    let request = multipart_request(&[
+        ("file", Some("a.txt"), b"one"),
+        ("file", Some("b.txt"), b"two"),
+    ]);
+    let multipart = Multipart::from_request(request, &())
+        .await
+        .expect("multipart should parse");
+
+    let response = super::accept_upload(&store, multipart)
+        .await
+        .expect("both parts should be stored");
+
+    assert_eq!(response.objects.len(), 2);
+    assert!(response.failures.is_empty());
+    assert_eq!(store.puts().len(), 2);
+}
+
+#[tokio::test]
+async fn keeps_successful_files_when_a_middle_part_fails() {
+    let store = RecordingStore::fail_on_attempt(Some(1));
+    let request = multipart_request(&[
+        ("file", Some("a.txt"), b"one"),
+        ("file", Some("b.txt"), b"two"),
+        ("file", Some("c.txt"), b"three"),
+    ]);
+    let multipart = Multipart::from_request(request, &())
+        .await
+        .expect("multipart should parse");
+
+    let response = super::accept_upload(&store, multipart)
+        .await
+        .expect("stored parts should be reported");
+
+    let stored: Vec<_> = response
+        .objects
+        .iter()
+        .map(|object| object.filename.as_str())
+        .collect();
+    assert_eq!(stored, ["a.txt", "c.txt"]);
+    assert_eq!(response.failures.len(), 1);
+    assert_eq!(response.failures[0].filename.as_deref(), Some("b.txt"));
+    assert_eq!(response.failures[0].message, "failed to store file");
+    assert_eq!(store.puts().len(), 2);
+}
+
+#[tokio::test]
+async fn reports_a_truncated_part_without_removing_earlier_files() {
+    let store = RecordingStore::ok();
+    let mut body = multipart_bytes(&[
+        ("file", Some("a.txt"), b"one"),
+        ("file", Some("b.txt"), b"two"),
+    ]);
+    let closing = format!("\r\n--{BOUNDARY}--\r\n");
+    let end = body
+        .windows(closing.len())
+        .rposition(|window| window == closing.as_bytes())
+        .expect("closing boundary");
+    body.truncate(end);
+    let request = Request::post("/upload")
+        .header(
+            header::CONTENT_TYPE,
+            format!("multipart/form-data; boundary={BOUNDARY}"),
+        )
+        .body(Body::from(body))
+        .expect("request should build");
+    let multipart = Multipart::from_request(request, &())
+        .await
+        .expect("multipart should parse");
+
+    let response = super::accept_upload(&store, multipart)
+        .await
+        .expect("the stored part should be reported");
+
+    assert_eq!(response.objects.len(), 1);
+    assert_eq!(response.objects[0].filename, "a.txt");
+    assert_eq!(response.failures.len(), 1);
+    assert_eq!(response.failures[0].filename.as_deref(), Some("b.txt"));
+    assert_eq!(store.puts().len(), 1);
 }
 
 #[tokio::test]
