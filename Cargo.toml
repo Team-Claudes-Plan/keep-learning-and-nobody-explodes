@@ -1,0 +1,95 @@
+[workspace]
+resolver = "3"
+members = ["common/grpc", "backend/"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+
+[workspace.dependencies]
+grpc = { path = "common/grpc" }
+
+prost = "0.14.4"
+serde = { version = "1", features = ["derive"] }
+tokio = { version = "1.54.1", features = ["macros", "rt-multi-thread", "signal"] }
+tonic = "0.14.6"
+tonic-prost = "0.14.6"
+tonic-prost-build = "0.14.6"
+xberg = "1.3.10"
+
+sqlx = { version = "0.9", default-features = false, features = ["runtime-tokio", "tls-none", "postgres", "macros", "migrate"] }
+
+apalis = "1"
+apalis-postgres = "1"
+
+[profile.profiling]
+inherits = "release"
+debug = true
+
+# See https://microsoft.github.io/rust-guidelines/guidelines/universal/index.html#compiler-lints
+[workspace.lints.rust]
+ambiguous_negative_literals = "warn"
+missing_debug_implementations = "warn"
+redundant_imports = "warn"
+redundant_lifetimes = "warn"
+trivial_numeric_casts = "warn"
+unsafe_op_in_unsafe_fn = "warn"
+unused_lifetimes = "warn"
+
+# See https://microsoft.github.io/rust-guidelines/guidelines/universal/index.html#clippy-lints
+[workspace.lints.clippy]
+cargo = { level = "warn", priority = -1 }
+complexity = { level = "warn", priority = -1 }
+correctness = { level = "warn", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+perf = { level = "warn", priority = -1 }
+style = { level = "warn", priority = -1 }
+suspicious = { level = "warn", priority = -1 }
+# nursery = { level = "warn", priority = -1 }  # optional, might cause more false positives
+
+# These lints are from the `restriction` lint group and prevent specific
+# constructs being used in source code in order to drive up consistency,
+# quality, and brevity
+allow_attributes_without_reason = "warn"
+as_pointer_underscore = "warn"
+assertions_on_result_states = "warn"
+clone_on_ref_ptr = "warn"
+deref_by_slicing = "warn"
+disallowed_script_idents = "warn"
+empty_drop = "warn"
+empty_enum_variants_with_brackets = "warn"
+empty_structs_with_brackets = "warn"
+fn_to_numeric_cast_any = "warn"
+if_then_some_else_none = "warn"
+implicit_clone = "warn"
+map_err_ignore = "warn"
+redundant_type_annotations = "warn"
+renamed_function_params = "warn"
+semicolon_outside_block = "warn"
+undocumented_unsafe_blocks = "warn"
+unnecessary_safety_comment = "warn"
+unnecessary_safety_doc = "warn"
+unneeded_field_pattern = "warn"
+unused_result_ok = "warn"
+
+# May cause issues with structured logging otherwise.
+literal_string_with_formatting_args = "allow"
+
+# Define custom opt outs here
+# The crates are not intended to be published, therefore we don't need
+# warning about unspecified package metadata.
+cargo_common_metadata = "allow"
+
+# Some of our APIs are not intended to be documented, and we don't want
+# to be warned about that.
+missing_errors_doc = "allow"
+
+# Allow multiple versions of the same crate to coexist in the workspace
+# without triggering a clippy warning.
+multiple_crate_versions = "allow"
+
+# Allow for casts between numeric types that may truncate large values, lose precision
+# or lose signs, since this isn't really relevant in out application domain.
+cast_possible_truncation = "allow"
+cast_precision_loss = "allow"
+cast_sign_loss = "allow"
