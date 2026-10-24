@@ -5,6 +5,7 @@
 
 mod config;
 mod db;
+mod topics;
 mod upload;
 mod webhook;
 mod worker;
@@ -45,6 +46,7 @@ async fn main() -> Result<()> {
             bucket: config.s3.bucket.clone(),
             token: config.webhook_token,
         }))
+        .merge(topics::router())
         .layer(TraceLayer::new_for_http());
 
     let listener = tokio::net::TcpListener::bind(&config.listen_addr)

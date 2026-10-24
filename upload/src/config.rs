@@ -10,7 +10,8 @@ const DEFAULT_MAX_UPLOAD_BYTES: usize = 256 * 1024 * 1024;
 /// Default bind address; loopback only so the dev service is not exposed.
 const DEFAULT_LISTEN_ADDR: &str = "127.0.0.1:8081";
 
-/// Default S3 region. `RustFS` ignores it, but the SDK requires one.
+#[expect(clippy::doc_markdown, reason = "RustFS is not an item")]
+/// Default S3 region. RustFS ignores it, but the SDK requires one.
 const DEFAULT_S3_REGION: &str = "us-east-1";
 
 /// Settings for the ingestion service.
