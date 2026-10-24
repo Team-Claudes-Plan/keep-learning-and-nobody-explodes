@@ -41,7 +41,7 @@ CREATE TABLE games (
     defuser_id UUID NOT NULL,
     expert_id UUID NOT NULL,
     status TEXT NOT NULL DEFAULT 'active'
-        CHECK (status IN ('active', 'won', 'lost')),
+        CHECK (status IN ('active', 'won', 'lost', 'waiting')),
     failure_count SMALLINT NOT NULL DEFAULT 0
         CHECK (failure_count BETWEEN 0 AND 3),
     next_event_sequence INTEGER NOT NULL DEFAULT 0
