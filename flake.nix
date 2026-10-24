@@ -201,6 +201,7 @@
               pkgs.cmake
               pkgs.pkg-config
               pkgs.rustPlatform.bindgenHook
+              pkgs.bun
             ] ++ linkLibs;
             env = devEnv // ortEnv // {
               LD_LIBRARY_PATH = lib.makeLibraryPath linkLibs;

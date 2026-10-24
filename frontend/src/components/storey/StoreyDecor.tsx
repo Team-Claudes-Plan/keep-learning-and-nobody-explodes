@@ -1,4 +1,18 @@
-import type { DecorKind } from '../../data/houseParts'
+import { Suspense, useEffect, useMemo } from 'react'
+import { useGLTF } from '@react-three/drei'
+import { Mesh, MeshStandardMaterial } from 'three'
+import { shadeHex, type DecorKind } from '../../data/houseParts'
+
+/** Built in Blender by scripts/blender/storey_decor.py. Origin on the floor, back on the wall, real metres. */
+const DECOR_URLS: Record<DecorKind, string> = {
+  flowerPot: '/models/storey/flowerPot.glb',
+  lamp: '/models/storey/lamp.glb',
+  bench: '/models/storey/bench.glb',
+  vine: '/models/storey/vine.glb',
+}
+
+/** Materials that light up (lampshade, bulb) and glow brighter when the storey is hovered. */
+const LIGHT_MATERIALS = new Set(['Shade', 'Bulb'])
 
 type StoreyDecorProps = {
   kind: DecorKind
@@ -6,66 +20,50 @@ type StoreyDecorProps = {
   glow: number
 }
 
-export default function StoreyDecor({ kind, color, glow }: StoreyDecorProps) {
-  if (kind === 'flowerPot') {
-    return (
-      <group>
-        <mesh position={[0, -0.07, 0]}>
-          <boxGeometry args={[0.22, 0.14, 0.18]} />
-          <meshStandardMaterial color="#5a4a38" roughness={0.9} />
-        </mesh>
-        <mesh position={[0, 0.05, 0]}>
-          <icosahedronGeometry args={[0.14, 0]} />
-          <meshStandardMaterial color={color} emissive={color} emissiveIntensity={0.2 + glow * 0.5} flatShading roughness={0.8} />
-        </mesh>
-        <mesh position={[0.07, 0.12, 0.03]}>
-          <sphereGeometry args={[0.05, 10, 10]} />
-          <meshStandardMaterial color="#ffe6a3" emissive="#ffe6a3" emissiveIntensity={0.3 + glow * 0.4} />
-        </mesh>
-      </group>
-    )
-  }
+function DecorModel({ kind, color, glow }: StoreyDecorProps) {
+  const { scene } = useGLTF(DECOR_URLS[kind])
 
-  if (kind === 'lamp') {
-    return (
-      <group>
-        <mesh position={[0, -0.09, 0]}>
-          <cylinderGeometry args={[0.03, 0.04, 0.12, 8]} />
-          <meshStandardMaterial color="#c9d4e6" metalness={0.6} roughness={0.35} />
-        </mesh>
-        <mesh position={[0, 0.03, 0]}>
-          <sphereGeometry args={[0.1, 14, 14]} />
-          <meshStandardMaterial color={color} emissive={color} emissiveIntensity={0.7 + glow} roughness={0.4} />
-        </mesh>
-      </group>
-    )
-  }
+  // Own copy with own materials: Accent parts take the house colour.
+  const { model, tinted, lights } = useMemo(() => {
+    const model = scene.clone(true)
+    const tinted: MeshStandardMaterial[] = []
+    const lights: { material: MeshStandardMaterial; base: number }[] = []
+    const colors: Record<string, string> = { Accent: color, AccentDark: shadeHex(color, -0.15) }
+    model.traverse((child) => {
+      if (!(child instanceof Mesh)) return
+      const material = (child.material as MeshStandardMaterial).clone()
+      const tint = colors[material.name]
+      if (tint) {
+        material.color.set(tint)
+        material.emissive.set(tint)
+        tinted.push(material)
+      } else if (LIGHT_MATERIALS.has(material.name)) {
+        lights.push({ material, base: material.emissiveIntensity })
+      }
+      child.material = material
+    })
+    return { model, tinted, lights }
+  }, [scene, color])
 
-  if (kind === 'bench') {
-    return (
-      <group>
-        <mesh position={[0, 0.02, 0]}>
-          <boxGeometry args={[0.42, 0.06, 0.18]} />
-          <meshStandardMaterial color={color} emissive={color} emissiveIntensity={0.1 + glow * 0.3} roughness={0.7} />
-        </mesh>
-        {[-0.16, 0.16].map((x) => (
-          <mesh key={x} position={[x, -0.08, 0]}>
-            <boxGeometry args={[0.05, 0.14, 0.16]} />
-            <meshStandardMaterial color="#4a4a52" metalness={0.5} roughness={0.4} />
-          </mesh>
-        ))}
-      </group>
-    )
-  }
+  useEffect(() => {
+    for (const material of tinted) material.emissiveIntensity = 0.05 + glow * 0.25
+    for (const { material, base } of lights) material.emissiveIntensity = base * (1 + glow * 0.8)
+  }, [tinted, lights, glow])
 
+  useEffect(
+    () => () => model.traverse((child) => child instanceof Mesh && (child.material as MeshStandardMaterial).dispose()),
+    [model],
+  )
+
+  return <primitive object={model} />
+}
+
+export default function StoreyDecor(props: StoreyDecorProps) {
   return (
-    <group>
-      {[0, 1, 2, 3].map((index) => (
-        <mesh key={index} position={[Math.sin(index) * 0.06, -0.05 + index * 0.09, Math.cos(index) * 0.04]}>
-          <icosahedronGeometry args={[0.07, 0]} />
-          <meshStandardMaterial color={color} emissive={color} emissiveIntensity={0.15 + glow * 0.4} flatShading roughness={0.9} />
-        </mesh>
-      ))}
-    </group>
+    <Suspense fallback={null}>
+      <DecorModel {...props} />
+    </Suspense>
   )
 }
+
+for (const url of Object.values(DECOR_URLS)) useGLTF.preload(url)
