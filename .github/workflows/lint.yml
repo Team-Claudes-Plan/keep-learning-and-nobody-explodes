@@ -20,24 +20,23 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
 
-      - name: Install Nix
-        uses: cachix/install-nix-action@v31
+      - name: Install Rust toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
-          extra_nix_config: |
-            experimental-features = nix-command flakes
+          components: rustfmt, clippy
+          rustflags: ""
 
-      - name: Install dev shell
-        run: nix develop --no-update-lock-file --command true
-
-      - name: Cache Rust
-        uses: Swatinem/rust-cache@v2
-        with:
-          cmd-format: "nix develop -c {0}"
-          cache-bin: false
-          cache-on-failure: true
+      - name: Install native build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential \
+            cmake \
+            pkg-config \
+            protobuf-compiler
 
       - name: Check formatting
-        run: nix develop --no-update-lock-file --command cargo fmt --all --check
+        run: cargo fmt --all --check
 
       - name: Run clippy
-        run: nix develop --no-update-lock-file --command cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
+        run: cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
