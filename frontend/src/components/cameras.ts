@@ -19,15 +19,5 @@ export const ROOM_CAMERA = {
     .slice(0, 3) as [number, number, number],
 }
 
-export const ROOM_MIN_ZOOM = 120
-
-/** World area that must stay visible in the room: the bomb table with its top and a bit of its legs. */
-const ROOM_VIEW_HEIGHT = 2.4
-const ROOM_VIEW_WIDTH = 2.6
-
-/** Room zoom for a viewport: the full zoom on large screens, zoomed out on small ones so the table stays in view. */
-export function roomZoom(size: { width: number; height: number }) {
-  const fit = Math.min(size.height / ROOM_VIEW_HEIGHT, size.width / ROOM_VIEW_WIDTH)
-  return Math.min(ROOM_CAMERA.zoom, Math.max(ROOM_MIN_ZOOM, fit))
-}
+export const ROOM_MIN_ZOOM = 140
 export const ROOM_WALL_Z = -1.3

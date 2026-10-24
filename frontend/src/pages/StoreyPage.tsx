@@ -1,7 +1,7 @@
 import { Suspense, useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router'
 import SceneCanvas from '../components/SceneCanvas'
-import { ROOM_CAMERA, roomZoom } from '../components/cameras'
+import { ROOM_CAMERA } from '../components/cameras'
 import RoomStage from '../components/RoomStage'
 import BombTable, { BOMB_SPOT } from '../components/storey/BombTable'
 import RoomBomb from '../components/storey/RoomBomb'
@@ -71,9 +71,8 @@ function StoreyRoom({ house, storey }: { house: House; storey: Storey }) {
         camera={{
           position: ROOM_CAMERA.position,
           rotation: ROOM_CAMERA.rotation,
-          zoom: roomZoom({ width: window.innerWidth, height: window.innerHeight }),
-          // orthographic: zoomed out on narrow screens, the floor reaches below the camera
-          near: -20,
+          zoom: ROOM_CAMERA.zoom,
+          near: 0.1,
           far: 200,
         }}
         controls={false}

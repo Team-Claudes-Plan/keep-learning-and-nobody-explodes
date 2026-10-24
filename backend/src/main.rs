@@ -3,22 +3,29 @@
 //! Accepts course material over HTTP, stores it in S3, and processes `RustFS`
 //! object-created webhooks through a Postgres-backed OCR worker.
 
+mod api;
 mod config;
 mod db;
-mod topics;
+mod session;
 mod upload;
 mod webhook;
 mod worker;
 
+use crate::{config::Config, db::Database};
 use anyhow::{Context, Result};
 use axum::{Router, routing::get};
+use std::sync::Arc;
 use tower_http::trace::TraceLayer;
 use tracing_subscriber::EnvFilter;
 
-use crate::config::Config;
-
 #[global_allocator]
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
+
+#[derive(Debug)]
+pub struct GlobalState {
+    pub db: Database,
+    pub sessions: session::Sessions,
+}
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -30,23 +37,28 @@ async fn main() -> Result<()> {
         .init();
 
     let config = Config::from_env()?;
-    let pool = db::connect(&config.database_url, 10).await?;
-    db::migrate(&pool).await?;
-    worker::setup(&pool).await?;
-    let backend = worker::backend(&pool);
+    let db = Database::connect(&config.database_url, 10).await?;
+    db.migrate().await?;
+    worker::setup(&db).await?;
+    let backend = worker::backend(&db);
     let store = upload::ObjectStore::connect(&config.s3).await;
+
+    let state = Arc::new(GlobalState {
+        db: db.clone(),
+        sessions: session::Sessions::new(db.clone()),
+    });
 
     let app = Router::new()
         .route("/", get(health))
         .route("/health", get(health))
         .merge(upload::router(store.clone(), config.max_upload_bytes))
         .merge(webhook::router(webhook::WebhookState {
-            pool: pool.clone(),
+            db: db.clone(),
             backend: backend.clone(),
             bucket: config.s3.bucket.clone(),
             token: config.webhook_token,
         }))
-        .merge(topics::router())
+        .merge(api::routes().with_state(state))
         .layer(TraceLayer::new_for_http());
 
     let listener = tokio::net::TcpListener::bind(&config.listen_addr)
@@ -61,7 +73,7 @@ async fn main() -> Result<()> {
 
     tokio::try_join!(
         async { server.await.context("server failed") },
-        worker::run(pool, store, backend),
+        worker::run(db, store, backend),
     )?;
     Ok(())
 }
