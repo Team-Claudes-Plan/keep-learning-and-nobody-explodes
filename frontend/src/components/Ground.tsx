@@ -1,9 +1,9 @@
 import { Grid } from '@react-three/drei'
 
-export default function Ground() {
+export default function Ground({ y = 0 }: { y?: number }) {
   return (
     <Grid
-      position={[0, 0, 0]}
+      position={[0, y, 0]}
       args={[40, 40]}
       cellSize={1}
       cellThickness={1}

@@ -1,22 +1,14 @@
 import { useEffect, useMemo } from 'react'
-import { MeshStandardMaterial, RepeatWrapping, type Material, type MeshStandardMaterialParameters, type Texture } from 'three'
+import { MeshStandardMaterial, type Material, type MeshStandardMaterialParameters } from 'three'
 import type { BaseDesign, FacadeTextures, Tier } from '../../data/facadeTypes'
 import { resolveDesign } from '../../data/baseDesigns'
 import { resolveShape } from '../../data/facadeShapes'
 import type { House } from '../../data/houses'
 import { houseHeight } from '../../data/houses'
+import { cloneRepeat, disposeMaterials } from '../surfaces'
 import { useHouseTextures } from './useHouseTextures'
 import Roof from './roofs'
 import DetailProp from './details'
-
-function cloneRepeat(source: Texture, repeatX: number, repeatY: number): Texture {
-  const clone = source.clone()
-  clone.wrapS = RepeatWrapping
-  clone.wrapT = RepeatWrapping
-  clone.repeat.set(Math.max(1, Math.round(repeatX)), Math.max(1, Math.round(repeatY)))
-  clone.needsUpdate = true
-  return clone
-}
 
 function createTierMaterials(
   tier: Tier,
@@ -57,17 +49,8 @@ function createTierMaterials(
   })
 }
 
-function disposeMaterials(materialSets: Material[][]) {
-  for (const set of materialSets) {
-    for (const material of set) {
-      const standard = material as MeshStandardMaterial
-      standard.map?.dispose()
-      standard.emissiveMap?.dispose()
-      standard.normalMap?.dispose()
-      standard.roughnessMap?.dispose()
-      standard.dispose()
-    }
-  }
+function disposeTierMaterials(materialSets: Material[][]) {
+  disposeMaterials(materialSets.flat())
 }
 
 type FacadeProps = {
@@ -96,7 +79,7 @@ export default function Facade({ house, shapeId, designId, hovered, roofColor }:
     [tiers, textures, design, glow],
   )
 
-  useEffect(() => () => disposeMaterials(materialSets), [materialSets])
+  useEffect(() => () => disposeTierMaterials(materialSets), [materialSets])
 
   const top = tiers[tiers.length - 1]
   const roofColorResolved = roofColor ?? shape.roofColor

@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react'
 import type { ReactNode, ComponentProps, ComponentRef, RefObject } from 'react'
 import { Canvas, type CameraProps, useThree, useFrame } from '@react-three/fiber'
 import { MapControls } from '@react-three/drei'
-import type { Camera, OrthographicCamera } from 'three'
+import type { Camera, OrthographicCamera, PerspectiveCamera } from 'three'
 import Ground from './Ground'
 import { ISO_CAMERA } from './cameras'
 
@@ -41,6 +41,8 @@ type SceneCanvasProps = {
   panBounds?: { clamp: (x: number, z: number) => [number, number] }
   responsiveZoom?: boolean
   grid?: boolean
+  gridY?: number
+  fog?: [color: string, near: number, far: number] | false
 }
 
 function VerticalScroll({
@@ -73,6 +75,18 @@ function VerticalScroll({
 
     const zoom = () => (camera as OrthographicCamera).zoom || 1
 
+    const isPerspective = (cam: Camera): cam is PerspectiveCamera =>
+      (cam as PerspectiveCamera).isPerspectiveCamera === true
+
+    const worldPerPixel = () => {
+      if (!isPerspective(camera)) return 1 / zoom()
+      const controls = controlsRef.current
+      const distance = controls
+        ? camera.position.distanceTo(controls.target)
+        : camera.position.length()
+      return (2 * distance * Math.tan((camera.fov * Math.PI) / 360)) / (element.clientHeight || 1)
+    }
+
     const setCanvasCursor = (cursor: string) => {
       setCursor(element, cursor)
     }
@@ -93,7 +107,7 @@ function VerticalScroll({
       if (!state || state.pointerId !== event.pointerId) return
       const delta = event.clientY - state.lastY
       state.lastY = event.clientY
-      scrollBy(delta / zoom())
+      scrollBy(delta * worldPerPixel())
     }
 
     const endDrag = (event: PointerEvent) => {
@@ -179,6 +193,8 @@ export default function SceneCanvas({
   panBounds,
   responsiveZoom = true,
   grid = true,
+  gridY = 0,
+  fog = false,
 }: SceneCanvasProps) {
   const controlsRef = useRef<ControlsImpl>(null)
   const baseZoom = camera.zoom ?? ISO_CAMERA.zoom
@@ -208,7 +224,9 @@ export default function SceneCanvas({
       <directionalLight position={[8, 14, 6]} intensity={1.7} color="#fff6e2" />
       <directionalLight position={[-6, 4, -8]} intensity={0.3} color="#cfe0ff" />
 
-      {grid && <Ground />}
+      {fog && <fog attach="fog" args={fog} />}
+
+      {grid && <Ground y={gridY} />}
 
       {children}
 
