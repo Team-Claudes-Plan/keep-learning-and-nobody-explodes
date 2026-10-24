@@ -1787,6 +1787,52 @@ canvas {
   opacity: 0.85;
 }
 
+/* Explosion: white-hot flash fading through orange */
+.bomb-flash {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  animation: bomb-flash 1.4s ease-out forwards;
+}
+
+@keyframes bomb-flash {
+  0% { background: rgba(255, 255, 255, 1); }
+  12% { background: rgba(255, 214, 140, 0.85); }
+  40% { background: rgba(255, 110, 30, 0.35); }
+  100% { background: rgba(255, 80, 20, 0); }
+}
+
+/* Test bar: pick a question type, top left over the bomb */
+.bomb-testbar {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  max-width: calc(100% - 24px);
+  padding: 6px;
+  border-radius: 10px;
+  background: rgba(13, 15, 19, 0.75);
+  color: #e6e9ef;
+  color-scheme: dark;
+  --mg-border-strong: rgba(255, 255, 255, 0.18);
+  --mg-panel-solid: #1b1f27;
+  --mg-well: #1b1f27;
+}
+
+.bomb-testbar .mg-button,
+.bomb-testbar .mg-select {
+  padding: 6px 10px;
+}
+
+.bomb-testbar-info {
+  padding: 0 6px;
+  font-size: 13px;
+  color: #9aa3b2;
+}
+
 .bomb-screen-result.is-good { background: rgba(48, 164, 108, 0.9); }
 .bomb-screen-result.is-bad { background: rgba(229, 72, 77, 0.9); }
 

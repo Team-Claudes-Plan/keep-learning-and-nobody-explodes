@@ -1,12 +1,14 @@
 import { useEffect, useState } from 'react'
 import { fetchQuestions, submitAnswer } from '../api/client'
-import type { AnswerResult, AnswerSubmission, Question } from '../api/types'
+import type { AnswerResult, AnswerSubmission, Question, QuestionType } from '../api/types'
 import { submissionFor } from './adapters'
 import Bomb3D, { BOMB_SLOTS, type SlotStatus } from './Bomb3D'
 import LockButton3D from './modules/LockButton3D'
 import { describeAnswer } from './describe'
+import { MODULES } from './modules'
 import type { ModuleDef } from './modules/types'
-import { planBomb, type PlannedModule } from './plan'
+import { planBomb, planForType, playableTypes, type PlannedModule } from './plan'
+import { QUESTION_TYPE_LABELS, QUESTION_TYPES } from './questionTypes'
 import { initialValue, isComplete, submitsImmediately, type AnyValue } from './primitives'
 
 const BOMB_SIZE = 5
@@ -20,6 +22,9 @@ type Slot = PlannedModule & {
   submission?: AnswerSubmission
   result?: AnswerResult
 }
+
+/** Test bar: a random bomb, or every task variant of one question type in every fitting module. */
+type Mode = 'random' | QuestionType
 
 type Load =
   | { status: 'loading' }
@@ -37,23 +42,34 @@ type BombProps = {
   plan?: (questions: Question[]) => PlannedModule[]
   /** 'defuser': no prompts on the bomb (the expert has those); 'solo': prompt shown next to the zoomed module. */
   view?: 'solo' | 'defuser'
+  /** Shows the test bar to pick a question type and click through its tasks. */
+  testBar?: boolean
 }
 
 /** Full-screen 3D bomb, nothing else: click a module to zoom in and work on it. */
-export default function Bomb({ modules, plan: fixedPlan, view = 'solo' }: BombProps) {
+export default function Bomb({ modules, plan: fixedPlan, view = 'solo', testBar = false }: BombProps) {
   const [round, setRound] = useState(0)
   const [load, setLoad] = useState<Load>({ status: 'loading' })
   const [slots, setSlots] = useState<Slot[]>([])
   const [timeLeft, setTimeLeft] = useState(BOMB_SECONDS)
   /** Index of the module shown large (zoomed in on the bomb); null = bomb overview. */
   const [expanded, setExpanded] = useState<number | null>(null)
+  const [mode, setMode] = useState<Mode>('random')
+  /** Modules the plan had before it was cut down to the slots on the bomb. */
+  const [plannedCount, setPlannedCount] = useState(0)
 
   useEffect(() => {
     const controller = new AbortController()
     fetchQuestions(controller.signal)
       .then((questions) => {
         // Only as many modules as there are slots on the bomb.
-        const plan = (fixedPlan ? fixedPlan(questions) : planBomb(questions, modules, BOMB_SIZE)).slice(0, BOMB_SLOTS)
+        const full = fixedPlan
+          ? fixedPlan(questions)
+          : mode === 'random'
+            ? planBomb(questions, modules, BOMB_SIZE)
+            : planForType(questions, MODULES, mode) // testing a type: every module that can play it
+        setPlannedCount(full.length)
+        const plan = full.slice(0, BOMB_SLOTS)
         setSlots(
           plan.map((p) => ({
             ...p,
@@ -69,12 +85,14 @@ export default function Bomb({ modules, plan: fixedPlan, view = 'solo' }: BombPr
         if (!controller.signal.aborted) setLoad({ status: 'error', message: errorMessage(err) })
       })
     return () => controller.abort()
-  }, [modules, round, fixedPlan])
+  }, [modules, round, fixedPlan, mode])
 
+  /** Testing one question type: no timer and no explosion, so every module can be tried. */
+  const testing = testBar && mode !== 'random'
   const strikes = slots.filter((s) => s.status === 'failed').length
-  const exploded = strikes >= MAX_STRIKES || timeLeft <= 0
+  const exploded = !testing && (strikes >= MAX_STRIKES || timeLeft <= 0)
   const finished = slots.length > 0 && slots.every((s) => s.status !== 'active' && s.status !== 'sending')
-  const running = load.status === 'ready' && slots.length > 0 && !exploded && !finished
+  const running = load.status === 'ready' && slots.length > 0 && !exploded && !finished && !testing
 
   useEffect(() => {
     if (!running) return
@@ -85,6 +103,11 @@ export default function Bomb({ modules, plan: fixedPlan, view = 'solo' }: BombPr
   function restart() {
     setLoad({ status: 'loading' })
     setRound((r) => r + 1)
+  }
+
+  function changeMode(next: Mode) {
+    setLoad({ status: 'loading' })
+    setMode(next)
   }
 
   function updateSlot(index: number, patch: Partial<Slot>) {
@@ -204,7 +227,8 @@ export default function Bomb({ modules, plan: fixedPlan, view = 'solo' }: BombPr
     )
   }
 
-  const focused = expanded
+  // When it goes off, leave the module so the whole explosion is in view.
+  const focused = exploded ? null : expanded
   const focusedOnBomb = focused !== null && slots[focused]?.module.component3d !== undefined
   const defuser = view === 'defuser'
   // 3D modules are worked on directly; 2D modules still need their controls in a card.
@@ -222,15 +246,65 @@ export default function Bomb({ modules, plan: fixedPlan, view = 'solo' }: BombPr
         onBack={() => setExpanded(null)}
         timeLeft={timeLeft}
         strikes={strikes}
+        exploded={exploded}
       >
         {card}
       </Bomb3D>
+      {testBar && (
+        <TestBar
+          mode={mode}
+          playable={playableTypes(load.questions, MODULES)}
+          shown={slots.length}
+          planned={plannedCount}
+          onMode={changeMode}
+          onRestart={restart}
+        />
+      )}
+      {slots.length === 0 && <p className="bomb-screen-message">Keine passenden Aufgaben für diese Module.</p>}
       {(exploded || finished) && (
         <button className={`bomb-screen-result ${exploded ? 'is-bad' : 'is-good'}`} onClick={restart}>
           {exploded ? '💥 BOOM' : '✅ Entschärft'}
           {!fixedPlan && <small>Neue Bombe</small>}
         </button>
       )}
+    </div>
+  )
+}
+
+type TestBarProps = {
+  mode: Mode
+  /** Types at least one module can play. */
+  playable: Set<QuestionType>
+  /** Modules on the bomb, and how many the plan had (the bomb has only BOMB_SLOTS slots). */
+  shown: number
+  planned: number
+  onMode: (mode: Mode) => void
+  onRestart: () => void
+}
+
+/** Test environment: pick a question type (or step through them) and get one bomb full of its tasks. */
+function TestBar({ mode, playable, shown, planned, onMode, onRestart }: TestBarProps) {
+  const modes: Mode[] = ['random', ...QUESTION_TYPES.filter((type) => playable.has(type))]
+  const step = (by: number) => onMode(modes[(modes.indexOf(mode) + by + modes.length) % modes.length])
+
+  return (
+    <div className="bomb-testbar">
+      <button className="mg-button" onClick={() => step(-1)} aria-label="Vorheriger Fragetyp">◀</button>
+      <select className="mg-select" value={mode} onChange={(e) => onMode(e.target.value as Mode)} aria-label="Fragetyp">
+        <option value="random">Zufällige Bombe</option>
+        {QUESTION_TYPES.map((type) => (
+          <option key={type} value={type} disabled={!playable.has(type)}>
+            {QUESTION_TYPE_LABELS[type]}
+            {playable.has(type) ? '' : ' (kein Modul)'}
+          </option>
+        ))}
+      </select>
+      <button className="mg-button" onClick={() => step(1)} aria-label="Nächster Fragetyp">▶</button>
+      <button className="mg-button" onClick={onRestart}>Neu</button>
+      <span className="bomb-testbar-info">
+        {shown} Module{planned > shown ? ` (von ${planned})` : ''}
+        {mode !== 'random' && ' · ohne Timer'}
+      </span>
     </div>
   )
 }

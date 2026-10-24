@@ -3,6 +3,9 @@ import { Canvas, createPortal, useFrame, useThree, type ThreeEvent } from '@reac
 import { useGLTF } from '@react-three/drei'
 import * as THREE from 'three'
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js'
+import { playBoom, playClank } from './boom'
+import { shatterBomb, stepDebris, type Piece } from './debris'
+import Explosion from './Explosion'
 
 const BASE = '/models/bomb'
 const BOMB_URL = `${BASE}/bomb.glb`
@@ -42,9 +45,13 @@ type Bomb3DProps = {
   onBack: () => void
   timeLeft: number
   strikes: number
+  /** The bomb went off: the camera zooms out to a wide view, then the bomb blows apart. */
+  exploded?: boolean
+  /** Internal: called the moment the blast happens (after the camera has zoomed out). */
+  onBlast?: () => void
   /** UI of the focused module, shown over the zoomed-in module. */
   children?: ReactNode
-  /** Only the bomb: no hint, no back button (press Esc to zoom out). */
+  /** Only the bomb: no hint, no back button (click beside the module or press Esc to zoom out). */
   bare?: boolean
 }
 
@@ -280,6 +287,19 @@ function applyOrbit(o: Orbit, camera: THREE.Camera) {
   camera.lookAt(o.target)
 }
 
+const noRaycast = () => {}
+
+/**
+ * Shows or hides a static part of a module model. Hidden parts must not catch clicks either:
+ * three.js raycasts invisible meshes too, and they sit in front of the 3D controls that replace them.
+ */
+function showPart(part: THREE.Object3D, visible: boolean) {
+  part.visible = visible
+  part.traverse((object) => {
+    if ((object as THREE.Mesh).isMesh) object.raycast = visible ? THREE.Mesh.prototype.raycast : noRaycast
+  })
+}
+
 const BAY_SIZE = 1.02
 const BAY_RIM = 0.035
 const BAY_DEPTH = 0.06
@@ -338,7 +358,16 @@ function makeEmptyBay() {
   return bay
 }
 
-function BombModel({ modules, focused, onSelect, timeLeft, strikes }: Bomb3DProps) {
+/** Camera for the explosion: far enough out to see the bomb blow apart and its parts land, from a little above. */
+const BLAST_DISTANCE = 11
+const BLAST_PITCH = 0.5
+/** Seconds between the camera being out of the module and the blast, so it is pulled back by then. */
+const BLAST_DELAY = 0.9
+
+/** Height of the bomb's centre, where the explosion starts. */
+const BOMB_CENTER: [number, number, number] = [0, 1.55, 0]
+
+function BombModel({ modules, focused, onSelect, onBack, timeLeft, strikes, exploded = false, onBlast }: Bomb3DProps) {
   const { scene } = useGLTF(BOMB_URL)
   const bomb = useMemo(() => scene.clone(true), [scene])
 
@@ -361,7 +390,7 @@ function BombModel({ modules, focused, onSelect, timeLeft, strikes }: Bomb3DProp
       if (framesKey[i] === '1') {
         // The GLB scene wraps one module node; hide its static controls, keep plate, screws and LED.
         const module = root.getObjectByProperty('name', root.children[0]?.name) ?? root
-        for (const part of module.children) part.visible = MODULE_FRAME_PARTS.test(part.name)
+        for (const part of module.children) showPart(part, MODULE_FRAME_PARTS.test(part.name))
       }
       const leds: THREE.MeshStandardMaterial[] = []
       root.traverse((object) => {
@@ -423,7 +452,7 @@ function BombModel({ modules, focused, onSelect, timeLeft, strikes }: Bomb3DProp
       instances.forEach((inst, i) => {
         if (framesKey[i] === '1') return
         for (const part of inst.root.children[0]?.children ?? []) {
-          part.visible = i !== index || MODULE_FRAME_PARTS.test(part.name)
+          showPart(part, i !== index || MODULE_FRAME_PARTS.test(part.name))
         }
       })
     },
@@ -578,6 +607,49 @@ function BombModel({ modules, focused, onSelect, timeLeft, strikes }: Bomb3DProp
     applyOrbit(o, camera)
   })
 
+  // Explosion, in two steps so it can be watched: first the camera leaves the module and pulls back
+  // to a wide view, then the bomb is torn apart (see debris.ts) and the pieces crash onto the floor
+  // and clatter. The bomb is a fresh clone for every round, so nothing has to be put back.
+  const [blasted, setBlasted] = useState(false)
+  const countdown = useRef(0)
+  /** The player grabbed the view during the explosion: stop steering the camera. */
+  const cameraTaken = useRef(false)
+  const debris = useRef<Piece[]>([])
+  const clanks = useRef(0)
+  useEffect(() => {
+    if (!blasted) return
+    playBoom()
+    debris.current = shatterBomb(bomb)
+  }, [blasted, bomb])
+
+  useFrame((_, delta) => {
+    if (!exploded) return
+    const dt = Math.min(delta, 1 / 30)
+    const o = orbit.current
+    if (o.dragging) cameraTaken.current = true
+    if (!flight.current && !cameraTaken.current) {
+      // wide view on the bomb (no snapping meanwhile, it would pull against this and jitter)
+      o.snap = false
+      const k = 1 - Math.exp(-dt * 2.2)
+      o.distance += (BLAST_DISTANCE - o.distance) * k
+      o.pitch += (BLAST_PITCH - o.pitch) * k
+    }
+    if (!blasted) {
+      // out of the module and pulled back first, then it goes off
+      if (!flight.current) countdown.current += dt
+      if (countdown.current > BLAST_DELAY) {
+        setBlasted(true)
+        onBlast?.()
+      }
+      return
+    }
+    // at most a few clangs per frame, or it turns into noise
+    clanks.current = 0
+    stepDebris(debris.current, dt, (speed) => {
+      if (clanks.current++ < 3) playClank(speed)
+    })
+  })
+
   // Live timer and strike marks on the fixed timer module
   const timer = useMemo(() => makeTimerDisplay(), [])
   useEffect(() => {
@@ -617,16 +689,19 @@ function BombModel({ modules, focused, onSelect, timeLeft, strikes }: Bomb3DProp
 
   function handleClick(event: ThreeEvent<MouseEvent>) {
     const index = planIndexOf(event.object)
-    // Inside the focused module the click belongs to its controls: let it reach them untouched.
-    if (focused !== null && index === focused) return
     event.stopPropagation()
-    if (event.delta > 4) return // was a drag to rotate
-    if (focused !== null) return // zoomed in, only Esc (or the back button) zooms out
+    if (exploded) return
+    // Inside the focused module the click belongs to its controls (they handled it before it bubbled
+    // up here). Stopping it also keeps it from reaching the hull behind the module, which would zoom out.
+    if (focused !== null && index === focused) return
+    // A drag (turning the bomb, or a cable/block dragged out of the module) is never a click.
+    if (event.delta > 4) return
+    if (focused !== null) return onBack() // zoomed in: a click beside the module zooms out
     if (index !== null) onSelect(index)
   }
 
   function handleHover(event: ThreeEvent<PointerEvent>) {
-    if (focused !== null) return // zoomed in: hovering is for the module's own controls
+    if (focused !== null || exploded) return // zoomed in: hovering is for the module's own controls
     event.stopPropagation()
     const index = planIndexOf(event.object)
     setHovered(index)
@@ -663,6 +738,7 @@ function BombModel({ modules, focused, onSelect, timeLeft, strikes }: Bomb3DProp
           </Fragment>
         )
       })}
+      {blasted && <Explosion center={BOMB_CENTER} />}
       <primitive
         object={bomb}
         onClick={handleClick}
@@ -679,6 +755,8 @@ function BombModel({ modules, focused, onSelect, timeLeft, strikes }: Bomb3DProp
 /** One view: rotate the bomb, click a module to zoom in on it and show its UI on top. */
 export default function Bomb3D(props: Bomb3DProps) {
   const { focused, overlay = 'center', onBack, children, bare = false } = props
+  /** The blast itself happened (comes a moment after `exploded`, once the camera has zoomed out). */
+  const [blasted, setBlasted] = useState(false)
 
   useEffect(() => {
     if (focused === null) return
@@ -687,20 +765,38 @@ export default function Bomb3D(props: Bomb3DProps) {
     return () => window.removeEventListener('keydown', onKey)
   }, [focused, onBack])
 
+  // Clicks into empty space (beside the bomb) zoom out too, but only real clicks: the pointer must
+  // not have moved between press and release, so drags that end out there do not count.
+  const downAt = useRef({ x: 0, y: 0 })
+
   return (
-    <div className={`bomb-stage-3d ${focused !== null ? 'is-focused' : ''}`}>
+    <div
+      className={`bomb-stage-3d ${focused !== null ? 'is-focused' : ''}`}
+      onPointerDownCapture={(e) => void (downAt.current = { x: e.clientX, y: e.clientY })}
+    >
       <Canvas
         camera={{ position: OVERVIEW_CAMERA, fov: 40 }}
         dpr={[1, 2]}
+        onPointerMissed={(e) => {
+          const moved = Math.hypot(e.clientX - downAt.current.x, e.clientY - downAt.current.y)
+          if (focused !== null && moved <= 4) onBack()
+        }}
       >
         <ambientLight intensity={0.35} />
         <directionalLight position={[4, 8, 6]} intensity={1.6} />
         <directionalLight position={[-5, 3, -4]} intensity={0.5} />
         <RoomEnv />
+        {/* floor the bomb stands on (and its parts land on when it blows up) */}
+        <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.001, 0]} raycast={() => null}>
+          <circleGeometry args={[80, 64]} />
+          <meshStandardMaterial color="#15181d" roughness={0.95} />
+        </mesh>
         <Suspense fallback={null}>
-          <BombModel {...props} />
+          <BombModel {...props} onBlast={() => setBlasted(true)} />
         </Suspense>
       </Canvas>
+      {/* blinding flash over the whole screen when it goes off */}
+      {blasted && <div className="bomb-flash" aria-hidden />}
 
       {focused === null
         ? !bare && <span className="bomb-stage-hint">Ziehen zum Drehen · Modul anklicken</span>

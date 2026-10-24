@@ -1,19 +1,27 @@
+import { initialValue } from '../primitives'
 import type { ModuleDef } from './types'
 import WireModule from './WireModule'
 import WireModule3D from './WireModule3D'
 import FuseModule from './FuseModule'
+import FuseModule3D from './FuseModule3D'
 import SwitchModule from './SwitchModule'
+import SwitchModule3D from './SwitchModule3D'
 import RotaryModule from './RotaryModule'
 import RotaryModule3D from './RotaryModule3D'
 import CableModule from './CableModule'
 import CableModule3D from './CableModule3D'
 import SorterModule from './SorterModule'
+import SorterModule3D from './SorterModule3D'
 import LockModule from './LockModule'
+import LockModule3D from './LockModule3D'
 import TerminalModule from './TerminalModule'
 import TerminalModule3D from './TerminalModule3D'
 import ButtonsModule from './ButtonsModule'
+import ButtonsModule3D from './ButtonsModule3D'
 import SliderModule from './SliderModule'
+import SliderModule3D from './SliderModule3D'
 import RadarModule from './RadarModule'
+import RadarModule3D from './RadarModule3D'
 
 type Component = ModuleDef['component']
 
@@ -36,6 +44,7 @@ export const MODULES: ModuleDef[] = [
     description: 'Single Choice, Multiple Choice, Wahr/Falsch',
     supports: (p) => p.kind === 'pick' && p.selects !== 'false' && p.items.length <= 8,
     component: FuseModule as Component,
+    component3d: FuseModule3D as Component,
   },
   {
     id: 'switches',
@@ -46,6 +55,7 @@ export const MODULES: ModuleDef[] = [
       (p.kind === 'pick' && p.mode === 'many' && p.selects !== 'false') ||
       (p.kind === 'assign' && type !== 'matching' && p.targets.length <= 4),
     component: SwitchModule as Component,
+    component3d: SwitchModule3D as Component,
   },
   {
     id: 'rotary',
@@ -55,6 +65,9 @@ export const MODULES: ModuleDef[] = [
     supports: (p, type) =>
       (p.kind === 'pick' && p.mode === 'one') || (p.kind === 'assign' && type !== 'matching' && p.targets.length <= 8),
     confirm: true,
+    // The dial already points at the first answer when opened, so that counts as chosen: it can be
+    // locked in straight away. Item by item (true/false, grouping) every item starts on the first one.
+    init: (p) => (p.kind === 'pick' ? [0] : p.kind === 'assign' ? p.items.map(() => 0) : initialValue(p)),
     component: RotaryModule as Component,
     component3d: RotaryModule3D as Component,
   },
@@ -74,6 +87,7 @@ export const MODULES: ModuleDef[] = [
     description: 'Gruppieren, Wahr/Falsch',
     supports: (p) => p.kind === 'assign' && !p.unique && p.targets.length <= 4,
     component: SorterModule as Component,
+    component3d: SorterModule3D as Component,
   },
   {
     id: 'lock',
@@ -83,6 +97,7 @@ export const MODULES: ModuleDef[] = [
     supports: (p) => p.kind === 'number',
     init: () => 0,
     component: LockModule as Component,
+    component3d: LockModule3D as Component,
   },
   {
     id: 'terminal',
@@ -100,6 +115,7 @@ export const MODULES: ModuleDef[] = [
     description: 'Reihenfolge',
     supports: (p) => p.kind === 'sequence',
     component: ButtonsModule as Component,
+    component3d: ButtonsModule3D as Component,
   },
   {
     id: 'slider',
@@ -109,6 +125,7 @@ export const MODULES: ModuleDef[] = [
     supports: (p) => p.kind === 'sequence',
     init: (p) => (p.kind === 'sequence' ? p.items.map((_, i) => i) : []),
     component: SliderModule as Component,
+    component3d: SliderModule3D as Component,
   },
   {
     id: 'radar',
@@ -117,6 +134,7 @@ export const MODULES: ModuleDef[] = [
     description: 'Koordinaten',
     supports: (p) => p.kind === 'point',
     component: RadarModule as Component,
+    component3d: RadarModule3D as Component,
   },
 ]
 
