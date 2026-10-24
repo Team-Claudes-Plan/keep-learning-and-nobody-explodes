@@ -1,9 +1,13 @@
 use apalis::prelude::{BoxDynError, Data, Monitor, WorkerBuilder};
 use apalis_postgres::{Config, PostgresStorage};
 use serde::{Deserialize, Serialize};
+use uuid::Uuid;
 use xberg::{ExtractInput, ExtractionConfig, extract};
 
-use crate::{db::Database, upload::ObjectStore};
+use crate::{
+    db::Database,
+    upload::{self, ObjectStore},
+};
 
 const OCR_QUEUE: &str = "ocr";
 
@@ -23,6 +27,15 @@ impl OcrJob {
             self.key,
             self.etag.as_deref().unwrap_or("")
         )
+    }
+
+    /// The topic the document belongs to, read from the object key.
+    ///
+    /// Not stored in the job: jobs already in the queue must keep decoding, and
+    /// the key is the single source of truth for where a file was uploaded.
+    #[must_use]
+    pub fn topic_id(&self) -> Option<Uuid> {
+        upload::topic_of_key(&self.key)
     }
 
     #[must_use]
@@ -61,7 +74,12 @@ async fn process_ocr(
     Data(db): Data<Database>,
     Data(store): Data<ObjectStore>,
 ) -> Result<(), BoxDynError> {
-    db.mark_processing(&job.bucket, &job.key, job.etag.as_deref())
+    let Some(topic_id) = job.topic_id() else {
+        // Queued before topics existed; retrying cannot give it a topic.
+        tracing::warn!(name: "ocr.skipped", key = %job.key, "object key does not name a topic, skipping OCR job");
+        return Ok(());
+    };
+    db.mark_processing(topic_id, &job.bucket, &job.key, job.etag.as_deref())
         .await?;
 
     if let Err(error) = extract_and_save(&job, &db, &store).await {

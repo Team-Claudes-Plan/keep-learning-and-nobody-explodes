@@ -7,7 +7,7 @@ use aws_credential_types::Credentials;
 use aws_sdk_s3::{Client, config::Region, primitives::ByteStream};
 use axum::body::Bytes;
 
-use super::{UploadStore, error::UploadError};
+use super::error::UploadError;
 use crate::config::S3Config;
 
 /// Handle to the S3 bucket that receives uploaded files.
@@ -110,17 +110,5 @@ impl ObjectStore {
             bytes,
             content_type,
         })
-    }
-}
-
-impl UploadStore for ObjectStore {
-    fn put(
-        &self,
-        key: &str,
-        content_type: &str,
-        path: &Path,
-        len: usize,
-    ) -> impl Future<Output = Result<(), UploadError>> + Send {
-        ObjectStore::put(self, key, content_type, path, len)
     }
 }

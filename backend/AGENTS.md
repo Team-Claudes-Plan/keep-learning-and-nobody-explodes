@@ -29,7 +29,16 @@ The frontend is a separate Bun package, not part of the Cargo workspace. From `f
   - `upload/`, `webhook.rs`, `worker.rs` — ingestion (below).
   - `api/` — JSON/WebSocket API under `/api`: `topics.rs` (`PUT /api/topics/create`, `GET /api/topics/list`), `session.rs` (`GET /api/sessions` lobby list, `GET /api/sessions/ws` websocket), `error.rs` (`ApiError` → `{"message": ...}`).
   - `session/` — two-player game sessions (below).
-- Ingestion flow: `POST /upload` writes objects under `uploads/` in S3 → RustFS sends an authenticated object-created webhook to `/events/rustfs` → the webhook enqueues OCR → the worker retrieves the object, extracts text, and updates the `documents` table. Preserve the `uploads/` prefix and bucket/webhook-token assumptions when changing this flow.
+- Ingestion flow:
+    - every document belongs to a topic (`documents.topic_id` is `NOT NULL`)
+    - create one with `PUT /api/topics/create` (`{"name": ...}` → `{"id": ...}`),
+    - then `POST /upload?topic_id=<uuid>` (multipart; `topic_id` is required, malformed → 400, unknown → 404) writes objects to S3 as `uploads/<topic_id>/<uuid>/<filename>`
+    - RustFS sends an authenticated object-created webhook to `/events/rustfs`
+    - the webhook reads the topic from the key (`upload::topic_of_key`)
+    - registers the `documents` row (`mark_queued`), then enqueues OCR
+    - the worker retrieves the object, extracts text, and updates the row
+    - The key is the only carrier of the topic: it is all the webhook gets from RustFS, so keep the `uploads/<topic_id>/<uuid>/<filename>` layout, the `uploads/` prefix and the bucket/webhook-token assumptions when changing this flow.
+    - Keys without a topic (older `uploads/<uuid>/<file>` keys, or objects put into the bucket by hand, e.g. with `s5cmd`) are logged and skipped. A redelivered event is acknowledged with 204 (the queue's idempotency key rejects the second job); events for a topic that no longer exists are skipped, so RustFS does not retry them forever. `OcrJob` deliberately does not carry the topic, so jobs already in the queue keep decoding.
 - Session flow (gameplay): the `session/` module is the authority for a game; clients only render what they are told. See `schema/session-protocol.md` for the wire protocol (rules, message tables, event list, examples) and keep it in sync with the code.
   - `protocol.rs` — serde wire types (`ClientMessage`, `ServerMessage`, `GameEvent`, `Answer`, `ErrorCode`, …). These are mirrored by `schema/session-client-message.schema.json`, `schema/session-server-message.schema.json` and `frontend/src/api/types.ts`; change all of them together.
   - `state.rs` — pure rules, no IO: `GameState::decide(Command) -> events` validates, `apply(event)` folds an event into the state. Live games and replays use the same code. Put rule changes here and unit-test them without a database.
@@ -50,7 +59,9 @@ The frontend is a separate Bun package, not part of the Cargo workspace. From `f
 ## Testing
 
 - Pure logic (`session/state.rs`, `session/judge.rs`, `webhook.rs`) has plain unit tests; keep new rules testable at that level.
-- Database/S3-dependent tests (`session/tests.rs`, `upload/tests.rs`) are `#[ignore]`d and need the dev stack (see Commands). They bypass the websocket and drive `Sessions` directly; `tokio-tungstenite`/`tower` are dev-dependencies for transport-level tests.
+- Database/S3-dependent tests are `#[ignore]`d and need the dev stack (see Commands): `session/tests.rs` (drives `Sessions` and the websocket), `upload/tests.rs` (upload to S3 + topic check), `webhook.rs` (`tests::database`: webhook → `documents` row), `api/topics.rs` (topic endpoints). `tokio-tungstenite`/`tower` are dev-dependencies for transport-level tests.
+- The upload endpoint is generic over the `UploadStore` trait (`topic_exists` + `put`); production uses `Uploader` (S3 + Postgres), offline tests use a recording store, so most upload tests need neither.
+- SQL is written as runtime strings, so schema mismatches (such as a missing `NOT NULL` column) are not caught by the compiler or CI; cover new queries with an ignored DB test.
 - New backend code gets tests (user rule); prefer extending the pure-state tests, and add an ignored DB test only for persistence/restore behavior.
 
 ## Environment and local state

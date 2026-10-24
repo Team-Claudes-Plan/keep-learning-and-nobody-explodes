@@ -51,7 +51,10 @@ async fn main() -> Result<()> {
     let app = Router::new()
         .route("/", get(health))
         .route("/health", get(health))
-        .merge(upload::router(store.clone(), config.max_upload_bytes))
+        .merge(upload::router(
+            upload::Uploader::new(store.clone(), db.clone()),
+            config.max_upload_bytes,
+        ))
         .merge(webhook::router(webhook::WebhookState {
             db: db.clone(),
             backend: backend.clone(),
