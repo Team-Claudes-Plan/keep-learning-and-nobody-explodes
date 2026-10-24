@@ -1,4 +1,4 @@
-import type { AnswerResult, AnswerSubmission, Question } from './types'
+import type { AnswerMap, AnswerResult, AnswerSubmission, Question, QuestionType } from './types'
 
 const QUESTIONS: Question[] = [
   {
@@ -119,14 +119,14 @@ const COORDS_TARGETS: Record<string, { x: number; y: number }> = {
 const COORDS_TOLERANCE = 8
 
 // Mock-only solutions so the UI can give feedback without a backend.
-const SOLUTIONS: Record<string, unknown> = {
+const SOLUTIONS: Record<string, AnswerMap[QuestionType]> = {
   'mock-single-1': { optionIndex: 1 },
   'mock-single-2': { optionIndex: 1 },
   'mock-multi-1': { optionIndices: [0, 2, 4] },
   'mock-multi-2': { optionIndices: [0, 2] },
   'mock-tf-1': { values: [true, false, true] },
-  'mock-text-1': { text: 'paris' },
-  'mock-text-2': { text: 'eisen' },
+  'mock-text-1': { text: 'Paris' },
+  'mock-text-2': { text: 'Eisen' },
   'mock-order-2': { order: [1, 3, 0, 2] },
   'mock-match-2': { pairs: [{ left: 0, right: 1 }, { left: 1, right: 3 }, { left: 2, right: 0 }, { left: 3, right: 2 }] },
   'mock-group-2': { assignments: [0, 1, 2, 0, 1, 2] },
@@ -150,6 +150,11 @@ function normalize(submission: AnswerSubmission): unknown {
   return answer
 }
 
+function sameAnswer(submission: AnswerSubmission, solution: AnswerMap[QuestionType]) {
+  const expected = { ...submission, answer: solution } as AnswerSubmission
+  return JSON.stringify(normalize(submission)) === JSON.stringify(normalize(expected))
+}
+
 function delay(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
@@ -166,9 +171,9 @@ export async function mockSubmitAnswer(submission: AnswerSubmission): Promise<An
     const target = COORDS_TARGETS[submission.questionId]
     if (!target) return {}
     const { x, y } = submission.answer
-    return { correct: Math.hypot(x - target.x, y - target.y) <= COORDS_TOLERANCE }
+    return { correct: Math.hypot(x - target.x, y - target.y) <= COORDS_TOLERANCE, solution: target }
   }
   const solution = SOLUTIONS[submission.questionId]
   if (solution === undefined) return {}
-  return { correct: JSON.stringify(normalize(submission)) === JSON.stringify(solution) }
+  return { correct: sameAnswer(submission, solution), solution }
 }

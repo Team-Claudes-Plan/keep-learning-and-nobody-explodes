@@ -20,7 +20,7 @@ export const MODULES: ModuleDef[] = [
     name: 'Kabel durchschneiden',
     icon: '✂️',
     description: 'Single Choice, Multiple Choice, Wahr/Falsch',
-    // True/false: the false statements get cut.
+    // Multiple choice / true-false: the wrong options get cut.
     supports: (p) => p.kind === 'pick' && p.selects !== 'true' && p.items.length <= 8,
     component: WireModule as Component,
   },
@@ -36,18 +36,20 @@ export const MODULES: ModuleDef[] = [
     id: 'switches',
     name: 'Schalter umlegen',
     icon: '🎚️',
-    description: 'Multiple Choice, Wahr/Falsch, Zuordnen, Gruppieren',
-    supports: (p) =>
+    description: 'Multiple Choice, Wahr/Falsch, Gruppieren',
+    supports: (p, type) =>
       (p.kind === 'pick' && p.mode === 'many' && p.selects !== 'false') ||
-      (p.kind === 'assign' && p.targets.length <= 4),
+      (p.kind === 'assign' && type !== 'matching' && p.targets.length <= 4),
     component: SwitchModule as Component,
   },
   {
     id: 'rotary',
     name: 'Drehschalter',
     icon: '🎛️',
-    description: 'Single Choice, Wahr/Falsch, Zuordnen, Gruppieren',
-    supports: (p) => (p.kind === 'pick' && p.mode === 'one') || (p.kind === 'assign' && p.targets.length <= 8),
+    description: 'Single Choice, Wahr/Falsch, Gruppieren',
+    supports: (p, type) =>
+      (p.kind === 'pick' && p.mode === 'one') || (p.kind === 'assign' && type !== 'matching' && p.targets.length <= 8),
+    confirm: true,
     component: RotaryModule as Component,
   },
   {

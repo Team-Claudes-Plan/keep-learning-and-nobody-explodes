@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
 import { fetchQuestions, submitAnswer } from '../api/client'
-import type { Question, QuestionType } from '../api/types'
+import type { AnswerResult, AnswerSubmission, Question, QuestionType } from '../api/types'
 import { submissionFor } from './adapters'
+import { describeAnswer } from './describe'
 import type { ModuleDef } from './modules/types'
 import { planBomb, planForType, playableTypes, type PlannedModule } from './plan'
 import { QUESTION_TYPE_LABELS, QUESTION_TYPES } from './questionTypes'
@@ -17,6 +18,8 @@ type Slot = PlannedModule & {
   value: AnyValue
   status: SlotStatus
   error?: string
+  submission?: AnswerSubmission
+  result?: AnswerResult
 }
 
 type Load =
@@ -98,25 +101,18 @@ export default function Bomb({ modules }: BombProps) {
     setSlots((prev) => prev.map((s, i) => (i === index ? { ...s, ...patch } : s)))
   }
 
-  function nextActive(after: number) {
-    for (let k = 1; k <= slots.length; k++) {
-      const i = (after + k) % slots.length
-      if (i !== after && slots[i].status === 'active') return i
-    }
-    return null
-  }
-
   /** `value` is passed explicitly when submitting right after a change. */
   async function lockIn(index: number, value: AnyValue = slots[index].value) {
     const slot = slots[index]
     if (slot.status !== 'active' || exploded || !isComplete(slot.task.primitive, value)) return
+    const submission = submissionFor(slot.task, value)
     updateSlot(index, { value, status: 'sending', error: undefined })
     try {
-      const result = await submitAnswer(submissionFor(slot.task, value))
+      const result = await submitAnswer(submission)
       const status: SlotStatus =
         result.correct === true ? 'solved' : result.correct === false ? 'failed' : 'submitted'
-      updateSlot(index, { status })
-      setExpanded(nextActive(index))
+      // Stay on this module so the player sees the result.
+      updateSlot(index, { status, submission, result })
     } catch (err) {
       updateSlot(index, { status: 'active', error: errorMessage(err) })
     }
@@ -172,7 +168,7 @@ export default function Bomb({ modules }: BombProps) {
         {slots.map((slot, index) => {
           const Module = slot.module.component
           const locked = slot.status !== 'active' || exploded
-          const immediate = submitsImmediately(slot.task.primitive)
+          const immediate = submitsImmediately(slot.task.primitive) && !slot.module.confirm
 
           if (expanded !== index) {
             return (
@@ -205,8 +201,11 @@ export default function Bomb({ modules }: BombProps) {
                 onLockIn={() => lockIn(index)}
               />
               {slot.error && <p className="bomb-error">⚠️ {slot.error}</p>}
+              {slot.submission && slot.result && (
+                <ResultPanel question={slot.question} submission={slot.submission} result={slot.result} />
+              )}
               {immediate ? (
-                slot.status !== 'active' && <p className="mg-muted bomb-lock">{slot.status === 'sending' ? 'Sende…' : 'Abgeschlossen'}</p>
+                slot.status === 'sending' && <p className="mg-muted bomb-lock">Sende…</p>
               ) : (
                 <button
                   className="mg-button mg-primary bomb-lock"
@@ -220,6 +219,44 @@ export default function Bomb({ modules }: BombProps) {
           )
         })}
       </div>
+    </div>
+  )
+}
+
+type ResultPanelProps = { question: Question; submission: AnswerSubmission; result: AnswerResult }
+
+function ResultPanel({ question, submission, result }: ResultPanelProps) {
+  if (result.correct === undefined) return <div className="bomb-feedback">📨 Antwort gesendet.</div>
+  if (result.correct) return <div className="bomb-feedback is-good">✅ Richtig!</div>
+
+  const mine = describeAnswer(question, submission.answer)
+  const right = result.solution ? describeAnswer(question, result.solution) : null
+
+  return (
+    <div className="bomb-feedback is-bad">
+      <strong>❌ Falsch – Strike!</strong>
+      {right && (
+        <div className="bomb-compare">
+          <div>
+            <span className="mg-muted">Deine Antwort</span>
+            <ul>
+              {mine.map((line, i) => (
+                <li key={i} className={mine.length === right.length && line !== right[i] ? 'is-wrong' : ''}>
+                  {line}
+                </li>
+              ))}
+            </ul>
+          </div>
+          <div className="is-solution">
+            <span className="mg-muted">Richtig</span>
+            <ul>
+              {right.map((line, i) => (
+                <li key={i}>{line}</li>
+              ))}
+            </ul>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

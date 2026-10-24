@@ -103,9 +103,7 @@ function Dial({ labels, position, onSelect, disabled, size, ariaLabel }: DialPro
             key={i}
             className={`mod-knob-tick ${i === shown ? 'is-active' : ''}`}
             style={{ transform: `rotate(${angleFor(i, count)}deg)` }}
-          >
-            {size === 'large' && <span style={{ transform: `rotate(${-angleFor(i, count)}deg)` }}>{i + 1}</span>}
-          </span>
+          />
         ))}
         <span
           className={`mod-knob-cap ${shown === null ? 'is-idle' : ''}`}
@@ -159,7 +157,6 @@ function SingleDial({ primitive, value, onChange, disabled }: ModuleProps<'pick'
                 onClick={() => onChange([i])}
                 disabled={disabled}
               >
-                <span className="mod-rotary-num">{i + 1}</span>
                 {item}
               </button>
             </li>

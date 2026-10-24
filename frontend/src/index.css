@@ -508,6 +508,11 @@ canvas {
   color: #8b95a7;
 }
 
+.mod-wheel.is-cursor {
+  border-color: #f5d90a;
+  box-shadow: 0 0 0 2px rgba(245, 217, 10, 0.25);
+}
+
 .mg-select {
   font: inherit;
   padding: 8px 10px;
@@ -587,14 +592,25 @@ canvas {
 /* Module: cables */
 
 .mod-cables {
+  position: relative;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 56px minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr) minmax(60px, 0.8fr) minmax(0, 1fr);
   margin-bottom: 12px;
+  padding: 8px 0;
+  border-radius: 8px;
+  background: #0f131b;
+  user-select: none;
+  touch-action: none;
+}
+
+.mod-cables.is-dragging {
+  cursor: grabbing;
 }
 
 .mod-cables-col {
   display: flex;
   flex-direction: column;
+  gap: 6px;
 }
 
 .mod-cable-end {
@@ -602,7 +618,7 @@ canvas {
   display: flex;
   align-items: center;
   gap: 8px;
-  min-height: 0;
+  min-height: 44px;
   padding: 0 4px;
   border: none;
   background: none;
@@ -616,6 +632,8 @@ canvas {
 .mod-cable-end.is-left {
   justify-content: flex-end;
   text-align: right;
+  cursor: grab;
+  touch-action: none;
 }
 
 .mod-cable-end.is-left.is-active {
@@ -626,8 +644,12 @@ canvas {
   text-align: left;
 }
 
-.mod-cable-end.is-right.is-target:hover {
+.mod-cable-end.is-right.is-target {
   background: rgba(110, 168, 254, 0.15);
+}
+
+.mod-cable-end.is-right.is-target .mod-cable-plug.is-socket {
+  border-color: #f5d90a;
 }
 
 .mod-cable-end:disabled {
@@ -640,9 +662,10 @@ canvas {
 
 .mod-cable-plug {
   flex: none;
-  width: 14px;
-  height: 14px;
-  border-radius: 3px;
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+  box-shadow: inset 0 -3px 0 rgba(0, 0, 0, 0.3);
 }
 
 .mod-cable-plug.is-socket {
@@ -652,8 +675,21 @@ canvas {
 }
 
 .mod-cables-wires {
-  width: 100%;
-  height: 100%;
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: visible;
+}
+
+.mod-cables-wires path {
+  fill: none;
+  stroke-width: 9;
+  stroke-linecap: round;
+  filter: drop-shadow(0 2px 2px rgba(0, 0, 0, 0.5));
+}
+
+.mod-cables-wires path.is-live {
+  opacity: 0.85;
 }
 
 /* Module: sorter */
@@ -999,22 +1035,28 @@ canvas {
   pointer-events: none;
 }
 
+.mod-knob-tick::before {
+  content: "";
+  width: 3px;
+  height: 10px;
+  border-radius: 2px;
+  background: #3a4252;
+}
+
 .mod-dial.is-small .mod-knob-tick {
   padding-top: 2px;
 }
 
 .mod-dial.is-small .mod-knob-tick::before {
-  content: "";
   width: 2px;
   height: 6px;
-  background: #3a4252;
 }
 
 .mod-knob-tick.is-active {
   color: #f5d90a;
 }
 
-.mod-dial.is-small .mod-knob-tick.is-active::before {
+.mod-knob-tick.is-active::before {
   background: #f5d90a;
 }
 
@@ -1135,14 +1177,6 @@ canvas {
   border-color: #f5d90a;
 }
 
-.mod-rotary-num {
-  font-weight: 700;
-  color: #8b95a7;
-}
-
-.mod-rotary-option.is-active .mod-rotary-num {
-  color: #f5d90a;
-}
 
 .mod-dial-cards {
   display: grid;
@@ -1206,9 +1240,19 @@ canvas {
   cursor: grabbing;
 }
 
-.mod-block.is-dragged {
+.mod-block-gap {
+  border-radius: 6px;
+  border: 2px dashed rgba(110, 168, 254, 0.6);
+  background: rgba(110, 168, 254, 0.08);
+}
+
+.mod-block.is-floating {
+  position: fixed;
+  z-index: 10;
+  pointer-events: none;
   background: #3e63dd;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.5);
+  cursor: grabbing;
 }
 
 .mod-block.is-disabled {
@@ -1228,4 +1272,60 @@ canvas {
   font-size: 11px;
   font-weight: 700;
   color: #f5d90a;
+}
+
+/* Bomb: result feedback */
+
+.bomb-feedback {
+  margin: 4px 0 12px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: rgba(110, 168, 254, 0.12);
+  border: 1px solid rgba(110, 168, 254, 0.4);
+  font-size: 14px;
+}
+
+.bomb-feedback.is-good {
+  background: rgba(48, 164, 108, 0.15);
+  border-color: #30a46c;
+}
+
+.bomb-feedback.is-bad {
+  background: #14171f;
+  border-color: #e5484d;
+}
+
+.bomb-feedback.is-bad > strong {
+  color: #ff6369;
+}
+
+.bomb-compare {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 12px;
+  margin-top: 8px;
+}
+
+.bomb-compare ul {
+  margin: 4px 0 0;
+  padding-left: 18px;
+}
+
+.bomb-compare li {
+  margin: 2px 0;
+}
+
+.bomb-compare li.is-wrong {
+  width: fit-content;
+  padding: 0 6px;
+  border-radius: 4px;
+  background: #4a1f2a;
+  color: #ffc9cc;
+  text-decoration: line-through;
+  text-decoration-color: rgba(255, 201, 204, 0.6);
+}
+
+.bomb-compare .is-solution li {
+  color: #4cc38a;
+  font-weight: 600;
 }

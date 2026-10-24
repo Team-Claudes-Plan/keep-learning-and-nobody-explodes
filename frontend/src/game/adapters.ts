@@ -36,11 +36,20 @@ export function tasksFor(question: Question): Task[] {
       return [
         task<'pick'>({
           prompt: question.prompt,
-          primitive: { kind: 'pick', mode: 'many', items: question.options },
+          primitive: { kind: 'pick', mode: 'many', items: question.options, selects: 'true' },
           toSubmission: (optionIndices) => ({
             questionId,
             type: 'multiple_choice',
             answer: { optionIndices: [...optionIndices].sort((a, b) => a - b) },
+          }),
+        }),
+        task<'pick'>({
+          prompt: question.prompt,
+          primitive: { kind: 'pick', mode: 'many', items: question.options, selects: 'false' },
+          toSubmission: (wrong) => ({
+            questionId,
+            type: 'multiple_choice',
+            answer: { optionIndices: question.options.map((_, i) => i).filter((i) => !wrong.includes(i)) },
           }),
         }),
       ]

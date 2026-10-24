@@ -18,6 +18,8 @@ export type ModuleDef = {
   icon: string
   description: string
   supports: (primitive: Primitive, questionType: QuestionType) => boolean
+  /** Single choice normally submits on the first selection; true keeps the "Abschließen" button. */
+  confirm?: boolean
   /** Starting value if the module needs a different one than the primitive default. */
   init?: (primitive: Primitive) => AnyValue
   component: ComponentType<ModuleProps<PrimitiveKind>>

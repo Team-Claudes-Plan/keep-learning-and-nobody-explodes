@@ -1,39 +1,68 @@
 import { useRef, useState, type KeyboardEvent, type PointerEvent } from 'react'
 import type { ModuleProps } from './types'
 
+type Drag = {
+  item: number
+  /** Where the block would land among the other blocks. */
+  insertAt: number
+  /** Pointer position and grab offset, in viewport pixels. */
+  x: number
+  y: number
+  offsetX: number
+  offsetY: number
+  width: number
+  height: number
+}
+
 export default function SliderModule({ primitive, value, onChange, disabled }: ModuleProps<'sequence'>) {
-  const blocks = useRef<(HTMLDivElement | null)[]>([])
-  const [dragging, setDragging] = useState<number | null>(null)
+  const blockRefs = useRef(new Map<number, HTMLDivElement>())
+  const [drag, setDrag] = useState<Drag | null>(null)
 
   function moveTo(item: number, to: number) {
-    const from = value.indexOf(item)
-    if (from === to || to < 0 || to >= value.length) return
-    const next = [...value]
-    next.splice(from, 1)
-    next.splice(to, 0, item)
-    onChange(next)
+    const rest = value.filter((v) => v !== item)
+    rest.splice(Math.max(0, Math.min(rest.length, to)), 0, item)
+    onChange(rest)
   }
 
   function startDrag(e: PointerEvent<HTMLDivElement>, item: number) {
     if (disabled) return
-    // Capture on the rail: the block itself moves in the DOM while dragging.
+    // Prevents text selection and native drag while moving.
+    e.preventDefault()
+    const rect = e.currentTarget.getBoundingClientRect()
+    // Capture on the rail: the dragged block is taken out of the flow.
     e.currentTarget.parentElement?.setPointerCapture(e.pointerId)
-    setDragging(item)
+    setDrag({
+      item,
+      insertAt: value.indexOf(item),
+      x: e.clientX,
+      y: e.clientY,
+      offsetX: e.clientX - rect.left,
+      offsetY: e.clientY - rect.top,
+      width: rect.width,
+      height: rect.height,
+    })
   }
 
-  function onPointerMove(e: PointerEvent<HTMLDivElement>) {
-    if (dragging === null) return
-    const from = value.indexOf(dragging)
-    blocks.current.forEach((el, pos) => {
-      if (!el || pos === from) return
-      const r = el.getBoundingClientRect()
-      const inside = e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom
-      if (!inside) return
-      // Only swap once the pointer passes the block's middle, so blocks of different widths don't flip back.
-      const cx = r.left + r.width / 2
-      if ((pos > from && e.clientX < cx) || (pos < from && e.clientX > cx)) return
-      moveTo(dragging, pos)
-    })
+  function onMove(e: PointerEvent<HTMLDivElement>) {
+    if (!drag) return
+    const others = value.filter((v) => v !== drag.item)
+    // Reading order: before a block if above its row, or in its row left of its middle.
+    let insertAt = others.length
+    for (let k = 0; k < others.length; k++) {
+      const r = blockRefs.current.get(others[k])?.getBoundingClientRect()
+      if (!r) continue
+      if (e.clientY < r.top || (e.clientY <= r.bottom && e.clientX < r.left + r.width / 2)) {
+        insertAt = k
+        break
+      }
+    }
+    setDrag({ ...drag, x: e.clientX, y: e.clientY, insertAt })
+  }
+
+  function endDrag() {
+    if (!drag) return
+    moveTo(drag.item, drag.insertAt)
+    setDrag(null)
   }
 
   function onKeyDown(e: KeyboardEvent<HTMLDivElement>, item: number) {
@@ -45,37 +74,67 @@ export default function SliderModule({ primitive, value, onChange, disabled }: M
     e.preventDefault()
   }
 
+  const others = drag ? value.filter((v) => v !== drag.item) : value
+
+  function block(item: number, pos: number) {
+    return (
+      <div
+        key={item}
+        ref={(el) => {
+          if (el) blockRefs.current.set(item, el)
+          else blockRefs.current.delete(item)
+        }}
+        className={`mod-block ${disabled ? 'is-disabled' : ''}`}
+        onPointerDown={(e) => startDrag(e, item)}
+        onKeyDown={(e) => onKeyDown(e, item)}
+        tabIndex={disabled ? -1 : 0}
+        role="option"
+        aria-selected={false}
+        aria-label={`${primitive.items[item]}, Position ${pos + 1}. Pfeiltasten zum Verschieben.`}
+      >
+        <span className="mod-block-grip" aria-hidden>⠿</span>
+        <span className="mod-block-pos">{pos + 1}</span>
+        {primitive.items[item]}
+      </div>
+    )
+  }
+
   return (
     <div>
       <p className="mg-hint">Zieh die Blöcke in die richtige Reihenfolge (links → rechts).</p>
       <div
-        className={`mod-rail ${dragging !== null ? 'is-dragging' : ''}`}
+        className={`mod-rail ${drag ? 'is-dragging' : ''}`}
         role="listbox"
         aria-label="Reihenfolge"
-        onPointerMove={onPointerMove}
-        onPointerUp={() => setDragging(null)}
-        onPointerCancel={() => setDragging(null)}
+        onPointerMove={onMove}
+        onPointerUp={endDrag}
+        onPointerCancel={() => setDrag(null)}
       >
-        {value.map((item, pos) => (
-          <div
-            key={item}
-            ref={(el) => {
-              blocks.current[pos] = el
-            }}
-            className={`mod-block ${dragging === item ? 'is-dragged' : ''} ${disabled ? 'is-disabled' : ''}`}
-            onPointerDown={(e) => startDrag(e, item)}
-            onKeyDown={(e) => onKeyDown(e, item)}
-            tabIndex={disabled ? -1 : 0}
-            role="option"
-            aria-selected={dragging === item}
-            aria-label={`${primitive.items[item]}, Position ${pos + 1}. Pfeiltasten zum Verschieben.`}
-          >
-            <span className="mod-block-grip" aria-hidden>⠿</span>
-            <span className="mod-block-pos">{pos + 1}</span>
-            {primitive.items[item]}
-          </div>
-        ))}
+        {others.map((item, k) => {
+          const pos = drag && k >= drag.insertAt ? k + 1 : k
+          return [
+            drag && k === drag.insertAt && (
+              <div key="gap" className="mod-block-gap" style={{ width: drag.width, height: drag.height }} />
+            ),
+            block(item, pos),
+          ]
+        })}
+        {drag && drag.insertAt === others.length && (
+          <div key="gap" className="mod-block-gap" style={{ width: drag.width, height: drag.height }} />
+        )}
       </div>
+
+      {drag && (
+        <div
+          className="mod-block is-floating"
+          style={{ left: drag.x - drag.offsetX, top: drag.y - drag.offsetY, width: drag.width }}
+          aria-hidden
+        >
+          <span className="mod-block-grip">⠿</span>
+          <span className="mod-block-pos">{drag.insertAt + 1}</span>
+          {primitive.items[drag.item]}
+        </div>
+      )}
     </div>
   )
 }

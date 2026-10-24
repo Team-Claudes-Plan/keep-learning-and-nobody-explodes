@@ -101,4 +101,6 @@ export type AnswerSubmission = {
 /** Backend response to a submitted answer. Not final yet. */
 export type AnswerResult = {
   correct?: boolean
+  /** Proposal: the correct answer, same shape as the submitted answer, so the UI can show what was wrong. */
+  solution?: AnswerMap[QuestionType]
 }

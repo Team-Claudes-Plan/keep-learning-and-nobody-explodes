@@ -9,7 +9,7 @@ export type PickPrimitive = {
   /** Labels for the selected/unselected state, e.g. WAHR / FALSCH. */
   onLabel?: string
   offLabel?: string
-  /** For true/false statements: whether the selected items are the true or the false ones. */
+  /** For multiple choice / true-false: whether the selected items are the correct or the wrong ones. */
   selects?: 'true' | 'false'
 }
 

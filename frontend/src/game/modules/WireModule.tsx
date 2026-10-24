@@ -15,9 +15,7 @@ export default function WireModule({ primitive, value, onChange, disabled }: Mod
       <p className="mg-hint">
         {primitive.mode === 'one'
           ? 'Schneide das richtige Kabel durch.'
-          : primitive.selects === 'false'
-            ? 'Schneide die Kabel der falschen Aussagen durch.'
-            : 'Schneide alle passenden Kabel durch.'}
+          : 'Schneide die Kabel der falschen Antworten durch.'}
       </p>
       <div className="mod-wires">
         {primitive.items.map((label, i) => {
