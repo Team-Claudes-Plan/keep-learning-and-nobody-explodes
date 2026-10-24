@@ -5,6 +5,7 @@
 
 mod config;
 mod upload;
+mod worker;
 
 use anyhow::{Context, Result};
 use axum::{Router, routing::get};
