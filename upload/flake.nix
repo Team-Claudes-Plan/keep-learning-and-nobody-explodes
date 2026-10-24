@@ -92,9 +92,9 @@
               data="$PWD/.data/s3"
               mkdir -p "$data"
               exec rustfs server \
-                --address :${toString s3Port} \
+                --address 127.0.0.1:${toString s3Port} \
                 --console-enable \
-                --console-address :${toString s3ConsolePort} \
+                --console-address 127.0.0.1:${toString s3ConsolePort} \
                 --access-key ${s3AccessKey} \
                 --secret-key ${s3SecretKey} \
                 "$data"
