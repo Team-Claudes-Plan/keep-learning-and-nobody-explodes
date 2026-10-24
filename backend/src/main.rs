@@ -3,6 +3,7 @@
 //! Accepts course material over HTTP, stores it in S3, and processes `RustFS`
 //! object-created webhooks through a Postgres-backed OCR worker.
 
+mod akasha;
 mod api;
 mod config;
 mod db;
@@ -11,7 +12,7 @@ mod upload;
 mod webhook;
 mod worker;
 
-use crate::{config::Config, db::Database};
+use crate::{akasha::AkashaClient, config::Config, db::Database};
 use anyhow::{Context, Result};
 use axum::{Router, routing::get};
 use std::sync::Arc;
@@ -42,6 +43,7 @@ async fn main() -> Result<()> {
     worker::setup(&db).await?;
     let backend = worker::backend(&db);
     let store = upload::ObjectStore::connect(&config.s3).await;
+    let akasha = AkashaClient::lazy(&config.akasha_grpc_url, config.akasha_language)?;
 
     let state = Arc::new(GlobalState {
         db: db.clone(),
@@ -76,7 +78,7 @@ async fn main() -> Result<()> {
 
     tokio::try_join!(
         async { server.await.context("server failed") },
-        worker::run(db, store, backend),
+        worker::run(db, store, backend, akasha),
     )?;
     Ok(())
 }

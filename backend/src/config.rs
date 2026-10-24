@@ -2,13 +2,20 @@
 
 use std::env;
 
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, bail};
+use grpc::akasha::Language;
 
 /// Default request body limit: 256 MiB, enough for large scanned course PDFs.
 const DEFAULT_MAX_UPLOAD_BYTES: usize = 256 * 1024 * 1024;
 
 /// Default bind address; loopback only so the dev service is not exposed.
 const DEFAULT_LISTEN_ADDR: &str = "127.0.0.1:8081";
+
+/// Default address of the Akasha gRPC service.
+const DEFAULT_AKASHA_GRPC_URL: &str = "http://127.0.0.1:50051";
+
+/// Default language sent to Akasha.
+const DEFAULT_AKASHA_LANGUAGE: &str = "german";
 
 #[expect(clippy::doc_markdown, reason = "RustFS is not an item")]
 /// Default S3 region. RustFS ignores it, but the SDK requires one.
@@ -25,6 +32,10 @@ pub struct Config {
     pub database_url: String,
     /// Bearer token required for `RustFS` webhook requests (`WEBHOOK_TOKEN`).
     pub webhook_token: String,
+    /// Address of the Akasha gRPC service (`AKASHA_GRPC_URL`).
+    pub akasha_grpc_url: String,
+    /// Language sent to Akasha (`AKASHA_LANGUAGE`).
+    pub akasha_language: Language,
     /// S3 connection settings.
     pub s3: S3Config,
 }
@@ -72,11 +83,24 @@ impl Config {
             Err(_) => DEFAULT_MAX_UPLOAD_BYTES,
         };
 
+        let akasha_language = match env::var("AKASHA_LANGUAGE")
+            .unwrap_or_else(|_| DEFAULT_AKASHA_LANGUAGE.to_owned())
+            .to_ascii_lowercase()
+            .as_str()
+        {
+            "english" | "en" => Language::English,
+            "german" | "de" => Language::German,
+            other => bail!("AKASHA_LANGUAGE must be `english` or `german`, got `{other}`"),
+        };
+
         Ok(Self {
             listen_addr: env::var("LISTEN_ADDR").unwrap_or_else(|_| DEFAULT_LISTEN_ADDR.into()),
             max_upload_bytes,
             database_url: required("DATABASE_URL")?,
             webhook_token: required("WEBHOOK_TOKEN")?,
+            akasha_grpc_url: env::var("AKASHA_GRPC_URL")
+                .unwrap_or_else(|_| DEFAULT_AKASHA_GRPC_URL.into()),
+            akasha_language,
             s3: S3Config {
                 endpoint: required("S3_ENDPOINT")?,
                 access_key: required("S3_ACCESS_KEY")?,

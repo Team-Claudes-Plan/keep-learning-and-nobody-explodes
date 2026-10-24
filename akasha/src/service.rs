@@ -41,7 +41,9 @@ impl AkashaService for Akasha {
         };
 
         let job = ChronicleJob {
+            id: chronicle.id,
             language: language.to_owned(),
+            topic: chronicle.topic,
             text: chronicle.text,
         };
 

@@ -13,8 +13,10 @@ message ManifestTrialsRequest {
 message ManifestTrialsResponse {}
 
 message Chronicle {
-    Language language = 1;
-    string text = 2;
+    string id = 1;
+    string topic = 2;
+    Language language = 3;
+    string text = 4;
 }
 
 enum Language {

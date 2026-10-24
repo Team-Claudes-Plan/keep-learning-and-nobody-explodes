@@ -474,20 +474,21 @@ impl Database {
         key: &str,
         etag: Option<&str>,
         filename: &str,
-    ) -> Result<(), sqlx::Error> {
-        sqlx::query(
+    ) -> Result<Uuid, sqlx::Error> {
+        sqlx::query_scalar(
             "INSERT INTO documents (topic_id, bucket, object_key, etag, filename)
              VALUES ($1, $2, $3, $4, $5)
-             ON CONFLICT (bucket, object_key) DO NOTHING",
+             ON CONFLICT (bucket, object_key) DO UPDATE SET
+                 updated_at = now()
+             RETURNING id",
         )
         .bind(topic_id)
         .bind(bucket)
         .bind(key)
         .bind(etag)
         .bind(filename)
-        .execute(&self.pool)
-        .await?;
-        Ok(())
+        .fetch_one(&self.pool)
+        .await
     }
 
     pub async fn mark_processing(
@@ -512,6 +513,22 @@ impl Database {
         .execute(&self.pool)
         .await?;
         Ok(())
+    }
+
+    /// Returns the document registered for `bucket`/`key`.
+    pub async fn document_id(&self, bucket: &str, key: &str) -> Result<Option<Uuid>, sqlx::Error> {
+        sqlx::query_scalar("SELECT id FROM documents WHERE bucket = $1 AND object_key = $2")
+            .bind(bucket)
+            .bind(key)
+            .fetch_optional(&self.pool)
+            .await
+    }
+
+    pub async fn topic_name(&self, topic_id: Uuid) -> Result<Option<String>, sqlx::Error> {
+        sqlx::query_scalar("SELECT name FROM topics WHERE id = $1")
+            .bind(topic_id)
+            .fetch_optional(&self.pool)
+            .await
     }
 
     pub async fn mark_completed(
