@@ -7,16 +7,15 @@ use axum::{
     routing::post,
 };
 use serde::Deserialize;
-use sqlx::PgPool;
 
 use crate::{
-    db,
+    db::Database,
     worker::{OcrBackend, OcrJob},
 };
 
 #[derive(Clone)]
 pub struct WebhookState {
-    pub pool: PgPool,
+    pub db: Database,
     pub backend: OcrBackend,
     pub bucket: String,
     pub token: String,
@@ -72,15 +71,11 @@ async fn receive_event(
             .push_task(task)
             .await
             .map_err(WebhookError::internal)?;
-        db::mark_queued(
-            &state.pool,
-            &job.bucket,
-            &job.key,
-            job.etag.as_deref(),
-            job.filename(),
-        )
-        .await
-        .map_err(WebhookError::internal)?;
+        state
+            .db
+            .mark_queued(&job.bucket, &job.key, job.etag.as_deref(), job.filename())
+            .await
+            .map_err(WebhookError::internal)?;
 
         tracing::info!(name: "ocr.enqueued", key = %job.key, "enqueued OCR job");
         enqueued += 1;

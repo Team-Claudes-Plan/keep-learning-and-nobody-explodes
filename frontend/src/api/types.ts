@@ -108,3 +108,94 @@ export type AnswerResult = {
   /** Proposal: the correct answer, same shape as the submitted answer, so the UI can show what was wrong. */
   solution?: AnswerMap[QuestionType]
 }
+
+// Session protocol over the websocket /api/sessions/ws, see schema/session-protocol.md.
+
+export type Role = 'defuser' | 'expert'
+
+/** A question without its prompt; the expert reads the prompt out. */
+export type DefuserTask = Question extends infer Q ? (Q extends Question ? Omit<Q, 'prompt'> : never) : never
+
+/** Like AnswerSubmission, but the turn identifies the question. */
+export type SessionAnswer = {
+  [T in QuestionType]: { type: T; answer: AnswerMap[T] }
+}[QuestionType]
+
+export type SessionClientMessage =
+  | { type: 'create'; topics: string[]; question_count: number; role?: Role; time_limit_secs?: number }
+  | { type: 'join'; game_id: string; role?: Role }
+  | { type: 'resume'; game_id: string; token: string; last_sequence?: number }
+  | { type: 'submit_answer'; turn: number; answer: SessionAnswer }
+  | { type: 'forfeit' }
+
+export type GameStatus = 'waiting' | 'active' | 'won' | 'lost' | 'aborted'
+export type EndReason = 'all_resolved' | 'strikes' | 'timeout' | 'forfeit'
+
+export type GameView = {
+  game_id: string
+  status: GameStatus
+  topics: string[]
+  players: { player_id: string; seat: 0 | 1; online: boolean }[]
+  deadline: string | null
+  turn: number | null
+  defuser: string | null
+  expert: string | null
+  strikes: number
+  max_strikes: number
+  parts: { position: number; question_type: QuestionType; result: 'solved' | 'failed' | null }[]
+  reason: EndReason | null
+  last_sequence: number | null
+}
+
+/** Persisted game events; the game state is their fold. */
+export type GameEvent =
+  | {
+      type: 'game_created'
+      topics: string[]
+      question_count: number
+      time_limit_secs: number
+      created_by: string
+      parts: { position: number; task_id: string; question_type: QuestionType }[]
+    }
+  | { type: 'player_joined'; player_id: string; seat: 0 | 1; role: Role | null }
+  | { type: 'game_started'; deadline: string; starting_defuser: string }
+  | { type: 'turn_started'; turn: number; defuser: string; expert: string }
+  | {
+      type: 'answer_submitted'
+      turn: number
+      actor: string
+      answer: SessionAnswer
+      correct: boolean
+      solution: unknown
+      strikes: number
+    }
+  | { type: 'game_ended'; outcome: 'won' | 'lost' | 'aborted'; reason: EndReason }
+
+export type SessionErrorCode =
+  | 'bad_message'
+  | 'unknown_game'
+  | 'game_full'
+  | 'invalid_token'
+  | 'not_your_turn'
+  | 'stale_turn'
+  | 'invalid_state'
+  | 'no_tasks'
+  | 'internal'
+
+export type SessionServerMessage =
+  | { type: 'welcome'; game_id: string; player_id: string; token: string; seat: 0 | 1 }
+  | { type: 'snapshot'; state: GameView }
+  | { type: 'event'; sequence: number; at: string; event: GameEvent }
+  /** Defuser: the question without its prompt. */
+  | { type: 'briefing'; turn: number; role: 'defuser'; task: DefuserTask }
+  /** Expert: the prompt and the manual page. */
+  | {
+      type: 'briefing'
+      turn: number
+      role: 'expert'
+      question_type: QuestionType
+      prompt: string | null
+      instruction: Record<string, unknown>
+    }
+  | { type: 'presence'; player_id: string; online: boolean }
+  | { type: 'error'; code: SessionErrorCode; message: string }
