@@ -75,20 +75,62 @@ export const ISLAND_RING: Vec2[] = Array.from({ length: RING_SEGMENTS }, (_, i) 
   return [Math.cos(theta) * r, Math.sin(theta) * r] as Vec2
 })
 
-export function shorePoint(theta: number, terraceIndex: number): [number, number] {
-  const wrapped = ((theta % TAU) + TAU) % TAU
-  const seg = (wrapped / TAU) * RING_SEGMENTS
-  const base = Math.floor(seg)
-  const i0 = base % RING_SEGMENTS
-  const i1 = (i0 + 1) % RING_SEGMENTS
-  const f = seg - base
-  const p0 = ISLAND_RING[i0]
-  const p1 = ISLAND_RING[i1]
-  const x = p0[0] + (p1[0] - p0[0]) * f
-  const z = p0[1] + (p1[1] - p0[1]) * f
-  const jitter = 1 + 0.045 * Math.sin((i0 + f) * 2.3 + terraceIndex * 1.7)
-  const scale = ISLAND_TERRACES[terraceIndex].scale
-  return [x * scale * jitter, z * scale * jitter]
+export type Vec3 = [number, number, number]
+
+/** Island outline at each terrace, exactly as the cliff mesh is built. */
+export const TERRACE_RINGS: Vec3[][] = ISLAND_TERRACES.map((terrace, ti) =>
+  ISLAND_RING.map(([x, z], pi) => {
+    const s = terrace.scale * (1 + 0.045 * Math.sin(pi * 2.3 + ti * 1.7))
+    return [x * s, terrace.y, z * s] as Vec3
+  }),
+)
+
+const lerp3 = (a: Vec3, b: Vec3, f: number): Vec3 => [
+  a[0] + (b[0] - a[0]) * f,
+  a[1] + (b[1] - a[1]) * f,
+  a[2] + (b[2] - a[2]) * f,
+]
+
+/** Horizontal slice through the cliff mesh at height y, as a closed outline. */
+function cliffOutline(y: number): Vec3[] {
+  const last = ISLAND_TERRACES.length - 1
+  if (y >= ISLAND_TERRACES[0].y) return TERRACE_RINGS[0]
+  if (y <= ISLAND_TERRACES[last].y) return TERRACE_RINGS[last]
+  let ti = 0
+  while (ISLAND_TERRACES[ti + 1].y > y) ti += 1
+  const upper = TERRACE_RINGS[ti]
+  const lower = TERRACE_RINGS[ti + 1]
+  const f = (ISLAND_TERRACES[ti].y - y) / (ISLAND_TERRACES[ti].y - ISLAND_TERRACES[ti + 1].y)
+  // Each cliff quad is split into (upper i, lower i, lower j) and (upper i, lower j, upper j).
+  const outline: Vec3[] = []
+  for (let i = 0; i < upper.length; i += 1) {
+    const j = (i + 1) % upper.length
+    outline.push(lerp3(upper[i], lower[i], f), lerp3(upper[i], lower[j], f))
+  }
+  return outline
+}
+
+/**
+ * Distance from (ox, oz) along the horizontal direction (dx, dz) to the outermost
+ * point of the cliff surface at height y.
+ */
+export function cliffReach(ox: number, oz: number, dx: number, dz: number, y: number): number {
+  const outline = cliffOutline(y)
+  let best = 0
+  for (let i = 0; i < outline.length; i += 1) {
+    const a = outline[i]
+    const b = outline[(i + 1) % outline.length]
+    const ax = a[0] - ox
+    const az = a[2] - oz
+    const ex = b[0] - a[0]
+    const ez = b[2] - a[2]
+    const denom = dx * ez - dz * ex
+    if (Math.abs(denom) < 1e-9) continue
+    const t = (ax * ez - az * ex) / denom
+    const u = (ax * dz - az * dx) / denom
+    if (u >= 0 && u <= 1 && t > best) best = t
+  }
+  return best
 }
 
 function mulberry32(seed: number) {
@@ -182,10 +224,13 @@ export type RiverNode = {
 const RIVER_SOURCE_RADIUS = 9.5
 const RIVER_NODE_COUNT = 6
 const RIVER_MEANDER = 0
+/** The channel stops this far before the edge; the waterfall lip closes the gap. */
+const RIVER_EDGE_MARGIN = 0.35
 
 export const RIVER_PATH: RiverNode[] = Array.from({ length: RIVER_NODE_COUNT }, (_, i) => {
   const f = i / (RIVER_NODE_COUNT - 1)
-  const edgeRadius = islandRadius(RIVER_EXIT_THETA) * 0.985
+  const edgeRadius =
+    cliffReach(0, 0, Math.cos(RIVER_EXIT_THETA), Math.sin(RIVER_EXIT_THETA), 0) - RIVER_EDGE_MARGIN
   const r = RIVER_SOURCE_RADIUS + (edgeRadius - RIVER_SOURCE_RADIUS) * f
   const theta = RIVER_EXIT_THETA + RIVER_MEANDER * Math.sin(f * Math.PI)
   return {

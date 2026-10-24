@@ -1,0 +1,85 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "session-client-message.schema.json",
+  "title": "SessionClientMessage",
+  "description": "Websocket message frontend -> backend on /api/sessions/ws, see session-protocol.md. create, join or resume must come first.",
+  "type": "object",
+  "required": ["type"],
+  "properties": {
+    "type": { "enum": ["create", "join", "resume", "submit_answer", "forfeit"] }
+  },
+  "oneOf": [
+    { "$ref": "#/$defs/create" },
+    { "$ref": "#/$defs/join" },
+    { "$ref": "#/$defs/resume" },
+    { "$ref": "#/$defs/submit_answer" },
+    { "$ref": "#/$defs/forfeit" }
+  ],
+  "$defs": {
+    "uuid": { "type": "string", "format": "uuid" },
+    "role": { "enum": ["defuser", "expert"] },
+    "create": {
+      "description": "Opens a lobby. Without role, the joiner's wish or a coin decides who defuses first.",
+      "type": "object",
+      "required": ["type", "topics", "question_count"],
+      "additionalProperties": false,
+      "properties": {
+        "type": { "const": "create" },
+        "topics": { "type": "array", "items": { "$ref": "#/$defs/uuid" }, "minItems": 1 },
+        "question_count": { "type": "integer", "minimum": 1, "maximum": 11 },
+        "role": { "$ref": "#/$defs/role" },
+        "time_limit_secs": { "type": "integer", "minimum": 30, "maximum": 3600, "default": 300 }
+      }
+    },
+    "join": {
+      "description": "Takes the free seat of a waiting game and starts it. role only counts if the creator picked none.",
+      "type": "object",
+      "required": ["type", "game_id"],
+      "additionalProperties": false,
+      "properties": {
+        "type": { "const": "join" },
+        "game_id": { "$ref": "#/$defs/uuid" },
+        "role": { "$ref": "#/$defs/role" }
+      }
+    },
+    "resume": {
+      "description": "Reconnects with the token from welcome. With last_sequence, missed events are replayed instead of a snapshot.",
+      "type": "object",
+      "required": ["type", "game_id", "token"],
+      "additionalProperties": false,
+      "properties": {
+        "type": { "const": "resume" },
+        "game_id": { "$ref": "#/$defs/uuid" },
+        "token": { "$ref": "#/$defs/uuid" },
+        "last_sequence": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "submit_answer": {
+      "description": "Only the defuser of the current turn may answer, once per turn.",
+      "type": "object",
+      "required": ["type", "turn", "answer"],
+      "additionalProperties": false,
+      "properties": {
+        "type": { "const": "submit_answer" },
+        "turn": { "type": "integer", "minimum": 0 },
+        "answer": {
+          "description": "An AnswerSubmission (answer-submission.schema.json) where questionId may be omitted, the turn identifies the question.",
+          "type": "object",
+          "required": ["type", "answer"],
+          "properties": {
+            "type": { "$ref": "answer-submission.schema.json#/properties/type" },
+            "questionId": { "type": "string" },
+            "answer": {}
+          }
+        }
+      }
+    },
+    "forfeit": {
+      "description": "Ends the game as aborted.",
+      "type": "object",
+      "required": ["type"],
+      "additionalProperties": false,
+      "properties": { "type": { "const": "forfeit" } }
+    }
+  }
+}

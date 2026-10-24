@@ -1,8 +1,6 @@
 import { useEffect, useMemo } from 'react'
 import { useThree } from '@react-three/fiber'
 import type { MeshStandardMaterial } from 'three'
-import type { RoomItem } from '../data/houses'
-import ItemBox from './ItemBox'
 import { createTiledMaterial, disposeMaterials, type SurfaceSpec } from './surfaces'
 import { ROOM_MIN_ZOOM, ROOM_WALL_Z } from './cameras'
 
@@ -14,10 +12,6 @@ export type RoomStageProps = {
   floorColor: string
   wallSurface?: SurfaceSpec
   floorSurface?: SurfaceSpec
-  items?: RoomItem[]
-  selectedItemId?: string | null
-  onSelectItem?: (id: string) => void
-  interactiveItems?: boolean
 }
 
 type SlabProps = {
@@ -49,10 +43,6 @@ export default function RoomStage({
   floorColor,
   wallSurface,
   floorSurface,
-  items = [],
-  selectedItemId = null,
-  onSelectItem,
-  interactiveItems = true,
 }: RoomStageProps) {
   const size = useThree((state) => state.size)
 
@@ -94,16 +84,6 @@ export default function RoomStage({
         roughness={0.95}
       />
 
-      {items.map((item) => (
-        <ItemBox
-          key={item.id}
-          position={item.position}
-          color={item.color}
-          selected={item.id === selectedItemId}
-          interactive={interactiveItems && Boolean(onSelectItem)}
-          onClick={onSelectItem ? () => onSelectItem(item.id) : undefined}
-        />
-      ))}
     </group>
   )
 }
