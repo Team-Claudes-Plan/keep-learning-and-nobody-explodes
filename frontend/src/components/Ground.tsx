@@ -7,10 +7,10 @@ export default function Ground() {
       args={[40, 40]}
       cellSize={1}
       cellThickness={1}
-      cellColor="#2a3550"
+      cellColor="#c3d4e4"
       sectionSize={5}
-      sectionThickness={1.4}
-      sectionColor="#4f8cff"
+      sectionThickness={1.2}
+      sectionColor="#9dbcdf"
       fadeDistance={45}
       fadeStrength={1.5}
       infiniteGrid

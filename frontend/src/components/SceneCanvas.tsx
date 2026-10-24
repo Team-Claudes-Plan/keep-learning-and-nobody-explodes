@@ -164,10 +164,16 @@ export default function SceneCanvas({
       }
 
   return (
-    <Canvas orthographic={orthographic} camera={camera} onPointerMissed={onPointerMissed}>
-      <ambientLight intensity={0.6} />
-      <directionalLight position={[8, 12, 6]} intensity={1.4} />
-      <directionalLight position={[-6, 4, -8]} intensity={0.4} />
+    <Canvas
+      orthographic={orthographic}
+      camera={camera}
+      gl={{ alpha: true, antialias: true }}
+      onPointerMissed={onPointerMissed}
+    >
+      <hemisphereLight args={['#cfe6ff', '#9fb98a', 0.75]} />
+      <ambientLight intensity={0.35} />
+      <directionalLight position={[8, 14, 6]} intensity={1.7} color="#fff6e2" />
+      <directionalLight position={[-6, 4, -8]} intensity={0.3} color="#cfe0ff" />
 
       <Ground />
 
