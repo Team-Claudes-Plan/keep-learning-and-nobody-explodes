@@ -2,17 +2,9 @@ import type { FacadeConfig } from './facadeTypes'
 import type { HouseParts } from './houseParts'
 import { houseBlockCenter } from './city'
 
-export type RoomItem = {
-  id: string
-  label: string
-  position: [number, number, number]
-  color: string
-}
-
 export type Room = {
   floorColor: string
   wallColor: string
-  items: RoomItem[]
 }
 
 export type Storey = {
@@ -36,30 +28,6 @@ export type House = {
   storeys: Storey[]
 }
 
-const livingRoomItems: RoomItem[] = [
-  { id: 'sofa', label: 'Sofa', position: [-0.9, 0.25, 0.4], color: '#8f6bff' },
-  { id: 'table', label: 'Coffee table', position: [0, 0.2, -0.2], color: '#4fd18b' },
-  { id: 'tv', label: 'TV', position: [0.9, 0.35, -0.6], color: '#4f8cff' },
-]
-
-const kitchenItems: RoomItem[] = [
-  { id: 'counter', label: 'Counter', position: [-0.7, 0.35, 0.6], color: '#ffb347' },
-  { id: 'fridge', label: 'Fridge', position: [0.8, 0.6, 0.5], color: '#4fd1d1' },
-  { id: 'stove', label: 'Stove', position: [0.1, 0.3, 0.6], color: '#ff5f6d' },
-]
-
-const bedroomItems: RoomItem[] = [
-  { id: 'bed', label: 'Bed', position: [-0.7, 0.3, 0.3], color: '#4f8cff' },
-  { id: 'wardrobe', label: 'Wardrobe', position: [0.8, 0.7, 0.2], color: '#c98b5a' },
-  { id: 'desk', label: 'Desk', position: [0.4, 0.3, -0.8], color: '#4fd18b' },
-]
-
-const studyItems: RoomItem[] = [
-  { id: 'bookshelf', label: 'Bookshelf', position: [-0.8, 0.7, 0.5], color: '#c98b5a' },
-  { id: 'desk', label: 'Desk', position: [0.2, 0.3, -0.6], color: '#8f6bff' },
-  { id: 'chair', label: 'Chair', position: [0.8, 0.25, 0.2], color: '#ff8f4f' },
-]
-
 export const HOUSES: House[] = [
   {
     id: 'house-a',
@@ -69,9 +37,9 @@ export const HOUSES: House[] = [
     footprint: [2.4, 2.4],
     position: houseBlockCenter('house-a'),
     storeys: [
-      { id: 'ground', label: 'Ground floor', height: 1.6, concept: 'foundations', room: { floorColor: '#2b3550', wallColor: '#3d4a6b', items: livingRoomItems } },
-      { id: 'first', label: 'First floor', height: 1.4, concept: 'patterns', room: { floorColor: '#2b3550', wallColor: '#3d4a6b', items: kitchenItems } },
-      { id: 'second', label: 'Second floor', height: 1.4, concept: 'structures', room: { floorColor: '#2b3550', wallColor: '#3d4a6b', items: bedroomItems } },
+      { id: 'ground', label: 'Ground floor', height: 1.6, concept: 'foundations', room: { floorColor: '#2b3550', wallColor: '#3d4a6b' } },
+      { id: 'first', label: 'First floor', height: 1.4, concept: 'patterns', room: { floorColor: '#2b3550', wallColor: '#3d4a6b' } },
+      { id: 'second', label: 'Second floor', height: 1.4, concept: 'structures', room: { floorColor: '#2b3550', wallColor: '#3d4a6b' } },
     ],
   },
   {
@@ -82,8 +50,8 @@ export const HOUSES: House[] = [
     footprint: [2.8, 2.2],
     position: houseBlockCenter('house-b'),
     storeys: [
-      { id: 'ground', label: 'Ground floor', height: 1.8, concept: 'foundations', room: { floorColor: '#3a2f24', wallColor: '#5a4a38', items: livingRoomItems } },
-      { id: 'first', label: 'First floor', height: 1.5, concept: 'networks', room: { floorColor: '#3a2f24', wallColor: '#5a4a38', items: studyItems } },
+      { id: 'ground', label: 'Ground floor', height: 1.8, concept: 'foundations', room: { floorColor: '#3a2f24', wallColor: '#5a4a38' } },
+      { id: 'first', label: 'First floor', height: 1.5, concept: 'networks', room: { floorColor: '#3a2f24', wallColor: '#5a4a38' } },
     ],
   },
   {
@@ -94,10 +62,10 @@ export const HOUSES: House[] = [
     footprint: [2.2, 2.8],
     position: houseBlockCenter('house-c'),
     storeys: [
-      { id: 'ground', label: 'Ground floor', height: 1.7, concept: 'structures', room: { floorColor: '#24332a', wallColor: '#38604a', items: kitchenItems } },
-      { id: 'first', label: 'First floor', height: 1.5, concept: 'analysis', room: { floorColor: '#24332a', wallColor: '#38604a', items: bedroomItems } },
-      { id: 'second', label: 'Second floor', height: 1.5, concept: 'patterns', room: { floorColor: '#24332a', wallColor: '#38604a', items: studyItems } },
-      { id: 'third', label: 'Attic', height: 1.2, concept: 'systems', room: { floorColor: '#24332a', wallColor: '#38604a', items: livingRoomItems } },
+      { id: 'ground', label: 'Ground floor', height: 1.7, concept: 'structures', room: { floorColor: '#24332a', wallColor: '#38604a' } },
+      { id: 'first', label: 'First floor', height: 1.5, concept: 'analysis', room: { floorColor: '#24332a', wallColor: '#38604a' } },
+      { id: 'second', label: 'Second floor', height: 1.5, concept: 'patterns', room: { floorColor: '#24332a', wallColor: '#38604a' } },
+      { id: 'third', label: 'Attic', height: 1.2, concept: 'systems', room: { floorColor: '#24332a', wallColor: '#38604a' } },
     ],
   },
   {
@@ -108,10 +76,10 @@ export const HOUSES: House[] = [
     footprint: [2.4, 2.4],
     position: houseBlockCenter('house-math-tower'),
     storeys: [
-      { id: 'ground', label: 'Ground floor', height: 1.8, concept: 'foundations', room: { floorColor: '#1f2d4a', wallColor: '#2d5e9f', items: livingRoomItems } },
-      { id: 'first', label: 'First floor', height: 1.6, concept: 'patterns', room: { floorColor: '#1f2d4a', wallColor: '#2d5e9f', items: studyItems } },
-      { id: 'second', label: 'Second floor', height: 1.6, concept: 'structures', room: { floorColor: '#1f2d4a', wallColor: '#2d5e9f', items: kitchenItems } },
-      { id: 'third', label: 'Observatory', height: 1.4, concept: 'analysis', room: { floorColor: '#1f2d4a', wallColor: '#2d5e9f', items: bedroomItems } },
+      { id: 'ground', label: 'Ground floor', height: 1.8, concept: 'foundations', room: { floorColor: '#1f2d4a', wallColor: '#2d5e9f' } },
+      { id: 'first', label: 'First floor', height: 1.6, concept: 'patterns', room: { floorColor: '#1f2d4a', wallColor: '#2d5e9f' } },
+      { id: 'second', label: 'Second floor', height: 1.6, concept: 'structures', room: { floorColor: '#1f2d4a', wallColor: '#2d5e9f' } },
+      { id: 'third', label: 'Observatory', height: 1.4, concept: 'analysis', room: { floorColor: '#1f2d4a', wallColor: '#2d5e9f' } },
     ],
   },
 ]

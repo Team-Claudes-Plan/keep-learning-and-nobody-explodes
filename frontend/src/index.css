@@ -211,7 +211,8 @@ canvas {
 
 /* Light theme matching the city design (feature/frontend-textures). */
 .mg-page,
-.bomb-screen {
+.bomb-screen,
+.room-bomb-ui {
   color-scheme: light;
   --mg-text: #1f2937;
   --mg-text-soft: #374151;
@@ -1789,6 +1790,21 @@ canvas {
 
 .bomb-screen-result.is-good { background: rgba(48, 164, 108, 0.9); }
 .bomb-screen-result.is-bad { background: rgba(229, 72, 77, 0.9); }
+
+/* Bomb picked up in a room: module card and result over the room scene */
+
+.room-bomb-ui {
+  position: fixed;
+  inset: 0;
+  z-index: 2;
+  background: none;
+  container-type: size;
+  pointer-events: none;
+}
+
+.room-bomb-ui .bomb-screen-result {
+  pointer-events: auto;
+}
 
 .koop-seed {
   display: flex;
