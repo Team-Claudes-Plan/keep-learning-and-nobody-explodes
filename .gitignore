@@ -3,10 +3,10 @@
 /result-*
 
 # direnv
-/.direnv/
+.direnv/
 
 # Rust build artifacts
 target/
 
 # Local dev service data (postgres, rustfs, logs)
-/.data/
+.data/
