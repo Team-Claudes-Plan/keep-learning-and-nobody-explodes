@@ -11,6 +11,7 @@
 use axum::{
     Router,
     body::{Body, to_bytes},
+    extract::{FromRequest, Multipart},
     http::{Request, StatusCode, header},
 };
 use tower::ServiceExt;
@@ -91,6 +92,36 @@ async fn rejects_non_multipart_body() {
     let (status, _) = send(app, request).await;
 
     assert_eq!(status, StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test]
+async fn spools_file_bytes_to_a_temp_file() {
+    let content = b"hello from the spool test";
+    let request = multipart_request(&[("file", Some("notes.txt"), content)]);
+    let mut multipart = Multipart::from_request(request, &())
+        .await
+        .expect("multipart should parse");
+    let mut field = multipart
+        .next_field()
+        .await
+        .expect("field should read")
+        .expect("one field");
+
+    let spooled = super::spool_field(&mut field)
+        .await
+        .expect("field should spool");
+    let path = spooled.path.clone();
+
+    assert_eq!(spooled.len, content.len());
+    assert_eq!(
+        std::fs::read(&path).expect("temp file should be readable"),
+        content
+    );
+    drop(spooled);
+    assert!(
+        !path.exists(),
+        "temp file should be removed after the spool is dropped"
+    );
 }
 
 #[tokio::test]
