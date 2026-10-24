@@ -20,16 +20,32 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
 
-      - name: Set up Rust
-        uses: actions-rust-lang/setup-rust-toolchain@v2
+      - name: Install Nix
+        uses: cachix/install-nix-action@v31
         with:
-          components: clippy, rustfmt
+          extra_nix_config: |
+            experimental-features = nix-command flakes
 
-      - name: Install protoc
-        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
+      - name: Cache Rust
+        uses: Swatinem/rust-cache@v2
+        with:
+          cmd-format: "nix develop -c {0}"
+          key: ${{ hashFiles('flake.lock', 'flake.nix') }}
+          cache-bin: false
+          cache-on-failure: true
+
+      - name: Verify dev shell
+        run: |
+          nix develop --no-update-lock-file --command bash -euo pipefail -c '
+            cargo --version
+            cargo clippy --version
+            cargo fmt --version
+            protoc --version
+            pkg-config --modversion libheif
+          '
 
       - name: Check formatting
-        run: cargo fmt --all --check
+        run: nix develop --no-update-lock-file --command cargo fmt --all --check
 
       - name: Run clippy
-        run: cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
+        run: nix develop --no-update-lock-file --command cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
