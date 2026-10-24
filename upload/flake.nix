@@ -183,7 +183,7 @@
                 description = "RustFS (S3-compatible) object storage";
                 command = rustfs-up;
                 readiness_probe = {
-                  exec.command = "${pkgs.curl}/bin/curl -fsS -o /dev/null http://localhost:${toString s3Port}/minio/health/live";
+                  exec.command = "${pkgs.curl}/bin/curl -fsS -o /dev/null http://localhost:${toString s3Port}/minio/health/ready";
                   initial_delay_seconds = 2;
                   period_seconds = 2;
                   timeout_seconds = 3;
