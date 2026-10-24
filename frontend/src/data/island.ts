@@ -33,6 +33,31 @@ export function islandRadius(theta: number): number {
   return superellipse(theta) * (1 + ISLAND_JITTER * angularNoise(theta))
 }
 
+export const GRASS_PALETTE: [number, number, number][] = [
+  [0x4f, 0x8f, 0x5a],
+  [0x57, 0x9a, 0x61],
+  [0x63, 0xa8, 0x6a],
+  [0x4a, 0x8a, 0x54],
+]
+
+export const GRASS_CENTER: [number, number, number] = [0, 0, 0].map(
+  (_, channel) => GRASS_PALETTE.reduce((sum, color) => sum + color[channel], 0) / GRASS_PALETTE.length / 255,
+) as [number, number, number]
+
+export function grassColorAt(theta: number): [number, number, number] {
+  const turns = ((theta / TAU) % 1 + 1) % 1
+  const scaled = turns * GRASS_PALETTE.length
+  const index = Math.floor(scaled) % GRASS_PALETTE.length
+  const f = scaled - Math.floor(scaled)
+  const a = GRASS_PALETTE[index]
+  const b = GRASS_PALETTE[(index + 1) % GRASS_PALETTE.length]
+  return [
+    (a[0] + (b[0] - a[0]) * f) / 255,
+    (a[1] + (b[1] - a[1]) * f) / 255,
+    (a[2] + (b[2] - a[2]) * f) / 255,
+  ]
+}
+
 export function clampToShoreline(x: number, z: number): [number, number] {
   const r = Math.hypot(x, z)
   if (r < 1e-6) return [x, z]
@@ -87,7 +112,7 @@ export const LAKE_CENTER: Vec2 = [3.1, 8.3]
 export const LAKE_BASE = 1.2
 export const LAKE_STRETCH_X = 1.35
 export const LAKE_STRETCH_Z = 0.95
-export const LAKE_RIM_SEGMENTS = 28
+export const LAKE_RIM_SEGMENTS = RING_SEGMENTS
 
 export function lakeRadiusAt(angle: number): number {
   const ellipse = Math.hypot(

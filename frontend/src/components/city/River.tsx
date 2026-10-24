@@ -9,6 +9,7 @@ import {
   RIVER_LEVEL,
   RIVER_PATH,
   WATERFALL_BOTTOM,
+  grassColorAt,
   lakeRadiusAt,
   shorePoint,
 } from '../../data/island'
@@ -25,57 +26,84 @@ const SHORE = new THREE.Color('#c6b184')
 
 const OUTSET = 0.26
 const SHORE_WIDTH = 0.34
-const SHORE_LEVEL = LAKE_LEVEL - 0.014
 
 function buildLakeGeometry(): THREE.BufferGeometry {
+  const [cx, cz] = LAKE_CENTER
+  const segments = LAKE_RIM_SEGMENTS
+
+  type RingKind = 'water' | 'wet' | 'sand' | 'blend' | 'grass'
+  type Ring = { factor: number; extra: number; y: number; kind: RingKind; depth: number }
+
+  const rings: Ring[] = [
+    { factor: 0, extra: 0, y: LAKE_LEVEL, kind: 'water', depth: 0 },
+    { factor: 0.55, extra: 0, y: LAKE_LEVEL, kind: 'water', depth: 0.4 },
+    { factor: 0.85, extra: 0, y: LAKE_LEVEL, kind: 'water', depth: 0.75 },
+    { factor: 1, extra: 0, y: LAKE_LEVEL, kind: 'water', depth: 1 },
+    { factor: 1, extra: SHORE_WIDTH * 0.3, y: LAKE_LEVEL - 0.016, kind: 'wet', depth: 1 },
+    { factor: 1, extra: SHORE_WIDTH * 0.9, y: 0.014, kind: 'sand', depth: 1 },
+    { factor: 1, extra: SHORE_WIDTH * 1.45, y: 0.005, kind: 'blend', depth: 1 },
+    { factor: 1, extra: SHORE_WIDTH * 1.9, y: 0.001, kind: 'grass', depth: 1 },
+  ]
+
+  const wetSand = new THREE.Color('#a8946b')
+  const sand = SHORE.clone()
+
   const positions: number[] = []
   const colors: number[] = []
+  const indices: number[] = []
 
-  const tri = (a: THREE.Vector3, b: THREE.Vector3, c: THREE.Vector3, color: THREE.Color) => {
-    positions.push(a.x, a.y, a.z, b.x, b.y, b.z, c.x, c.y, c.z)
-    for (let i = 0; i < 3; i += 1) colors.push(color.r, color.g, color.b)
-  }
-  const quad = (
-    a: THREE.Vector3,
-    b: THREE.Vector3,
-    c: THREE.Vector3,
-    d: THREE.Vector3,
-    color: THREE.Color,
-  ) => {
-    tri(a, b, c, color)
-    tri(a, c, d, color)
+  positions.push(cx, LAKE_LEVEL, cz)
+  colors.push(LAKE_DEEP.r, LAKE_DEEP.g, LAKE_DEEP.b)
+
+  for (let r = 1; r < rings.length; r += 1) {
+    const ring = rings[r]
+    for (let i = 0; i < segments; i += 1) {
+      const angle = (i / segments) * TAU
+      const widthScale = 1 + 0.4 * Math.sin(angle * 3 + 1.4)
+      const radius =
+        lakeRadiusAt(angle) * ring.factor +
+        (ring.kind === 'water' ? 0 : ring.extra * widthScale)
+      const x = cx + Math.cos(angle) * radius
+      const z = cz + Math.sin(angle) * radius
+      positions.push(x, ring.y, z)
+
+      let color: THREE.Color
+      if (ring.kind === 'water') {
+        const t = ring.depth * (0.7 + 0.3 * Math.sin(angle * 1.5 + 0.5))
+        color = LAKE_DEEP.clone().lerp(LAKE_EDGE, t)
+      } else if (ring.kind === 'wet') {
+        color = wetSand.clone()
+      } else if (ring.kind === 'sand') {
+        color = sand.clone()
+      } else {
+        const [gr, gg, gb] = grassColorAt(Math.atan2(z, x))
+        const grass = new THREE.Color().setRGB(gr, gg, gb, THREE.SRGBColorSpace)
+        color = ring.kind === 'blend' ? sand.clone().lerp(grass, 0.5) : grass
+      }
+      colors.push(color.r, color.g, color.b)
+    }
   }
 
-  const [cx, cz] = LAKE_CENTER
-  const rim = (index: number, y: number, extra = 0) => {
-    const angle = (index / LAKE_RIM_SEGMENTS) * TAU
-    const r = lakeRadiusAt(angle) + extra
-    return new THREE.Vector3(cx + Math.cos(angle) * r, y, cz + Math.sin(angle) * r)
+  const ringVertex = (r: number, i: number) => 1 + (r - 1) * segments + (i % segments)
+
+  for (let i = 0; i < segments; i += 1) {
+    indices.push(0, ringVertex(1, i + 1), ringVertex(1, i))
   }
 
-  const center = new THREE.Vector3(cx, LAKE_LEVEL, cz)
-  for (let i = 0; i < LAKE_RIM_SEGMENTS; i += 1) {
-    const a = rim(i, LAKE_LEVEL)
-    const b = rim(i + 1, LAKE_LEVEL)
-    const angle = (i / LAKE_RIM_SEGMENTS) * TAU
-    const t = 0.45 + 0.35 * Math.sin(angle * 1.5 + 0.5)
-    const color = LAKE_DEEP.clone().lerp(LAKE_EDGE, t)
-    tri(center, a, b, color)
-  }
-
-  for (let i = 0; i < LAKE_RIM_SEGMENTS; i += 1) {
-    const angle = (i / LAKE_RIM_SEGMENTS) * TAU
-    const width = SHORE_WIDTH * (1 + 0.4 * Math.sin(angle * 3 + 1.4))
-    const innerA = rim(i, SHORE_LEVEL)
-    const innerB = rim(i + 1, SHORE_LEVEL)
-    const outerA = rim(i, SHORE_LEVEL, width)
-    const outerB = rim(i + 1, SHORE_LEVEL, width)
-    quad(innerA, outerA, outerB, innerB, SHORE)
+  for (let r = 1; r < rings.length - 1; r += 1) {
+    for (let i = 0; i < segments; i += 1) {
+      const a = ringVertex(r, i)
+      const b = ringVertex(r, i + 1)
+      const c = ringVertex(r + 1, i)
+      const d = ringVertex(r + 1, i + 1)
+      indices.push(a, b, d, a, d, c)
+    }
   }
 
   const geometry = new THREE.BufferGeometry()
   geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3))
   geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3))
+  geometry.setIndex(indices)
   geometry.computeVertexNormals()
   return geometry
 }
@@ -202,8 +230,7 @@ export default function River() {
       <mesh geometry={lakeGeometry} raycast={() => null}>
         <meshStandardMaterial
           vertexColors
-          flatShading
-          roughness={0.3}
+          roughness={0.32}
           metalness={0.05}
           side={THREE.DoubleSide}
         />
