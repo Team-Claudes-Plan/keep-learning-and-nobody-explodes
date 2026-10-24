@@ -6,6 +6,7 @@ edition.workspace = true
 [dependencies]
 grpc.workspace = true
 xberg = { workspace = true, features = ["full"] }
+sqlx.workspace = true
 
 anyhow = "1"
 aws-config = { version = "1", features = ["behavior-version-latest"] }
