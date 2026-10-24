@@ -299,7 +299,8 @@ async fn uploads_file_to_object_store() {
         key.starts_with("uploads/") && key.ends_with("/my_notes.txt"),
         "unexpected key {key}"
     );
-    assert_eq!(store.get(key).await, content);
+    let downloaded = store.get(key).await.expect("object should download");
+    assert_eq!(downloaded.bytes.as_ref(), content);
 }
 
 #[test]

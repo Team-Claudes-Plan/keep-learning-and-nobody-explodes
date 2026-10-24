@@ -10,7 +10,7 @@ const DEFAULT_MAX_UPLOAD_BYTES: usize = 256 * 1024 * 1024;
 /// Default bind address; loopback only so the dev service is not exposed.
 const DEFAULT_LISTEN_ADDR: &str = "127.0.0.1:8081";
 
-/// Default S3 region. RustFS ignores it, but the SDK requires one.
+/// Default S3 region. `RustFS` ignores it, but the SDK requires one.
 const DEFAULT_S3_REGION: &str = "us-east-1";
 
 /// Settings for the ingestion service.
@@ -20,6 +20,10 @@ pub struct Config {
     pub listen_addr: String,
     /// Maximum accepted upload size in bytes (`MAX_UPLOAD_BYTES`).
     pub max_upload_bytes: usize,
+    /// PostgreSQL connection URL (`DATABASE_URL`).
+    pub database_url: String,
+    /// Bearer token required for `RustFS` webhook requests (`WEBHOOK_TOKEN`).
+    pub webhook_token: String,
     /// S3 connection settings.
     pub s3: S3Config,
 }
@@ -70,6 +74,8 @@ impl Config {
         Ok(Self {
             listen_addr: env::var("LISTEN_ADDR").unwrap_or_else(|_| DEFAULT_LISTEN_ADDR.into()),
             max_upload_bytes,
+            database_url: required("DATABASE_URL")?,
+            webhook_token: required("WEBHOOK_TOKEN")?,
             s3: S3Config {
                 endpoint: required("S3_ENDPOINT")?,
                 access_key: required("S3_ACCESS_KEY")?,
