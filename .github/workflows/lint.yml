@@ -14,7 +14,7 @@ concurrency:
 
 jobs:
   lint-rust:
-    name: lint
+    name: lint-rust
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
