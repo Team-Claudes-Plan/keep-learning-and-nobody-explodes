@@ -3,10 +3,13 @@ import { Link, useNavigate } from 'react-router'
 import SceneCanvas from '../components/SceneCanvas'
 import Skyscraper from '../components/Skyscraper'
 import Streets from '../components/city/Streets'
+import Island from '../components/city/Island'
+import River from '../components/city/River'
 import Hud from '../components/Hud'
 import { HOUSES } from '../data/houses'
 import { FACADE_SHAPES } from '../data/facadeShapes'
 import { BASE_DESIGNS } from '../data/baseDesigns'
+import { clampToShoreline } from '../data/island'
 
 export default function CityPage() {
   const navigate = useNavigate()
@@ -15,8 +18,15 @@ export default function CityPage() {
 
   return (
     <>
-      <SceneCanvas onPointerMissed={() => undefined}>
+      <SceneCanvas
+        grid={false}
+        controls={{ minZoom: 30, maxZoom: 300 }}
+        panBounds={{ clamp: clampToShoreline }}
+        onPointerMissed={() => undefined}
+      >
+        <Island />
         <Streets />
+        <River />
         {HOUSES.map((house) => (
           <Skyscraper
             key={house.id}
@@ -30,6 +40,7 @@ export default function CityPage() {
 
       <Hud title="City">
         <div>Drag to pan &middot; Scroll to zoom</div>
+        <div>The rocky shore is the edge of the world</div>
         <div>Click a building to enter</div>
 
         <div className="hud-section">Preview shape</div>

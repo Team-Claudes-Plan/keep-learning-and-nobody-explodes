@@ -26,8 +26,11 @@ bun run preview   # serve the production build
 ## Routes
 
 - `/` → redirects to `/city`.
-- `/city` — isometric cityscape. Skyscraper blocks stand in for houses;
-  clicking one navigates to the house.
+- `/city` — isometric cityscape on a low-poly island floating in the sky:
+  rough rocky shorelines mark the edge of the world and panning is clamped to
+  the shoreline. A small lake feeds a river that flows to the edge and spills
+  off the island as a waterfall into the void. Skyscraper blocks stand in for
+  houses; clicking one navigates to the house.
 - `/houses/:houseId` — 2.5D slightly-angled front view of one house. Each
   storey is a single room; the wall facing the camera is omitted so the storeys
   are visible from outside. Clicking a storey opens that room.
@@ -42,6 +45,13 @@ bun run preview   # serve the production build
   mock `HOUSES` data and lookup helpers. This is the seam to swap in real data.
 - `src/components/SceneCanvas.tsx` — reusable `<Canvas>` with lights, ground and
   `MapControls` (rotation disabled); camera and controls are configurable.
+  `grid={false}` hides the ground grid (used by the island), and `panBounds`
+  clamps panning to a shape.
+- `src/components/city/Island.tsx` — low-poly island: terraced rocky plateau
+  and a rough boulder ring. Geometry comes from `src/data/island.ts`.
+- `src/components/city/River.tsx` — low-poly lake at the origin of the river,
+  plus the river itself, which follows the island edge and cascades down the
+  terrace steps into a waterfall falling into the void.
 - `src/components/Room.tsx` — generic, customizable room template (size, colors,
   which walls are rendered, items, item selection). Used by both the house front
   view (front wall/ceiling hidden) and the isometric storey view.
@@ -53,5 +63,5 @@ bun run preview   # serve the production build
 
 - Replace `HOUSES` with real game item/house data.
 - Add item types beyond boxes and richer room customization.
-- Consider shadows, a tileset, and camera bounds for map edges.
+- Consider shadows, a tileset, and richer island terrain.
 

@@ -50,9 +50,13 @@ for (let i = -GRID_RADIUS; i <= GRID_RADIUS; i += 1) {
   }
 }
 
+const FRONT_FACING_ROAD_LINE = (GRID_RADIUS + 0.5) * BLOCK_SPACING
+
 export const ROAD_LINES: number[] = []
 for (let i = -GRID_RADIUS - 1; i <= GRID_RADIUS; i += 1) {
-  ROAD_LINES.push((i + 0.5) * BLOCK_SPACING)
+  const line = (i + 0.5) * BLOCK_SPACING
+  if (Math.abs(line - FRONT_FACING_ROAD_LINE) < 1e-6) continue
+  ROAD_LINES.push(line)
 }
 
 export const CITY_EXTENT = GRID_RADIUS * BLOCK_SPACING + BLOCK_SIZE / 2 + SIDEWALK_WIDTH
