@@ -21,13 +21,8 @@ pub struct ObjectStore {
 impl ObjectStore {
     /// Connects to the object store described by `config`.
     pub async fn connect(config: &S3Config) -> Self {
-        let credentials = Credentials::new(
-            &config.access_key,
-            &config.secret_key,
-            None,
-            None,
-            "env",
-        );
+        let credentials =
+            Credentials::new(&config.access_key, &config.secret_key, None, None, "env");
         let sdk_config = aws_config::defaults(aws_config::BehaviorVersion::latest())
             .region(Region::new(config.region.clone()))
             .credentials_provider(credentials)
@@ -74,6 +69,11 @@ impl ObjectStore {
             .send()
             .await
             .expect("object should exist");
-        output.body.collect().await.expect("body should be readable").to_vec()
+        output
+            .body
+            .collect()
+            .await
+            .expect("body should be readable")
+            .to_vec()
     }
 }

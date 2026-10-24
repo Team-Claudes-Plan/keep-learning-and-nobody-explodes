@@ -33,15 +33,20 @@ impl UploadError {
 
     /// Creates an error for a failed write to the object store.
     pub fn storage(source: impl Error + Send + Sync + 'static) -> Self {
-        Self::new(ErrorKind::Storage, "object store write failed".into(), Some(Box::new(source)))
+        Self::new(
+            ErrorKind::Storage,
+            "object store write failed".into(),
+            Some(Box::new(source)),
+        )
     }
 
-    fn new(
-        kind: ErrorKind,
-        message: String,
-        source: Option<Box<dyn Error + Send + Sync>>,
-    ) -> Self {
-        Self { kind, message, source, backtrace: Backtrace::capture() }
+    fn new(kind: ErrorKind, message: String, source: Option<Box<dyn Error + Send + Sync>>) -> Self {
+        Self {
+            kind,
+            message,
+            source,
+            backtrace: Backtrace::capture(),
+        }
     }
 
     /// Returns `true` if the client sent a bad request.
