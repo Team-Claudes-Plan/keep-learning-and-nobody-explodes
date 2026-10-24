@@ -2,7 +2,6 @@
 //!
 //! Will ingest course material (PDFs, images, ...) into an S3-compatible object
 //! store and enqueue OCR jobs for workers in Postgres.
-
 fn main() {
     println!("ingestion: course-material OCR pipeline (dev skeleton)");
 

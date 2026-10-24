@@ -6,7 +6,7 @@
 /.direnv/
 
 # Rust build artifacts
-/target/
+target/
 
 # Local dev service data (postgres, rustfs, logs)
 /.data/
