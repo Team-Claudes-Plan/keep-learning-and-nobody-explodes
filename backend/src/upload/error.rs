@@ -11,14 +11,18 @@ use axum::{
 enum ErrorKind {
     InvalidRequest,
     PayloadTooLarge,
+    TopicNotFound,
     Storage,
+    Internal,
 }
 
 /// Error returned while handling an upload.
 ///
 /// Inspect it with [`is_invalid_request`](Self::is_invalid_request),
-/// [`is_payload_too_large`](Self::is_payload_too_large), and
-/// [`is_storage`](Self::is_storage); the kind itself is not exposed.
+/// [`is_payload_too_large`](Self::is_payload_too_large),
+/// [`is_topic_not_found`](Self::is_topic_not_found),
+/// [`is_storage`](Self::is_storage), and [`is_internal`](Self::is_internal);
+/// the kind itself is not exposed.
 #[derive(Debug)]
 pub struct UploadError {
     kind: ErrorKind,
@@ -36,6 +40,20 @@ impl UploadError {
     /// Creates an error for a body that exceeds the configured upload limit.
     pub fn payload_too_large(message: impl Into<String>) -> Self {
         Self::new(ErrorKind::PayloadTooLarge, message.into(), None)
+    }
+
+    /// Creates an error for an upload into a topic that does not exist.
+    pub fn topic_not_found(message: impl Into<String>) -> Self {
+        Self::new(ErrorKind::TopicNotFound, message.into(), None)
+    }
+
+    /// Creates an error for a failure inside the service, such as a database error.
+    pub fn internal(source: impl Error + Send + Sync + 'static) -> Self {
+        Self::new(
+            ErrorKind::Internal,
+            "internal error".into(),
+            Some(Box::new(source)),
+        )
     }
 
     /// Creates an error for a failed write to the object store.
@@ -66,6 +84,18 @@ impl UploadError {
     #[must_use]
     pub fn is_payload_too_large(&self) -> bool {
         self.kind == ErrorKind::PayloadTooLarge
+    }
+
+    /// Returns `true` if the upload targets a topic that does not exist.
+    #[must_use]
+    pub fn is_topic_not_found(&self) -> bool {
+        self.kind == ErrorKind::TopicNotFound
+    }
+
+    /// Returns `true` if the service failed for a reason unrelated to the request.
+    #[must_use]
+    pub fn is_internal(&self) -> bool {
+        self.kind == ErrorKind::Internal
     }
 
     /// Returns `true` if the object store rejected or failed the write.
@@ -116,6 +146,16 @@ impl IntoResponse for UploadError {
                 "failed to write upload to object store"
             );
             (StatusCode::BAD_GATEWAY, "failed to store file").into_response()
+        } else if self.is_internal() {
+            tracing::error!(
+                name: "upload.internal_failed",
+                error = ?self.source,
+                backtrace = %self.backtrace(),
+                "upload failed internally"
+            );
+            (StatusCode::INTERNAL_SERVER_ERROR, "internal error").into_response()
+        } else if self.is_topic_not_found() {
+            (StatusCode::NOT_FOUND, self.message).into_response()
         } else if self.is_payload_too_large() {
             (StatusCode::PAYLOAD_TOO_LARGE, self.message).into_response()
         } else if self.is_invalid_request() {

@@ -209,6 +209,15 @@ async fn insert_player(
     Ok(())
 }
 
+/// Returns `true` if `error` is a foreign key violation, i.e. a document
+/// referenced a topic that does not exist (any longer).
+#[must_use]
+pub fn is_unknown_topic(error: &sqlx::Error) -> bool {
+    error
+        .as_database_error()
+        .is_some_and(sqlx::error::DatabaseError::is_foreign_key_violation)
+}
+
 #[derive(Clone, Debug)]
 pub struct Database {
     pool: PgPool,
@@ -251,6 +260,13 @@ impl Database {
             .into_iter()
             .map(|(id, name)| Topic { id, name })
             .collect())
+    }
+
+    pub async fn topic_exists(&self, id: Uuid) -> Result<bool, sqlx::Error> {
+        sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM topics WHERE id = $1)")
+            .bind(id)
+            .fetch_one(&self.pool)
+            .await
     }
 
     /// Draws `count` random tasks (each with an instruction) from the topics.
@@ -447,18 +463,24 @@ impl Database {
             .collect())
     }
 
+    /// Registers an uploaded object as a document of `topic_id`.
+    ///
+    /// Fails with a foreign key violation (see [`is_unknown_topic`]) if the
+    /// topic does not exist.
     pub async fn mark_queued(
         &self,
+        topic_id: Uuid,
         bucket: &str,
         key: &str,
         etag: Option<&str>,
         filename: &str,
     ) -> Result<(), sqlx::Error> {
         sqlx::query(
-            "INSERT INTO documents (bucket, object_key, etag, filename)
-             VALUES ($1, $2, $3, $4)
+            "INSERT INTO documents (topic_id, bucket, object_key, etag, filename)
+             VALUES ($1, $2, $3, $4, $5)
              ON CONFLICT (bucket, object_key) DO NOTHING",
         )
+        .bind(topic_id)
         .bind(bucket)
         .bind(key)
         .bind(etag)
@@ -470,18 +492,20 @@ impl Database {
 
     pub async fn mark_processing(
         &self,
+        topic_id: Uuid,
         bucket: &str,
         key: &str,
         etag: Option<&str>,
     ) -> Result<(), sqlx::Error> {
         sqlx::query(
-            "INSERT INTO documents (bucket, object_key, etag, ocr_status)
-             VALUES ($1, $2, $3, 'processing')
+            "INSERT INTO documents (topic_id, bucket, object_key, etag, ocr_status)
+             VALUES ($1, $2, $3, $4, 'processing')
              ON CONFLICT (bucket, object_key) DO UPDATE SET
                  ocr_status = 'processing',
                  ocr_error = NULL,
                  updated_at = now()",
         )
+        .bind(topic_id)
         .bind(bucket)
         .bind(key)
         .bind(etag)

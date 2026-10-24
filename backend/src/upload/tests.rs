@@ -1,7 +1,7 @@
 //! Tests for the upload endpoint.
 //!
-//! Most tests run offline. `uploads_file_to_object_store` needs the dev stack
-//! and is ignored by default:
+//! Most tests run offline against a recording store.
+//! `uploads_file_to_object_store` needs the dev stack and is ignored by default:
 //!
 //! ```text
 //! nix run .#dev                      # in one terminal
@@ -11,7 +11,7 @@
 use std::{
     path::Path,
     sync::{
-        Mutex,
+        Arc, Mutex,
         atomic::{AtomicUsize, Ordering},
     },
 };
@@ -23,24 +23,19 @@ use axum::{
     http::{Request, StatusCode, header},
 };
 use tower::ServiceExt;
+use uuid::Uuid;
 
-use super::{ObjectStore, UploadError, UploadStore, router, sanitize_filename};
-use crate::config::{Config, S3Config};
+use super::{
+    ObjectStore, UploadError, UploadStore, Uploader, router, sanitize_filename, topic_of_key,
+};
+use crate::{config::Config, db::Database};
 
 const BOUNDARY: &str = "test-boundary";
 const MAX_BODY: usize = 1024 * 1024;
 
-/// Store pointing at an address nothing listens on; fine for tests that never reach S3.
-async fn offline_store() -> ObjectStore {
-    ObjectStore::connect(&S3Config {
-        endpoint: "http://127.0.0.1:1".into(),
-        access_key: "test".into(),
-        secret_key: "test".into(),
-        bucket: "test".into(),
-        region: "us-east-1".into(),
-    })
-    .await
-}
+/// Topic every [`RecordingStore`] knows; `Uuid::nil()` is the one it does not.
+const TOPIC: Uuid = Uuid::from_u128(1);
+const UNKNOWN_TOPIC: Uuid = Uuid::nil();
 
 fn multipart_bytes(parts: &[(&str, Option<&str>, &[u8])]) -> Vec<u8> {
     let mut body = Vec::new();
@@ -66,7 +61,11 @@ fn multipart_bytes(parts: &[(&str, Option<&str>, &[u8])]) -> Vec<u8> {
 }
 
 fn multipart_request(parts: &[(&str, Option<&str>, &[u8])]) -> Request<Body> {
-    Request::post("/upload")
+    multipart_request_to(&format!("/upload?topic_id={TOPIC}"), parts)
+}
+
+fn multipart_request_to(uri: &str, parts: &[(&str, Option<&str>, &[u8])]) -> Request<Body> {
+    Request::post(uri)
         .header(
             header::CONTENT_TYPE,
             format!("multipart/form-data; boundary={BOUNDARY}"),
@@ -78,10 +77,11 @@ fn multipart_request(parts: &[(&str, Option<&str>, &[u8])]) -> Request<Body> {
 /// Store that records successful writes without talking to S3.
 ///
 /// `fail_attempt` is the zero-based `put` call that returns a storage error.
+#[derive(Clone)]
 struct RecordingStore {
     fail_attempt: Option<usize>,
-    attempts: AtomicUsize,
-    puts: Mutex<Vec<String>>,
+    attempts: Arc<AtomicUsize>,
+    puts: Arc<Mutex<Vec<String>>>,
 }
 
 impl RecordingStore {
@@ -92,8 +92,8 @@ impl RecordingStore {
     fn fail_on_attempt(fail_attempt: Option<usize>) -> Self {
         Self {
             fail_attempt,
-            attempts: AtomicUsize::new(0),
-            puts: Mutex::new(Vec::new()),
+            attempts: Arc::default(),
+            puts: Arc::default(),
         }
     }
 
@@ -103,13 +103,20 @@ impl RecordingStore {
 }
 
 impl UploadStore for RecordingStore {
+    fn topic_exists(
+        &self,
+        topic_id: Uuid,
+    ) -> impl Future<Output = Result<bool, UploadError>> + Send {
+        std::future::ready(Ok(topic_id != UNKNOWN_TOPIC))
+    }
+
     fn put(
         &self,
         key: &str,
         _content_type: &str,
         _path: &Path,
         _len: usize,
-    ) -> impl Future<Output = Result<(), UploadError>> {
+    ) -> impl Future<Output = Result<(), UploadError>> + Send {
         let attempt = self.attempts.fetch_add(1, Ordering::SeqCst);
         if self.fail_attempt == Some(attempt) {
             return std::future::ready(Err(UploadError::storage(std::io::Error::other(
@@ -132,7 +139,7 @@ async fn send(app: Router, request: Request<Body>) -> (StatusCode, Vec<u8>) {
 
 #[tokio::test]
 async fn rejects_request_without_file_part() {
-    let app = router(offline_store().await, MAX_BODY);
+    let app = router(RecordingStore::ok(), MAX_BODY);
 
     let (status, _) = send(app, multipart_request(&[("comment", None, b"hello")])).await;
 
@@ -141,8 +148,8 @@ async fn rejects_request_without_file_part() {
 
 #[tokio::test]
 async fn rejects_non_multipart_body() {
-    let app = router(offline_store().await, MAX_BODY);
-    let request = Request::post("/upload")
+    let app = router(RecordingStore::ok(), MAX_BODY);
+    let request = Request::post(format!("/upload?topic_id={TOPIC}"))
         .body(Body::from("plain"))
         .expect("request should build");
 
@@ -192,7 +199,7 @@ async fn keeps_objects_when_every_part_is_stored() {
         .await
         .expect("multipart should parse");
 
-    let response = super::accept_upload(&store, multipart)
+    let response = super::accept_upload(&store, TOPIC, multipart)
         .await
         .expect("both parts should be stored");
 
@@ -213,7 +220,7 @@ async fn keeps_successful_files_when_a_middle_part_fails() {
         .await
         .expect("multipart should parse");
 
-    let response = super::accept_upload(&store, multipart)
+    let response = super::accept_upload(&store, TOPIC, multipart)
         .await
         .expect("stored parts should be reported");
 
@@ -242,7 +249,7 @@ async fn reports_a_truncated_part_without_removing_earlier_files() {
         .rposition(|window| window == closing.as_bytes())
         .expect("closing boundary");
     body.truncate(end);
-    let request = Request::post("/upload")
+    let request = Request::post(format!("/upload?topic_id={TOPIC}"))
         .header(
             header::CONTENT_TYPE,
             format!("multipart/form-data; boundary={BOUNDARY}"),
@@ -253,7 +260,7 @@ async fn reports_a_truncated_part_without_removing_earlier_files() {
         .await
         .expect("multipart should parse");
 
-    let response = super::accept_upload(&store, multipart)
+    let response = super::accept_upload(&store, TOPIC, multipart)
         .await
         .expect("the stored part should be reported");
 
@@ -266,7 +273,7 @@ async fn reports_a_truncated_part_without_removing_earlier_files() {
 
 #[tokio::test]
 async fn rejects_upload_exceeding_body_limit() {
-    let app = router(offline_store().await, 64);
+    let app = router(RecordingStore::ok(), 64);
     let request = multipart_request(&[("file", Some("notes.txt"), b"hello")]);
 
     let (status, body) = send(app, request).await;
@@ -276,31 +283,154 @@ async fn rejects_upload_exceeding_body_limit() {
 }
 
 #[tokio::test]
+async fn stores_files_below_the_topic() {
+    let store = RecordingStore::ok();
+    let app = router(store.clone(), MAX_BODY);
+
+    let (status, body) = send(app, multipart_request(&[("file", Some("a.txt"), b"one")])).await;
+
+    assert_eq!(status, StatusCode::OK, "{}", String::from_utf8_lossy(&body));
+    let json: serde_json::Value = serde_json::from_slice(&body).expect("response should be JSON");
+    assert_eq!(json["topic_id"], TOPIC.to_string());
+    let puts = store.puts();
+    assert_eq!(puts.len(), 1);
+    assert_eq!(json["objects"][0]["key"], puts[0]);
+    assert_eq!(topic_of_key(&puts[0]), Some(TOPIC));
+    assert!(puts[0].ends_with("/a.txt"), "unexpected key {}", puts[0]);
+}
+
+#[tokio::test]
+async fn rejects_upload_without_topic() {
+    let store = RecordingStore::ok();
+    let app = router(store.clone(), MAX_BODY);
+    let request = multipart_request_to("/upload", &[("file", Some("a.txt"), b"one")]);
+
+    let (status, _) = send(app, request).await;
+
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(store.puts().len(), 0);
+}
+
+#[tokio::test]
+async fn rejects_upload_with_malformed_topic() {
+    let store = RecordingStore::ok();
+    let app = router(store.clone(), MAX_BODY);
+    let request = multipart_request_to(
+        "/upload?topic_id=not-a-uuid",
+        &[("file", Some("a.txt"), b"one")],
+    );
+
+    let (status, _) = send(app, request).await;
+
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(store.puts().len(), 0);
+}
+
+#[tokio::test]
+async fn rejects_upload_to_unknown_topic() {
+    let store = RecordingStore::ok();
+    let app = router(store.clone(), MAX_BODY);
+    let request = multipart_request_to(
+        &format!("/upload?topic_id={UNKNOWN_TOPIC}"),
+        &[("file", Some("a.txt"), b"one")],
+    );
+
+    let (status, _) = send(app, request).await;
+
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    assert_eq!(store.puts().len(), 0);
+}
+
+#[test]
+fn reads_the_topic_from_an_upload_key() {
+    let document = Uuid::new_v4();
+    assert_eq!(
+        topic_of_key(&format!("uploads/{TOPIC}/{document}/slides.pdf")),
+        Some(TOPIC)
+    );
+}
+
+#[test]
+fn ignores_keys_without_a_topic() {
+    let id = Uuid::new_v4();
+    // keys from before topics existed
+    assert_eq!(topic_of_key(&format!("uploads/{id}/slides.pdf")), None);
+    // not below the prefix, wrong shape, or not uuids
+    assert_eq!(
+        topic_of_key(&format!("other/{TOPIC}/{id}/slides.pdf")),
+        None
+    );
+    assert_eq!(topic_of_key(&format!("uploads/{TOPIC}/{id}/a/b.pdf")), None);
+    assert_eq!(topic_of_key(&format!("uploads/{TOPIC}/{id}/")), None);
+    assert_eq!(
+        topic_of_key(&format!("uploads/topic/{id}/slides.pdf")),
+        None
+    );
+    assert_eq!(
+        topic_of_key(&format!("uploads/{TOPIC}/doc/slides.pdf")),
+        None
+    );
+    assert_eq!(topic_of_key("uploads/"), None);
+}
+
+#[tokio::test]
 #[ignore = "requires the dev stack (`nix run .#dev`) and its environment"]
 async fn uploads_file_to_object_store() {
     let config = Config::from_env().expect("dev environment should be set");
+    let db = Database::connect(&config.database_url, 2)
+        .await
+        .expect("database should connect");
+    db.migrate().await.expect("migrations should apply");
+    let topic = db.create_topic("upload test").await.expect("topic");
     let store = ObjectStore::connect(&config.s3).await;
-    let app = router(store.clone(), MAX_BODY);
+    let app = router(Uploader::new(store.clone(), db), MAX_BODY);
     let content = b"hello from the upload test";
 
     let (status, body) = send(
         app,
-        multipart_request(&[("file", Some("../my notes.txt"), content)]),
+        multipart_request_to(
+            &format!("/upload?topic_id={topic}"),
+            &[("file", Some("../my notes.txt"), content)],
+        ),
     )
     .await;
 
     assert_eq!(status, StatusCode::OK, "{}", String::from_utf8_lossy(&body));
     let json: serde_json::Value = serde_json::from_slice(&body).expect("response should be JSON");
+    assert_eq!(json["topic_id"], topic.to_string());
     let object = &json["objects"][0];
     assert_eq!(object["filename"], "../my notes.txt");
     assert_eq!(object["size"], content.len());
     let key = object["key"].as_str().expect("key should be a string");
     assert!(
-        key.starts_with("uploads/") && key.ends_with("/my_notes.txt"),
+        key.starts_with(&format!("uploads/{topic}/")) && key.ends_with("/my_notes.txt"),
         "unexpected key {key}"
     );
+    assert_eq!(topic_of_key(key), Some(topic));
     let downloaded = store.get(key).await.expect("object should download");
     assert_eq!(downloaded.bytes.as_ref(), content);
+}
+
+#[tokio::test]
+#[ignore = "requires the dev stack (`nix run .#dev`) and its environment"]
+async fn rejects_upload_to_missing_topic_in_database() {
+    let config = Config::from_env().expect("dev environment should be set");
+    let db = Database::connect(&config.database_url, 2)
+        .await
+        .expect("database should connect");
+    let store = ObjectStore::connect(&config.s3).await;
+    let app = router(Uploader::new(store, db), MAX_BODY);
+
+    let (status, _) = send(
+        app,
+        multipart_request_to(
+            &format!("/upload?topic_id={}", Uuid::new_v4()),
+            &[("file", Some("a.txt"), b"one")],
+        ),
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::NOT_FOUND);
 }
 
 #[test]
