@@ -63,7 +63,22 @@
           craneLib = (inputs.crane.mkLib pkgs).overrideToolchain (_: toolchain);
 
           src = craneLib.cleanCargoSource ./.;
-          commonArgs = { inherit src; strict-deps = true; };
+          # ONNX Runtime for ort-sys (pulled in by kreuzberg-paddle-ocr); linked dynamically.
+          onnxruntime = pkgs.onnxruntime;
+          ortEnv = {
+            ORT_LIB_PATH = "${lib.getLib onnxruntime}/lib";
+            ORT_PREFER_DYNAMIC_LINK = "1";
+          };
+
+          # Native (build-time) and linked system libraries needed by xberg "full".
+          nativeLibs = [ pkgs.pkg-config pkgs.cmake pkgs.rustPlatform.bindgenHook ];
+          linkLibs = [ onnxruntime pkgs.libheif ];
+          commonArgs = {
+            inherit src;
+            strict-deps = true;
+            nativeBuildInputs = nativeLibs;
+            buildInputs = linkLibs;
+          } // ortEnv;
           cargoArtifacts = craneLib.buildDepsOnly commonArgs;
           upload = craneLib.buildPackage (commonArgs // { inherit cargoArtifacts; });
 
@@ -149,8 +164,13 @@
               pkgs.curl
               self'.packages.dev
               pkgs.protobuf
-            ];
-            env = devEnv;
+              pkgs.cmake
+              pkgs.pkg-config
+              pkgs.rustPlatform.bindgenHook
+            ] ++ linkLibs;
+            env = devEnv // ortEnv // {
+              LD_LIBRARY_PATH = lib.makeLibraryPath linkLibs;
+            };
             shellHook = ''
               export AWS_ACCESS_KEY_ID="''${S3_ACCESS_KEY}"
               export AWS_SECRET_ACCESS_KEY="''${S3_SECRET_KEY}"
