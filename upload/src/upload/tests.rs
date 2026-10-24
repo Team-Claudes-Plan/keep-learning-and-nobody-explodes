@@ -103,21 +103,21 @@ impl RecordingStore {
 }
 
 impl UploadStore for RecordingStore {
-    async fn put(
+    fn put(
         &self,
         key: &str,
         _content_type: &str,
         _path: &Path,
         _len: usize,
-    ) -> Result<(), UploadError> {
+    ) -> impl Future<Output = Result<(), UploadError>> {
         let attempt = self.attempts.fetch_add(1, Ordering::SeqCst);
         if self.fail_attempt == Some(attempt) {
-            return Err(UploadError::storage(std::io::Error::other(
+            return std::future::ready(Err(UploadError::storage(std::io::Error::other(
                 "injected storage failure",
-            )));
+            ))));
         }
         self.puts.lock().expect("puts lock").push(key.to_owned());
-        Ok(())
+        std::future::ready(Ok(()))
     }
 }
 
