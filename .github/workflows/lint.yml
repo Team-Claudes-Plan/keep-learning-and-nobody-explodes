@@ -26,6 +26,9 @@ jobs:
           extra_nix_config: |
             experimental-features = nix-command flakes
 
+      - name: Install dev shell
+        run: nix develop --no-update-lock-file --command true
+
       - name: Cache Rust
         uses: Swatinem/rust-cache@v2
         with:
