@@ -1,5 +1,16 @@
 export type TextureSlot = 'albedo' | 'emissive' | 'normal' | 'roughness'
 
+export type WallPart = 'outer' | 'inner'
+
+export type PartRegion = {
+  x: number
+  y: number
+  w: number
+  h: number
+}
+
+export type WallAtlas = Record<WallPart, PartRegion>
+
 export type RoofShape = 'flat' | 'antenna' | 'dome' | 'canopy' | 'foliage'
 
 export type FacadeDetailKind = 'robotArm' | 'solarFin' | 'coil' | 'dish' | 'planter' | 'vine'
@@ -49,6 +60,7 @@ export type FacadeConfig = {
   design: string
   textures: string
   roofColor?: string
+  atlas?: WallAtlas
 }
 
 export type FacadeTextures = Partial<Record<TextureSlot, import('three').Texture>>
