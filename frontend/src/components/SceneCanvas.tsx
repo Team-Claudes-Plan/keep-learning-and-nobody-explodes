@@ -1,8 +1,8 @@
 import { useEffect, useRef } from 'react'
 import type { ReactNode, ComponentProps, ComponentRef, RefObject } from 'react'
-import { Canvas, type CameraProps, useThree } from '@react-three/fiber'
+import { Canvas, type CameraProps, useThree, useFrame } from '@react-three/fiber'
 import { MapControls } from '@react-three/drei'
-import type { OrthographicCamera } from 'three'
+import type { Camera, OrthographicCamera } from 'three'
 import Ground from './Ground'
 import { ISO_CAMERA } from './cameras'
 
@@ -15,6 +15,11 @@ function setCursor(element: HTMLElement, cursor: string) {
 function setOrthographicZoom(camera: OrthographicCamera, zoom: number) {
   camera.zoom = zoom
   camera.updateProjectionMatrix()
+}
+
+function shiftCameraXZ(camera: Camera, dx: number, dz: number) {
+  camera.position.x += dx
+  camera.position.z += dz
 }
 
 type MapControlsProps = ComponentProps<typeof MapControls>
@@ -33,7 +38,9 @@ type SceneCanvasProps = {
   controls?: Partial<MapControlsProps> | false
   onPointerMissed?: () => void
   verticalScroll?: VerticalScrollOptions
+  panBounds?: { clamp: (x: number, z: number) => [number, number] }
   responsiveZoom?: boolean
+  grid?: boolean
 }
 
 function VerticalScroll({
@@ -116,6 +123,30 @@ function VerticalScroll({
   return null
 }
 
+function PanBounds({
+  controlsRef,
+  clamp,
+}: {
+  controlsRef: RefObject<ControlsImpl | null>
+  clamp: (x: number, z: number) => [number, number]
+}) {
+  const camera = useThree((state) => state.camera)
+
+  useFrame(() => {
+    const controls = controlsRef.current
+    if (!controls) return
+    const target = controls.target
+    const [nextX, nextZ] = clamp(target.x, target.z)
+    if (nextX === target.x && nextZ === target.z) return
+    shiftCameraXZ(camera, nextX - target.x, nextZ - target.z)
+    target.x = nextX
+    target.z = nextZ
+    controls.update()
+  })
+
+  return null
+}
+
 function ResponsiveZoom({
   baseZoom,
   reference = ZOOM_REFERENCE,
@@ -145,7 +176,9 @@ export default function SceneCanvas({
   controls = {},
   onPointerMissed,
   verticalScroll,
+  panBounds,
   responsiveZoom = true,
+  grid = true,
 }: SceneCanvasProps) {
   const controlsRef = useRef<ControlsImpl>(null)
   const baseZoom = camera.zoom ?? ISO_CAMERA.zoom
@@ -175,13 +208,15 @@ export default function SceneCanvas({
       <directionalLight position={[8, 14, 6]} intensity={1.7} color="#fff6e2" />
       <directionalLight position={[-6, 4, -8]} intensity={0.3} color="#cfe0ff" />
 
-      <Ground />
+      {grid && <Ground />}
 
       {children}
 
       {orthographic && responsiveZoom && <ResponsiveZoom baseZoom={baseZoom} />}
 
       {controls !== false && <MapControls ref={controlsRef} makeDefault {...mergedControls} />}
+
+      {panBounds && <PanBounds controlsRef={controlsRef} clamp={panBounds.clamp} />}
 
       {verticalScroll && (
         <VerticalScroll
