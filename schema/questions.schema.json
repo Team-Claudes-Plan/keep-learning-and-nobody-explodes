@@ -1,0 +1,164 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "questions.schema.json",
+  "title": "Questions",
+  "description": "List of questions as delivered by the backend. Questions contain no solutions.",
+  "type": "array",
+  "items": { "$ref": "#/$defs/question" },
+  "$defs": {
+    "id": { "type": "string", "minLength": 1 },
+    "text": { "type": "string", "minLength": 1 },
+    "textList": { "type": "array", "items": { "$ref": "#/$defs/text" } },
+
+    "question": {
+      "type": "object",
+      "required": ["type", "id"],
+      "properties": {
+        "type": {
+          "enum": [
+            "single_choice",
+            "multiple_choice",
+            "true_false",
+            "text_input",
+            "number_input",
+            "matching",
+            "grouping",
+            "coords",
+            "order"
+          ]
+        }
+      },
+      "oneOf": [
+        { "$ref": "#/$defs/single_choice" },
+        { "$ref": "#/$defs/multiple_choice" },
+        { "$ref": "#/$defs/true_false" },
+        { "$ref": "#/$defs/text_input" },
+        { "$ref": "#/$defs/number_input" },
+        { "$ref": "#/$defs/matching" },
+        { "$ref": "#/$defs/grouping" },
+        { "$ref": "#/$defs/coords" },
+        { "$ref": "#/$defs/order" }
+      ]
+    },
+
+    "single_choice": {
+      "description": "Player picks exactly one option.",
+      "type": "object",
+      "required": ["type", "id", "prompt", "options"],
+      "additionalProperties": false,
+      "properties": {
+        "type": { "const": "single_choice" },
+        "id": { "$ref": "#/$defs/id" },
+        "prompt": { "$ref": "#/$defs/text" },
+        "options": { "$ref": "#/$defs/textList", "type": "array", "minItems": 2, "maxItems": 6 }
+      }
+    },
+
+    "multiple_choice": {
+      "description": "Player picks one or more options.",
+      "type": "object",
+      "required": ["type", "id", "prompt", "options"],
+      "additionalProperties": false,
+      "properties": {
+        "type": { "const": "multiple_choice" },
+        "id": { "$ref": "#/$defs/id" },
+        "prompt": { "$ref": "#/$defs/text" },
+        "options": { "$ref": "#/$defs/textList", "type": "array", "minItems": 2, "maxItems": 8 }
+      }
+    },
+
+    "true_false": {
+      "description": "Player rates each statement as true or false.",
+      "type": "object",
+      "required": ["type", "id", "statements"],
+      "additionalProperties": false,
+      "properties": {
+        "type": { "const": "true_false" },
+        "id": { "$ref": "#/$defs/id" },
+        "statements": { "$ref": "#/$defs/textList", "type": "array", "minItems": 1 }
+      }
+    },
+
+    "text_input": {
+      "description": "Player types a free-text answer.",
+      "type": "object",
+      "required": ["type", "id", "prompt"],
+      "additionalProperties": false,
+      "properties": {
+        "type": { "const": "text_input" },
+        "id": { "$ref": "#/$defs/id" },
+        "prompt": { "$ref": "#/$defs/text" },
+        "caseSensitive": {
+          "description": "Default false: case is ignored and the frontend sends the input in upper case.",
+          "type": "boolean",
+          "default": false
+        }
+      }
+    },
+
+    "number_input": {
+      "description": "Player enters a number, optionally with a unit shown next to the input.",
+      "type": "object",
+      "required": ["type", "id", "prompt"],
+      "additionalProperties": false,
+      "properties": {
+        "type": { "const": "number_input" },
+        "id": { "$ref": "#/$defs/id" },
+        "prompt": { "$ref": "#/$defs/text" },
+        "unit": { "type": ["string", "null"] }
+      }
+    },
+
+    "matching": {
+      "description": "Player connects each left element with a right element.",
+      "type": "object",
+      "required": ["type", "id", "left", "right"],
+      "additionalProperties": false,
+      "properties": {
+        "type": { "const": "matching" },
+        "id": { "$ref": "#/$defs/id" },
+        "left": { "$ref": "#/$defs/textList", "type": "array", "minItems": 2, "maxItems": 8 },
+        "right": { "$ref": "#/$defs/textList", "type": "array", "minItems": 2, "maxItems": 8 }
+      }
+    },
+
+    "grouping": {
+      "description": "Player sorts items into categories.",
+      "type": "object",
+      "required": ["type", "id", "categories", "items"],
+      "additionalProperties": false,
+      "properties": {
+        "type": { "const": "grouping" },
+        "id": { "$ref": "#/$defs/id" },
+        "categories": { "$ref": "#/$defs/textList", "type": "array", "minItems": 2, "maxItems": 4 },
+        "items": { "$ref": "#/$defs/textList", "type": "array", "minItems": 2, "maxItems": 12 }
+      }
+    },
+
+    "coords": {
+      "description": "Player clicks a position in the image.",
+      "type": "object",
+      "required": ["type", "id", "prompt", "image"],
+      "additionalProperties": false,
+      "properties": {
+        "type": { "const": "coords" },
+        "id": { "$ref": "#/$defs/id" },
+        "prompt": { "$ref": "#/$defs/text" },
+        "image": { "type": "string", "format": "uri" }
+      }
+    },
+
+    "order": {
+      "description": "Player puts the items in the correct order.",
+      "type": "object",
+      "required": ["type", "id", "prompt", "items"],
+      "additionalProperties": false,
+      "properties": {
+        "type": { "const": "order" },
+        "id": { "$ref": "#/$defs/id" },
+        "prompt": { "$ref": "#/$defs/text" },
+        "items": { "$ref": "#/$defs/textList", "type": "array", "minItems": 3, "maxItems": 8 }
+      }
+    }
+  }
+}
