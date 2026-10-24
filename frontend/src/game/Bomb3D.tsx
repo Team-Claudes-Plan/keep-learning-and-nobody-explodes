@@ -1,6 +1,6 @@
 import { Fragment, Suspense, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { Canvas, createPortal, useFrame, useThree, type ThreeEvent } from '@react-three/fiber'
-import { OrbitControls, useGLTF } from '@react-three/drei'
+import { useGLTF } from '@react-three/drei'
 import * as THREE from 'three'
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js'
 
@@ -55,8 +55,7 @@ const OVERVIEW_TARGET: [number, number, number] = [0, 1.4, 0]
 /** Parts of a module model kept when its 3D controls are generated from the task. */
 const MODULE_FRAME_PARTS = /Plate|Screw|StatusRing|StatusLED/
 
-type Controls = { target: THREE.Vector3; update: () => void; enabled: boolean; minDistance: number }
-type CameraGoal = { position: THREE.Vector3; target: THREE.Vector3 }
+type CameraGoal = { position: THREE.Vector3; target: THREE.Vector3; up?: THREE.Vector3 }
 type Flight = { from: CameraGoal; to: CameraGoal; fromUp: THREE.Vector3; toUp: THREE.Vector3; t: number; zoomingOut: boolean }
 
 const WORLD_UP = new THREE.Vector3(0, 1, 0)
@@ -72,6 +71,8 @@ function rotateUp(f: Flight, t: number) {
 
 const FLIGHT_SECONDS = 0.9
 const OVERVIEW_MIN_DISTANCE = 3.5
+const OVERVIEW_MAX_DISTANCE = 10
+const OVERVIEW_CAMERA: [number, number, number] = [2.6, 3.2, 5.6]
 const ARC_CENTER = new THREE.Vector3(...OVERVIEW_TARGET)
 
 const easeInOutCubic = (t: number) => (t < 0.5 ? 4 * t * t * t : 1 - (-2 * t + 2) ** 3 / 2)
@@ -223,6 +224,120 @@ function makeTimerDisplay() {
   return { mesh, draw }
 }
 
+/**
+ * Overview turning snaps lightly when you let go: around the bomb to quarter turns, up and down to
+ * the hull faces (60° apart). Up and down has no stop, it carries on over the top and underneath.
+ */
+const YAW_STEP = Math.PI / 2
+const PITCH_STEP = Math.PI / 3
+/** How hard the view is pulled into the nearest stop once released (per second). */
+const SNAP_STRENGTH = 7
+/** How quickly a flick coasts out (per second). */
+const COAST_DAMPING = 6
+
+/** Camera orbit around the bomb centre: angles in radians, pitch unbounded. */
+type Orbit = {
+  target: THREE.Vector3
+  yaw: number
+  pitch: number
+  distance: number
+  enabled: boolean
+  dragging: boolean
+  /** Snapping starts after the first real turn, so the opening view stays as it is. */
+  snap: boolean
+  x: number
+  y: number
+  t: number
+  vYaw: number
+  vPitch: number
+}
+
+function initialOrbit(): Orbit {
+  const target = new THREE.Vector3(...OVERVIEW_TARGET)
+  const offset = new THREE.Vector3(...OVERVIEW_CAMERA).sub(target)
+  const distance = offset.length()
+  return {
+    target,
+    yaw: Math.atan2(offset.x, offset.z),
+    pitch: Math.asin(offset.y / distance),
+    distance,
+    enabled: true,
+    dragging: false,
+    snap: false,
+    x: 0,
+    y: 0,
+    t: 0,
+    vYaw: 0,
+    vPitch: 0,
+  }
+}
+
+/** Puts the camera on the orbit. Past the top or bottom it looks at the bomb upside down from the other side. */
+function applyOrbit(o: Orbit, camera: THREE.Camera) {
+  const [cp, sp, cy, sy] = [Math.cos(o.pitch), Math.sin(o.pitch), Math.cos(o.yaw), Math.sin(o.yaw)]
+  camera.position.set(cp * sy, sp, cp * cy).multiplyScalar(o.distance).add(o.target)
+  camera.up.set(-sp * sy, cp, -sp * cy)
+  camera.lookAt(o.target)
+}
+
+const BAY_SIZE = 1.02
+const BAY_RIM = 0.035
+const BAY_DEPTH = 0.06
+
+/**
+ * Unused slot: no module screwed in, just the open bay. A rim around a dark pit, the four empty
+ * mounting posts and the bare connector a module would plug into.
+ */
+function makeEmptyBay() {
+  const bay = new THREE.Group()
+  bay.userData.planIndex = null
+  const rim = new THREE.MeshStandardMaterial({ color: '#3a3f47', metalness: 0.7, roughness: 0.45 })
+  const pit = new THREE.MeshStandardMaterial({ color: '#08090b', roughness: 0.95 })
+  const wall = new THREE.MeshStandardMaterial({ color: '#16181c', metalness: 0.3, roughness: 0.8 })
+  const brass = new THREE.MeshStandardMaterial({ color: '#b08d57', metalness: 0.9, roughness: 0.3 })
+  const add = (geometry: THREE.BufferGeometry, material: THREE.Material, x: number, y: number, z: number) => {
+    const mesh = new THREE.Mesh(geometry, material)
+    mesh.position.set(x, y, z)
+    bay.add(mesh)
+    return mesh
+  }
+
+  // floor of the pit, just above the hull's recess plate
+  add(new THREE.BoxGeometry(BAY_SIZE - BAY_RIM, BAY_SIZE - BAY_RIM, 0.004), pit, 0, 0, 0.007)
+  // rim on all four sides; its dark inner face reads as the pit wall
+  const half = BAY_SIZE / 2 - BAY_RIM / 2
+  for (const [w, h, x, y] of [
+    [BAY_SIZE, BAY_RIM, 0, half],
+    [BAY_SIZE, BAY_RIM, 0, -half],
+    [BAY_RIM, BAY_SIZE - BAY_RIM * 2, half, 0],
+    [BAY_RIM, BAY_SIZE - BAY_RIM * 2, -half, 0],
+  ]) {
+    add(new THREE.BoxGeometry(w, h, BAY_DEPTH), rim, x, y, BAY_DEPTH / 2 + 0.005)
+    const inset = (BAY_RIM / 2 + 0.004) * (x === 0 ? Math.sign(y) : Math.sign(x))
+    add(
+      new THREE.BoxGeometry(x === 0 ? w - BAY_RIM * 2 : 0.006, x === 0 ? 0.006 : h, BAY_DEPTH - 0.008),
+      wall,
+      x === 0 ? 0 : x - inset,
+      x === 0 ? y - inset : 0,
+      BAY_DEPTH / 2 + 0.006,
+    )
+  }
+  // empty threaded posts where the module screws would go
+  const post = new THREE.CylinderGeometry(0.03, 0.034, 0.04, 20).rotateX(Math.PI / 2)
+  const hole = new THREE.CylinderGeometry(0.012, 0.012, 0.002, 16).rotateX(Math.PI / 2)
+  for (const x of [-0.44, 0.44]) {
+    for (const y of [-0.44, 0.44]) {
+      add(post, rim, x, y, 0.029)
+      add(hole, pit, x, y, 0.05)
+    }
+  }
+  // bare connector at the bottom of the pit
+  add(new THREE.BoxGeometry(0.34, 0.07, 0.03), wall, 0, -0.3, 0.024)
+  const pin = new THREE.BoxGeometry(0.012, 0.012, 0.024)
+  for (let k = 0; k < 10; k++) add(pin, brass, -0.135 + k * 0.03, -0.3, 0.045)
+  return bay
+}
+
 function BombModel({ modules, focused, onSelect, timeLeft, strikes }: Bomb3DProps) {
   const { scene } = useGLTF(BOMB_URL)
   const bomb = useMemo(() => scene.clone(true), [scene])
@@ -235,12 +350,13 @@ function BombModel({ modules, focused, onSelect, timeLeft, strikes }: Bomb3DProp
   const ids = useMemo(() => [...new Set([...idsKey.split(',').filter(Boolean), 'blank'])], [idsKey])
   const gltfs = useGLTF(ids.map(moduleUrl)) as unknown as { scene: THREE.Group }[]
 
-  // One model per slot: the planned module, or a blank cover for unused slots.
+  // One model per slot: the planned module, or an open, empty bay for unused slots.
   const instances = useMemo(() => {
     const sources = new Map(ids.map((id, i) => [id, gltfs[i].scene]))
     const planned = idsKey ? idsKey.split(',') : []
     return Array.from({ length: BOMB_SLOTS }, (_, i) => {
-      const root = sources.get(planned[i] ?? 'blank')!.clone(true)
+      if (i >= planned.length) return { root: makeEmptyBay(), leds: [] }
+      const root = sources.get(planned[i])!.clone(true)
       root.userData.planIndex = i < planned.length ? i : null
       if (framesKey[i] === '1') {
         // The GLB scene wraps one module node; hide its static controls, keep plate, screws and LED.
@@ -293,7 +409,7 @@ function BombModel({ modules, focused, onSelect, timeLeft, strikes }: Bomb3DProp
   // Zoomed in, the rest of the bomb is dimmed by a dark frame with a module-sized hole in front of the module.
   const camera = useThree((state) => state.camera)
   const size = useThree((state) => state.size)
-  const controls = useThree((state) => state.controls) as unknown as Controls | null
+  const orbit = useRef(initialOrbit())
   const flight = useRef<Flight | null>(null)
   const overview = useRef<CameraGoal | null>(null)
   /** The camera has reached the focused module; only then is it dimmed and playable. */
@@ -315,14 +431,14 @@ function BombModel({ modules, focused, onSelect, timeLeft, strikes }: Bomb3DProp
   )
 
   useEffect(() => {
-    if (!controls) return
+    const controls = orbit.current
     let to: CameraGoal | null = null
     let toUp = WORLD_UP
     if (focused !== null) {
       const slot = bomb.getObjectByName(`Slot_${focused + 1}`)
       if (!slot) return
       bomb.updateMatrixWorld(true)
-      overview.current ??= { position: camera.position.clone(), target: controls.target.clone() }
+      overview.current ??= { position: camera.position.clone(), target: controls.target.clone(), up: camera.up.clone() }
       const center = slot.getWorldPosition(new THREE.Vector3())
       const normal = new THREE.Vector3(0, 0, 1).applyQuaternion(slot.getWorldQuaternion(new THREE.Quaternion()))
       const distance = moduleDistance(camera as THREE.PerspectiveCamera, size)
@@ -333,13 +449,13 @@ function BombModel({ modules, focused, onSelect, timeLeft, strikes }: Bomb3DProp
     } else if (overview.current) {
       isolate(null)
       to = overview.current
+      toUp = overview.current.up ?? WORLD_UP
       overview.current = null
     }
     if (!to) return
     setArrived(false)
     dimOn.current = false
     controls.enabled = false
-    controls.minDistance = 0
     flight.current = {
       from: { position: camera.position.clone(), target: controls.target.clone() },
       to,
@@ -348,7 +464,7 @@ function BombModel({ modules, focused, onSelect, timeLeft, strikes }: Bomb3DProp
       t: 0,
       zoomingOut: focused === null,
     }
-  }, [bomb, camera, controls, focused, isolate, size])
+  }, [bomb, camera, focused, isolate, size])
 
   const dim = useMemo(() => makeDimFrame(), [])
   useEffect(() => {
@@ -375,7 +491,8 @@ function BombModel({ modules, focused, onSelect, timeLeft, strikes }: Bomb3DProp
 
   useFrame((_, delta) => {
     const f = flight.current
-    if (!f || !controls) return
+    const controls = orbit.current
+    if (!f) return
     f.t = Math.min(1, f.t + delta / FLIGHT_SECONDS)
     const e = easeInOutCubic(f.t)
     controls.target.lerpVectors(f.from.target, f.to.target, e)
@@ -388,13 +505,77 @@ function BombModel({ modules, focused, onSelect, timeLeft, strikes }: Bomb3DProp
     camera.up.copy(f.toUp)
     camera.lookAt(controls.target)
     if (f.zoomingOut) {
-      controls.update()
-      controls.minDistance = OVERVIEW_MIN_DISTANCE
       controls.enabled = true
     } else {
       isolate(focused)
       setArrived(true)
     }
+  })
+
+  // Overview: drag to turn the camera around the bomb centre (as fast as the usual orbit controls),
+  // scroll to zoom. Once let go, a flick coasts out and the view eases into the nearest stop.
+  const gl = useThree((state) => state.gl)
+  useEffect(() => {
+    const canvas = gl.domElement
+    const o = orbit.current
+    canvas.style.touchAction = 'none'
+    const down = (e: PointerEvent) => {
+      if (e.button !== 0 || !o.enabled) return
+      Object.assign(o, { dragging: true, x: e.clientX, y: e.clientY, t: e.timeStamp, vYaw: 0, vPitch: 0 })
+    }
+    const move = (e: PointerEvent) => {
+      if (!o.dragging) return
+      const perPixel = (2 * Math.PI) / Math.max(canvas.clientHeight, 1)
+      // upside down (past the top or bottom), sideways turns the other way round
+      const dYaw = -(e.clientX - o.x) * perPixel * (Math.cos(o.pitch) >= 0 ? 1 : -1)
+      const dPitch = (e.clientY - o.y) * perPixel
+      const dt = Math.max(1, e.timeStamp - o.t) / 1000
+      o.vYaw = o.vYaw * 0.6 + (dYaw / dt) * 0.4
+      o.vPitch = o.vPitch * 0.6 + (dPitch / dt) * 0.4
+      if (Math.abs(e.clientX - o.x) + Math.abs(e.clientY - o.y) > 0) o.snap = true
+      Object.assign(o, { yaw: o.yaw + dYaw, pitch: o.pitch + dPitch, x: e.clientX, y: e.clientY, t: e.timeStamp })
+    }
+    const up = (e: PointerEvent) => {
+      if (!o.dragging) return
+      o.dragging = false
+      // pointer held still before letting go: no flick
+      if (e.timeStamp - o.t > 80) [o.vYaw, o.vPitch] = [0, 0]
+    }
+    const wheel = (e: WheelEvent) => {
+      if (!o.enabled) return
+      e.preventDefault()
+      o.distance = THREE.MathUtils.clamp(o.distance * Math.exp(e.deltaY * 0.001), OVERVIEW_MIN_DISTANCE, OVERVIEW_MAX_DISTANCE)
+    }
+    canvas.addEventListener('pointerdown', down)
+    canvas.addEventListener('wheel', wheel, { passive: false })
+    window.addEventListener('pointermove', move)
+    window.addEventListener('pointerup', up)
+    window.addEventListener('pointercancel', up)
+    return () => {
+      canvas.removeEventListener('pointerdown', down)
+      canvas.removeEventListener('wheel', wheel)
+      window.removeEventListener('pointermove', move)
+      window.removeEventListener('pointerup', up)
+      window.removeEventListener('pointercancel', up)
+    }
+  }, [gl])
+
+  useFrame((_, delta) => {
+    const o = orbit.current
+    if (!o.enabled || flight.current) return
+    if (!o.dragging) {
+      const dt = Math.min(delta, 1 / 20)
+      o.yaw += o.vYaw * dt
+      o.pitch += o.vPitch * dt
+      const coast = Math.exp(-dt * COAST_DAMPING)
+      o.vYaw *= coast
+      o.vPitch *= coast
+      if (!o.snap) return applyOrbit(o, camera)
+      const k = 1 - Math.exp(-dt * SNAP_STRENGTH)
+      o.yaw += (Math.round(o.yaw / YAW_STEP) * YAW_STEP - o.yaw) * k
+      o.pitch += (Math.round(o.pitch / PITCH_STEP) * PITCH_STEP - o.pitch) * k
+    }
+    applyOrbit(o, camera)
   })
 
   // Live timer and strike marks on the fixed timer module
@@ -509,7 +690,7 @@ export default function Bomb3D(props: Bomb3DProps) {
   return (
     <div className={`bomb-stage-3d ${focused !== null ? 'is-focused' : ''}`}>
       <Canvas
-        camera={{ position: [2.6, 3.2, 5.6], fov: 40 }}
+        camera={{ position: OVERVIEW_CAMERA, fov: 40 }}
         dpr={[1, 2]}
       >
         <ambientLight intensity={0.35} />
@@ -519,13 +700,6 @@ export default function Bomb3D(props: Bomb3DProps) {
         <Suspense fallback={null}>
           <BombModel {...props} />
         </Suspense>
-        <OrbitControls
-          makeDefault
-          target={OVERVIEW_TARGET}
-          enablePan={false}
-          minDistance={OVERVIEW_MIN_DISTANCE}
-          maxDistance={10}
-        />
       </Canvas>
 
       {focused === null
