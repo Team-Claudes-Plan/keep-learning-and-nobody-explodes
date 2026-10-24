@@ -1,4 +1,4 @@
-# Dev environment for the ingestion service.
+# Dev environment for the upload service.
 #
 # Outputs:
 #   packages.default   -> the Rust backend binary (built with crane)
@@ -8,7 +8,7 @@
 #
 # Run `nix run .#dev` from this directory (paths are relative to it).
 {
-  description = "Course-material ingestion service: Rust backend, RustFS (S3) and Postgres for OCR worker jobs";
+  description = "Course-material Upload service: Rust backend, RustFS (S3) and Postgres for OCR worker jobs";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
@@ -41,7 +41,7 @@
           s3Port = 9000;
           s3ConsolePort = 9001;
           dbUser = "postgres";
-          dbName = "ingestion";
+          dbName = "upload";
           s3AccessKey = "devadmin";
           s3SecretKey = "devadmin-secret";
           s3Bucket = "course-materials";
@@ -65,7 +65,7 @@
           src = craneLib.cleanCargoSource ./.;
           commonArgs = { inherit src; strict-deps = true; };
           cargoArtifacts = craneLib.buildDepsOnly commonArgs;
-          ingestion = craneLib.buildPackage (commonArgs // { inherit cargoArtifacts; });
+          upload = craneLib.buildPackage (commonArgs // { inherit cargoArtifacts; });
 
           postgresql = pkgs.postgresql_18;
 
@@ -134,7 +134,7 @@
           };
         in
         {
-          packages.default = ingestion;
+          packages.default = upload;
 
           formatter = pkgs.nixfmt-rfc-style;
 
@@ -154,7 +154,7 @@
             shellHook = ''
               export AWS_ACCESS_KEY_ID="''${S3_ACCESS_KEY}"
               export AWS_SECRET_ACCESS_KEY="''${S3_SECRET_KEY}"
-              echo "ingestion dev shell: psql \$DATABASE_URL | s5cmd --endpoint-url \$S3_ENDPOINT ls | dev"
+              echo "upload dev shell: psql \$DATABASE_URL | s5cmd --endpoint-url \$S3_ENDPOINT ls | dev"
             '';
           };
 
@@ -201,7 +201,7 @@
               };
 
               backend = {
-                description = "Rust ingestion backend (cargo watch)";
+                description = "Rust upload backend (cargo watch)";
                 command = backend-run;
                 depends_on.setup.condition = "process_completed_successfully";
               };
