@@ -42,6 +42,11 @@ The frontend is a separate Bun package, not part of the Cargo workspace. From `f
 - `common/proto/` contains protobuf sources (currently only `helloworld.proto`). `common/grpc/build.rs` compiles them at build time; edit the `.proto` files, not generated output, and wire new generated packages into `common/grpc/src/lib.rs`. `protoc` is required outside the Nix shell.
 - `frontend/src/router.tsx` owns routes. Most UI data still comes from the mock data and lookup helpers in `frontend/src/data/houses.ts`, which is the intended seam for replacing mocks with real data. `frontend/src/api/types.ts` holds the TypeScript types for the session protocol.
 
+## Conventions
+
+- Rust code follows the [Pragmatic Rust Guidelines](https://microsoft.github.io/rust-guidelines/). "Must" guidelines always hold; "should" guidelines may be deviated from with a good reason. Where they conflict with the project's clippy configuration or existing code, clippy (`-D warnings`) wins.
+- Commit messages follow [Conventional Commits 1.0.0](https://www.conventionalcommits.org/en/v1.0.0/): `<type>[optional scope]: <description>`, with an optional body and footers. Use `feat` for new features and `fix` for bug fixes; other types (`docs`, `refactor`, `test`, `build`, `ci`, `chore`, `perf`, `style`) are allowed. Mark breaking changes with `!` before the colon or a `BREAKING CHANGE:` footer. Prefer separate commits over mixing types in one commit.
+
 ## Testing
 
 - Pure logic (`session/state.rs`, `session/judge.rs`, `webhook.rs`) has plain unit tests; keep new rules testable at that level.
