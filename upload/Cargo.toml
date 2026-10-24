@@ -7,9 +7,7 @@ edition.workspace = true
 apalis.workspace = true
 apalis-postgres.workspace = true
 grpc.workspace = true
-serde.workspace = true
 serde_json = "1"
-tokio.workspace = true
 urlencoding = "2"
 xberg = { workspace = true, features = ["ocr", "pdf"] }
 sqlx.workspace = true
@@ -20,6 +18,8 @@ aws-credential-types = "1"
 aws-sdk-s3 = "1"
 axum = { version = "0.8", features = ["multipart"] }
 mimalloc = "0.1"
+serde = { workspace = true, features = ["derive"] }
+tokio = { workspace = true, features = ["fs", "io-util", "macros", "rt-multi-thread", "net", "signal"] }
 tower-http = { version = "0.6", features = ["trace"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }

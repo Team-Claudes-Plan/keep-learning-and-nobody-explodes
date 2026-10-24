@@ -1,13 +1,13 @@
 //! Object store access for uploads.
 
-use std::sync::Arc;
+use std::{path::Path, sync::Arc};
 
 use anyhow::Context;
 use aws_credential_types::Credentials;
 use aws_sdk_s3::{Client, config::Region, primitives::ByteStream};
 use axum::body::Bytes;
 
-use super::error::UploadError;
+use super::{UploadStore, error::UploadError};
 use crate::config::S3Config;
 
 /// Handle to the S3 bucket that receives uploaded files.
@@ -50,18 +50,33 @@ impl ObjectStore {
         }
     }
 
-    /// Writes `data` to `key` with the given content type.
+    /// Streams the file at `path` to `key` with the given content type.
+    ///
+    /// `len` is sent as `Content-Length`. The file is read in chunks; it is not
+    /// loaded into memory first.
     ///
     /// # Errors
     ///
-    /// Returns a storage error if the object store rejects the request.
-    pub async fn put(&self, key: &str, content_type: &str, data: Bytes) -> Result<(), UploadError> {
+    /// Returns a storage error if the file cannot be read or the object store
+    /// rejects the request.
+    pub async fn put(
+        &self,
+        key: &str,
+        content_type: &str,
+        path: &Path,
+        len: usize,
+    ) -> Result<(), UploadError> {
+        let content_length = i64::try_from(len).map_err(UploadError::storage)?;
+        let body = ByteStream::from_path(path)
+            .await
+            .map_err(UploadError::storage)?;
         self.client
             .put_object()
             .bucket(&*self.bucket)
             .key(key)
             .content_type(content_type)
-            .body(ByteStream::from(data))
+            .content_length(content_length)
+            .body(body)
             .send()
             .await
             .map_err(UploadError::storage)?;
@@ -69,6 +84,11 @@ impl ObjectStore {
     }
 
     /// Downloads an object and its content type.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the object store rejects the request or the body
+    /// cannot be read.
     pub async fn get(&self, key: &str) -> anyhow::Result<DownloadedObject> {
         let output = self
             .client
@@ -90,5 +110,17 @@ impl ObjectStore {
             bytes,
             content_type,
         })
+    }
+}
+
+impl UploadStore for ObjectStore {
+    fn put(
+        &self,
+        key: &str,
+        content_type: &str,
+        path: &Path,
+        len: usize,
+    ) -> impl Future<Output = Result<(), UploadError>> + Send {
+        ObjectStore::put(self, key, content_type, path, len)
     }
 }
