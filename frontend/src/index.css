@@ -1,0 +1,80 @@
+:root {
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+body {
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  background: #0b0e14;
+}
+
+#root {
+  display: flex;
+  flex-direction: column;
+}
+
+canvas {
+  touch-action: none;
+}
+
+.hud {
+  position: absolute;
+  top: 16px;
+  left: 16px;
+  z-index: 1;
+  max-width: 260px;
+  padding: 10px 14px;
+  border-radius: 8px;
+  background: rgba(15, 20, 30, 0.75);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: #e8ecf3;
+  font-size: 13px;
+  line-height: 1.5;
+  pointer-events: none;
+}
+
+.hud-title {
+  font-size: 15px;
+  font-weight: 700;
+  margin-bottom: 4px;
+}
+
+.hud strong {
+  color: #6ea8fe;
+}
+
+.hud a {
+  color: #6ea8fe;
+  text-decoration: none;
+  pointer-events: auto;
+}
+
+.hud a:hover {
+  text-decoration: underline;
+}
+
+.hud-links {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+}
+
+.hud-links li {
+  margin-top: 2px;
+}
+
+.hud-breadcrumb {
+  margin-bottom: 4px;
+}
