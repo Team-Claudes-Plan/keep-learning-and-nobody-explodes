@@ -50,10 +50,32 @@ Rules:
   together or not at all).
 - Do not add extra image files to the folder (any recognized slot name will be picked up).
 
+### 2.1 Wall-part atlas layout
+
+Each map is an **atlas**: one image that contains the different faces of a storey's wall as
+side-by-side regions. The loader slices each region into its own tileable texture
+(`src/components/facade/useHouseTextures.ts` → `useWallTextures`).
+
+| Region  | Default rect (normalized)          | Used for |
+|---------|------------------------------------|----------|
+| `outer` | `x 0.0, y 0.0, w 0.5, h 1.0` (left half)  | Street-facing wall (`+Z`/`-Z`), city facades |
+| `inner` | `x 0.5, y 0.0, w 0.5, h 1.0` (right half) | Room-facing wall shown inside a storey |
+
+- Atlas aspect is therefore **2:1** (e.g. `512×256`); each region is `256×256`.
+- Every region must be **independently seamless** on both axes, because regions are sliced and
+  tiled separately.
+- The layout can be overridden per house via `facade.atlas` (see `WallAtlas` in
+  `src/data/facadeTypes.ts`); the default lives in `DEFAULT_WALL_ATLAS`
+  (`src/data/houseParts.ts`).
+- **Wall edges** (the thin left/right/top/bottom faces) are **not** textured — they render as a
+  single solid color derived from the design tint (`resolveParts`).
+
 Recommended geometry:
 
-- **Resolution**: `256×256` (or `512×512` for high detail). Non-power-of-two is fine on WebGL2.
-- **Aspect**: square. The pattern's real-world period is set by `tileWidth`/`tileHeight` (below).
+- **Resolution**: `512×256` atlas (two `256×256` regions) or `1024×512` for high detail.
+  Non-power-of-two is fine on WebGL2.
+- **Aspect**: 2:1 (outer | inner). The pattern's real-world period is set by
+  `tileWidth`/`tileHeight` (below).
 
 ---
 
@@ -96,7 +118,9 @@ These are enforced by the code — design to them:
   - Do not rely on fractional alignment or a one-off full-building layout; the same texture repeats
     across every face and every tier.
 - All six box faces share the texture, in Three.js group order **`+X, -X, +Y, -Y, +Z, -Z`**. Design
-  a **generic, all-sides pattern** — there is no separate "front" or "roof" texture.
+  a **generic, all-sides pattern** — there is no separate "front" or "roof" texture. (City facades
+  and the storey exterior use the `outer` region only; the `inner` region is only seen inside a
+  storey.)
 - Choose `tileWidth`/`tileHeight` to match the real-world period of the pattern so features are not
   stretched. Example: if one window band should span ~1 world unit, set `tileHeight` ≈ `1.0`.
 - Before delivering, verify seams by offsetting the image by 50% in both axes and checking that no
@@ -175,7 +199,9 @@ Keep the seamlessness and color-space lines verbatim.
 > `<roughness>`, emissive intensity `<emissiveIntensity>`. One tile represents `<tileWidth>` ×
 > `<tileHeight>` world units.
 >
-> **Output four images, all `256×256`, all seamless on both axes, all sharing the same UV layout:**
+> **Output four images, all `512×256` (2:1 atlas), all seamless on both axes, all sharing the same
+> UV layout. Each image is split into a left **outer wall** region and a right **inner wall**
+> region, each `256×256` and independently seamless:**
 > 1. `albedo.png` — base color only, sRGB, flat and mid-tone, **no lighting, shadows, or AO**.
 > 2. `emissive.png` — sRGB; pure black except the lit windows/features, which must line up exactly
 >    with the albedo layout. Use accents from: `<accentColors>`.
