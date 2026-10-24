@@ -21,8 +21,9 @@ export default function StoreyWallDressing({
   label,
   glow,
 }: StoreyWallDressingProps) {
-  const doorW = Math.min(0.72, width * 0.3)
+  // Width follows height so the door keeps a real door's 1:2 shape when the storey is short.
   const doorH = Math.min(1.0, height * 0.66)
+  const doorW = Math.min(doorH * 0.5, width * 0.3)
   const doorX = -width / 2 + 0.16 + doorW / 2
   const doorY = -height / 2 + 0.02 + doorH / 2
 
@@ -31,8 +32,9 @@ export default function StoreyWallDressing({
   const signX = doorX + doorW / 2 + 0.12 + signW / 2
   const signY = doorY + doorH / 2 - signH / 2
 
-  const decorX = width / 2 - 0.34
-  const decorY = -height / 2 + 0.16
+  // Decor models stand on the floor; the widest (bench) is 0.5 m, so keep clear of the side wall.
+  const decorX = width / 2 - 0.42
+  const decorY = -height / 2
 
   return (
     <group>
@@ -41,10 +43,10 @@ export default function StoreyWallDressing({
       </group>
 
       <group position={[signX, signY, 0]}>
-        <Sign label={label} width={signW} height={signH} color={parts.sign} glow={glow} />
+        <Sign label={label} width={signW} height={signH} glow={glow} />
       </group>
 
-      <group position={[decorX, decorY, 0.03]}>
+      <group position={[decorX, decorY, 0]}>
         <StoreyDecor kind={decor.kind} color={decor.color} glow={glow} />
       </group>
     </group>
