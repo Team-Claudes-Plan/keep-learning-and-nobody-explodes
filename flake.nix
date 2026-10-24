@@ -85,7 +85,7 @@
             buildInputs = linkLibs;
           } // ortEnv;
           cargoArtifacts = craneLib.buildDepsOnly commonArgs;
-          upload = craneLib.buildPackage (commonArgs // { inherit cargoArtifacts; });
+          backend = craneLib.buildPackage (commonArgs // { inherit cargoArtifacts; });
 
           postgresql = pkgs.postgresql_18;
 
@@ -162,7 +162,7 @@
               export CARGO_BUILD_JOBS="1"
               export NUM_JOBS="1"
               exec cargo watch --watch-when-idle \
-                -w upload/src -w upload/migrations -w upload/Cargo.toml \
+                -w backend/src -w backend/migrations -w backend/Cargo.toml \
                 -w common/grpc -w Cargo.toml -w Cargo.lock \
                 -x run
             '';
@@ -182,7 +182,7 @@
           };
         in
         {
-          packages.default = upload;
+          packages.default = backend;
 
           formatter = pkgs.nixfmt-rfc-style;
 
