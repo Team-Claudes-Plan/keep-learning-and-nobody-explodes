@@ -5,6 +5,9 @@ import Skyscraper from '../components/Skyscraper'
 import Streets from '../components/city/Streets'
 import Island from '../components/city/Island'
 import River from '../components/city/River'
+import Traffic from '../components/city/Traffic'
+import Animals from '../components/city/Animals'
+import Birds from '../components/city/Birds'
 import Hud from '../components/Hud'
 import { HOUSES } from '../data/houses'
 import { FACADE_SHAPES } from '../data/facadeShapes'
@@ -27,6 +30,9 @@ export default function CityPage() {
         <Island />
         <Streets />
         <River />
+        <Traffic />
+        <Animals />
+        <Birds />
         {HOUSES.map((house) => (
           <Skyscraper
             key={house.id}
