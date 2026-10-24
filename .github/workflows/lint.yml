@@ -34,16 +34,6 @@ jobs:
           cache-bin: false
           cache-on-failure: true
 
-      - name: Verify dev shell
-        run: |
-          nix develop --no-update-lock-file --command bash -euo pipefail -c '
-            cargo --version
-            cargo clippy --version
-            cargo fmt --version
-            protoc --version
-            pkg-config --modversion libheif
-          '
-
       - name: Check formatting
         run: nix develop --no-update-lock-file --command cargo fmt --all --check
 
