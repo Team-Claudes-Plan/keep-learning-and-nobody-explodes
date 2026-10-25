@@ -10,6 +10,7 @@ import UploadDialog, { UploadIcon } from '../components/islands/UploadDialog'
 import FriendsDialog, { FriendsIcon } from '../components/islands/FriendsDialog'
 import BannerDialog from '../components/islands/BannerDialog'
 import WelcomeDialog from '../components/islands/WelcomeDialog'
+import { DEV_TOOLS } from '../api/client'
 import { contentIslandId, usePresence, useIslands } from '../api/useIslands'
 import { onIslandUpdated } from '../api/invites'
 import type { IslandsResponse } from '../api/types'
@@ -165,19 +166,23 @@ function IslandsView({ data }: { data: IslandsResponse }) {
         <div>Click a bridge (or ← →) to visit another island</div>
         <div>Click a building to enter</div>
 
-        <div className="hud-section">Preview storeys</div>
-        <div className="hud-buttons">
-          {[-2, -1, 0, 1, 2, 4].map((delta) => (
-            <button
-              key={delta}
-              type="button"
-              className={storeyDelta === delta ? 'active' : ''}
-              onClick={() => setStoreyDelta(delta)}
-            >
-              {delta === 0 ? 'Actual' : delta > 0 ? `+${delta}` : delta}
-            </button>
-          ))}
-        </div>
+        {DEV_TOOLS && (
+          <>
+            <div className="hud-section">Preview storeys</div>
+            <div className="hud-buttons">
+              {[-2, -1, 0, 1, 2, 4].map((delta) => (
+                <button
+                  key={delta}
+                  type="button"
+                  className={storeyDelta === delta ? 'active' : ''}
+                  onClick={() => setStoreyDelta(delta)}
+                >
+                  {delta === 0 ? 'Actual' : delta > 0 ? `+${delta}` : delta}
+                </button>
+              ))}
+            </div>
+          </>
+        )}
 
         <div className="hud-section">Houses</div>
         {active.island.houses.length === 0 && !active.construction && (
@@ -203,8 +208,12 @@ function IslandsView({ data }: { data: IslandsResponse }) {
 
         <div className="hud-section">Island</div>
         <IslandPartner island={active.island} onForked={open} />
-        <NewIsland onCreated={open} />
-        <You me={me} />
+        {DEV_TOOLS && (
+          <>
+            <NewIsland onCreated={open} />
+            <You me={me} />
+          </>
+        )}
       </Hud>
 
       <button
