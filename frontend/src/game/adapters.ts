@@ -159,3 +159,58 @@ export function tasksFor(question: Question): Task[] {
       ]
   }
 }
+
+/** Random order of n indices: entry d says which original index is shown at display position d. */
+function permutation(n: number, random: () => number) {
+  const p = Array.from({ length: n }, (_, i) => i)
+  for (let i = n - 1; i > 0; i--) {
+    const j = Math.floor(random() * (i + 1))
+    ;[p[i], p[j]] = [p[j], p[i]]
+  }
+  return p
+}
+
+/**
+ * The same task with its options in a random order, so the bomb never shows them as they come
+ * from the database (e.g. numbers sorted). Values stay in display order while playing; before the
+ * answer is sent they are mapped back, so the backend still gets indices into the original arrays.
+ */
+export function shuffleTask(t: Task, random: () => number): Task {
+  const p = t.primitive
+  const send = t.toSubmission as (v: AnyValue) => AnswerSubmission
+  switch (p.kind) {
+    case 'pick': {
+      const order = permutation(p.items.length, random)
+      return task<'pick'>({
+        ...(t as TaskOf<'pick'>),
+        primitive: { ...p, items: order.map((i) => p.items[i]) },
+        toSubmission: (picked) => send(picked.map((d) => order[d])),
+      })
+    }
+    case 'sequence': {
+      const order = permutation(p.items.length, random)
+      return task<'sequence'>({
+        ...(t as TaskOf<'sequence'>),
+        primitive: { ...p, items: order.map((i) => p.items[i]) },
+        toSubmission: (seq) => send(seq.map((d) => order[d])),
+      })
+    }
+    case 'assign': {
+      const items = permutation(p.items.length, random)
+      // Wahr/Falsch keep their order; real targets (groups, matching partners) are mixed too
+      const fixedTargets = p.targets.length === 2 && p.targets[0] === 'Wahr' && p.targets[1] === 'Falsch'
+      const targets = fixedTargets ? p.targets.map((_, i) => i) : permutation(p.targets.length, random)
+      return task<'assign'>({
+        ...(t as TaskOf<'assign'>),
+        primitive: { ...p, items: items.map((i) => p.items[i]), targets: targets.map((i) => p.targets[i]) },
+        toSubmission: (shown) => {
+          const original: (number | null)[] = p.items.map(() => null)
+          shown.forEach((target, d) => (original[items[d]] = target === null ? null : targets[target]))
+          return send(original)
+        },
+      })
+    }
+    default:
+      return t
+  }
+}

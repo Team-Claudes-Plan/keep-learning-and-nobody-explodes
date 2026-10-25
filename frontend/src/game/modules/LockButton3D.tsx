@@ -44,13 +44,20 @@ export default function LockButton3D({ enabled, label, onPress }: Props) {
         <boxGeometry args={[0.27, 0.075, 0.012]} />
         <meshStandardMaterial color="#14171c" roughness={0.6} />
       </mesh>
+      {/* click target just in front of the module's controls (slider blocks, cable plugs), so nothing
+          reaching down into the bottom strip swallows a press. Not further out: seen in perspective it
+          would drift off the button towards the edge of the screen. */}
+      <mesh
+        position={[0, 0, 0.07]}
+        onClick={press}
+        onPointerOver={() => setHover(true)}
+        onPointerOut={() => setHover(false)}
+      >
+        <planeGeometry args={[0.29, 0.09]} />
+        <meshBasicMaterial transparent opacity={0} depthWrite={false} />
+      </mesh>
       <group ref={cap}>
-        <mesh
-          position={[0, 0, 0.022]}
-          onClick={press}
-          onPointerOver={() => setHover(true)}
-          onPointerOut={() => setHover(false)}
-        >
+        <mesh position={[0, 0, 0.022]} raycast={() => null}>
           <boxGeometry args={[0.25, 0.058, 0.024]} />
           {/* unlit, so the green never washes out to pastel under the room light: white text stays legible */}
           <meshBasicMaterial color={color} />

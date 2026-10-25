@@ -43,7 +43,7 @@ export default function ManualBook({ seed, typeLabel, plan }: Props) {
     ...(users.length > 0 ? [{ node: <UsersPage users={users} page={2} />, kind: 'paper' as const }] : []),
     // shuffled (the same for a code), so the page order says nothing about the bomb
     ...shuffled(others, seededRandom(seed * 7 + 3)).map((entry, i) => ({
-      node: <ModulePage entry={entry} page={i + 2 + (users.length > 0 ? 1 : 0)} />,
+      node: <ModulePage entry={entry} page={i + 2 + (users.length > 0 ? 1 : 0)} seed={seed * 13 + i} />,
       kind: 'paper' as const,
     })),
   ]
@@ -217,8 +217,12 @@ function HowTo({ seed, typeLabel }: { seed: number; typeLabel: string }) {
   )
 }
 
-function ModulePage({ entry, page }: { entry: Briefed; page: number }) {
+function ModulePage({ entry, page, seed }: { entry: Briefed; page: number; seed: number }) {
   const { manual } = entry
+  // listed in their own random order, not the bomb's, so you have to talk it through
+  const random = seededRandom(seed)
+  const statements = manual.statements && shuffled(manual.statements.map((text, i) => ({ text, n: i + 1 })), random)
+  const glyphs = manual.glyphs && shuffled(manual.glyphs, random)
   return (
     <article className="book-paper">
       {manual.prompt && (
@@ -228,24 +232,24 @@ function ModulePage({ entry, page }: { entry: Briefed; page: number }) {
         </section>
       )}
 
-      {manual.statements && (
+      {statements && (
         <section>
           <h3>Die Aussagen</h3>
-          <ol className="book-statements">
-            {manual.statements.map((statement, i) => (
-              <li key={i}>
-                <strong>Aussage {i + 1}:</strong> {statement}
+          <ul className="book-statements">
+            {statements.map(({ text, n }) => (
+              <li key={n}>
+                <strong>Aussage {n}:</strong> {text}
               </li>
             ))}
-          </ol>
+          </ul>
         </section>
       )}
 
-      {manual.glyphs && (
+      {glyphs && (
         <section>
           <h3>Bedeutung der Symbole</h3>
           <ul className="book-glyphs">
-            {manual.glyphs.map(({ glyph, text }) => (
+            {glyphs.map(({ glyph, text }) => (
               <li key={glyph}>
                 <GlyphIcon index={glyph} size={34} stroke={5} />
                 <span>{text}</span>
