@@ -186,3 +186,25 @@ export function buildPerchedBirds(fieldBlocks: GridBlock[]): PerchedBird[] {
     }
   })
 }
+
+export type SquirrelSpec = {
+  id: string
+  /** Base of the tree the squirrel circles. */
+  center: Vec2
+  radius: number
+  color: string
+  scale: number
+}
+
+/** One squirrel scampering around the first tree of the free cell nearest the island's middle. */
+export function buildSquirrel(fieldBlocks: GridBlock[], trees: { position: [number, number, number] }[]): SquirrelSpec | null {
+  const block = byDistance(fieldBlocks)[0]
+  if (!block) return null
+  const [cx, cz] = block.center
+  const tree = [...trees].sort(
+    (a, b) =>
+      Math.hypot(a.position[0] - cx, a.position[2] - cz) - Math.hypot(b.position[0] - cx, b.position[2] - cz),
+  )[0]
+  const center: Vec2 = tree ? [tree.position[0], tree.position[2]] : [cx, cz]
+  return { id: `squirrel-${block.i}-${block.j}`, center, radius: 0.45, color: '#b5652e', scale: 0.55 }
+}
