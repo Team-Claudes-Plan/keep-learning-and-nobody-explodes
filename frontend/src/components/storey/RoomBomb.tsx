@@ -37,7 +37,18 @@ const HOVER_SCALE = 1.04
 type Pose = { position: THREE.Vector3; quaternion: THREE.Quaternion; scale: number; zoom: number }
 type Flight = { from: Pose; to: Pose; t: number; focusing: boolean }
 
-/** Turning the picked-up bomb, same feel as turning the camera on the bomb page. */
+/**
+ * How heavy the picked-up bomb feels: how far it turns per pixel dragged (1 = a full turn per screen
+ * height), the fastest a flick can leave it spinning (radians per second) and how quickly that coasts
+ * out (per second). A finger sweeps far and fast over a small screen, so touch is heavier still.
+ */
+const TURN_WEIGHTS = {
+  mouse: { perPixel: 0.4, maxFlick: 4, coast: COAST_DAMPING + 2 },
+  touch: { perPixel: 0.25, maxFlick: 2, coast: COAST_DAMPING + 5 },
+} as const
+type TurnWeights = (typeof TURN_WEIGHTS)[keyof typeof TURN_WEIGHTS]
+
+/** Turning the picked-up bomb by dragging. */
 type Spin = {
   yaw: number
   pitch: number
@@ -45,6 +56,8 @@ type Spin = {
   zoom: number
   enabled: boolean
   dragging: boolean
+  /** Weights of the input that turned the bomb last (mouse or touch). */
+  weights: TurnWeights
   snap: boolean
   x: number
   y: number
@@ -59,6 +72,7 @@ const newSpin = (): Spin => ({
   zoom: 1,
   enabled: false,
   dragging: false,
+  weights: TURN_WEIGHTS.mouse,
   snap: false,
   x: 0,
   y: 0,
@@ -204,13 +218,37 @@ export default function RoomBomb({ rest, lifted, onLift, onPutDown, ...content }
   useEffect(() => {
     const canvas = gl.domElement
     const s = spin.current
+    // Fingers on the canvas, for pinching to zoom. While two are down the bomb doesn't turn.
+    const touches = new Map<number, { x: number; y: number }>()
+    let pinch: { distance: number; zoom: number } | null = null
+    const spread = () => {
+      const [a, b] = [...touches.values()]
+      return Math.max(Math.hypot(a.x - b.x, a.y - b.y), 1)
+    }
     const down = (e: PointerEvent) => {
       if (e.button !== 0 || !s.enabled) return
-      Object.assign(s, { dragging: true, x: e.clientX, y: e.clientY, t: e.timeStamp, vYaw: 0, vPitch: 0 })
+      if (e.pointerType === 'touch') {
+        touches.set(e.pointerId, { x: e.clientX, y: e.clientY })
+        if (touches.size === 2) {
+          pinch = { distance: spread(), zoom: s.zoom }
+          Object.assign(s, { dragging: false, vYaw: 0, vPitch: 0 })
+          return
+        }
+        if (touches.size > 2 || pinch) return
+      }
+      const weights = e.pointerType === 'mouse' ? TURN_WEIGHTS.mouse : TURN_WEIGHTS.touch
+      Object.assign(s, { dragging: true, weights, x: e.clientX, y: e.clientY, t: e.timeStamp, vYaw: 0, vPitch: 0 })
     }
     const move = (e: PointerEvent) => {
+      if (touches.has(e.pointerId)) touches.set(e.pointerId, { x: e.clientX, y: e.clientY })
+      if (pinch) {
+        if (touches.size >= 2 && s.enabled) {
+          s.zoom = THREE.MathUtils.clamp((pinch.zoom * spread()) / pinch.distance, MIN_ZOOM, MAX_ZOOM)
+        }
+        return
+      }
       if (!s.dragging) return
-      const perPixel = (2 * Math.PI) / Math.max(canvas.clientHeight, 1)
+      const perPixel = ((2 * Math.PI) / Math.max(canvas.clientHeight, 1)) * s.weights.perPixel
       // upside down, sideways turns the other way round
       const dYaw = (e.clientX - s.x) * perPixel * (Math.cos(s.pitch) >= 0 ? 1 : -1)
       const dPitch = (e.clientY - s.y) * perPixel
@@ -221,10 +259,20 @@ export default function RoomBomb({ rest, lifted, onLift, onPutDown, ...content }
       Object.assign(s, { yaw: s.yaw + dYaw, pitch: s.pitch + dPitch, x: e.clientX, y: e.clientY, t: e.timeStamp })
     }
     const up = (e: PointerEvent) => {
+      touches.delete(e.pointerId)
+      // a pinch ends once every finger is lifted, so the last one doesn't jerk the bomb round
+      if (pinch) {
+        if (touches.size === 0) pinch = null
+        return
+      }
       if (!s.dragging) return
       s.dragging = false
       // pointer held still before letting go: no flick
       if (e.timeStamp - s.t > 80) [s.vYaw, s.vPitch] = [0, 0]
+      // a flick never spins it wildly
+      const max = s.weights.maxFlick
+      s.vYaw = THREE.MathUtils.clamp(s.vYaw, -max, max)
+      s.vPitch = THREE.MathUtils.clamp(s.vPitch, -max, max)
     }
     // Scroll: bring the picked-up bomb closer or push it away (it grows and shrinks; the room stays put).
     const wheel = (e: WheelEvent) => {
@@ -268,7 +316,7 @@ export default function RoomBomb({ rest, lifted, onLift, onPutDown, ...content }
         const dt = Math.min(delta, 1 / 20)
         s.yaw += s.vYaw * dt
         s.pitch += s.vPitch * dt
-        const coast = Math.exp(-dt * COAST_DAMPING)
+        const coast = Math.exp(-dt * s.weights.coast)
         s.vYaw *= coast
         s.vPitch *= coast
         if (s.snap) {
