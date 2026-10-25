@@ -336,7 +336,23 @@ mod websocket {
         };
         let briefing = expect(defuser, "briefing").await;
         assert_eq!(briefing["role"], "defuser");
-        assert_eq!(briefing["task"]["options"], json!(["4", "8"]));
+        // the answers only exist as symbols for the defuser ...
+        assert!(briefing["task"].get("options").is_none());
+        assert!(briefing["task"].get("prompt").is_none());
+        let glyphs = briefing["glyphs"].as_array().expect("glyphs");
+        assert_eq!(glyphs.len(), 2);
+        assert_ne!(glyphs[0], glyphs[1]);
+
+        // ... and the expert's symbols say which one is which
+        let expert_briefing = expect(other, "briefing").await;
+        assert_eq!(expert_briefing["role"], "expert");
+        assert_eq!(
+            expert_briefing["symbols"],
+            json!([
+                { "glyph": glyphs[0], "text": "4" },
+                { "glyph": glyphs[1], "text": "8" },
+            ])
+        );
 
         send(
             other,

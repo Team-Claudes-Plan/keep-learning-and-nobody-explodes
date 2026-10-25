@@ -116,6 +116,18 @@ export type Role = 'defuser' | 'expert'
 /** A question without its prompt; the expert reads the prompt out. */
 export type DefuserTask = Question extends infer Q ? (Q extends Question ? Omit<Q, 'prompt'> : never) : never
 
+/**
+ * A question whose answers are shown as symbols: like DefuserTask, but the answer list is missing
+ * (`options` for choice questions, `items` for order and grouping, `right` for matching). The
+ * briefing's `glyphs` give the symbol per list entry.
+ */
+export type SymbolizedTask =
+  | Omit<SingleChoiceQuestion, 'prompt' | 'options'>
+  | Omit<MultipleChoiceQuestion, 'prompt' | 'options'>
+  | Omit<OrderQuestion, 'prompt' | 'items'>
+  | Omit<GroupingQuestion, 'items'>
+  | Omit<MatchingQuestion, 'right'>
+
 /** Like AnswerSubmission, but the turn identifies the question. */
 export type SessionAnswer = {
   [T in QuestionType]: { type: T; answer: AnswerMap[T] }
@@ -186,12 +198,13 @@ export type SessionServerMessage =
   | { type: 'welcome'; game_id: string; player_id: string; token: string; seat: 0 | 1 }
   | { type: 'snapshot'; state: GameView }
   | { type: 'event'; sequence: number; at: string; event: GameEvent }
+  /** Defuser, answers as plain text: the question without its prompt. */
+  | { type: 'briefing'; turn: number; role: 'defuser'; task: DefuserTask; glyphs?: undefined }
   /**
-   * Defuser: the question without its prompt. With `glyphs`, the answer list (`options` for choice
-   * questions, `items` for order and grouping, `right` for matching) is missing: entry i is shown as
+   * Defuser, answers as symbols: the answer list is missing from `task`, entry i of it is shown as
    * symbol `glyphs[i]` (see game/glyphs.ts). A symbol appears at most once per game.
    */
-  | { type: 'briefing'; turn: number; role: 'defuser'; task: DefuserTask; glyphs?: number[] }
+  | { type: 'briefing'; turn: number; role: 'defuser'; task: SymbolizedTask; glyphs: number[] }
   /** Expert: the prompt, the manual page and what the defuser's symbols stand for. */
   | {
       type: 'briefing'

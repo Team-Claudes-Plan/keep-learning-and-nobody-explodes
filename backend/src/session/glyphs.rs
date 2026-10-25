@@ -10,7 +10,7 @@ use serde_json::Value;
 use uuid::Uuid;
 
 /// Number of drawings in `frontend/src/game/glyphs.ts`. Keep both in sync.
-pub const GLYPH_COUNT: u8 = 21;
+pub const GLYPH_COUNT: u8 = 22;
 
 /// The list of a question that the defuser sees as symbols instead of text,
 /// or `None` for question types without symbols.
@@ -123,12 +123,31 @@ mod tests {
 
     #[test]
     fn parts_that_do_not_fit_fall_back_to_text() {
-        // 8 + 8 leaves 5 symbols: the 6 does not fit, the later 5 still does
-        let parts = assign(&[8, 8, 6, 5], counter());
-        assert_eq!(parts.iter().map(Vec::len).collect::<Vec<_>>(), [8, 8, 0, 5]);
+        // 8 + 8 leaves 6 symbols: the 7 does not fit, the later 6 still does
+        let parts = assign(&[8, 8, 7, 6], counter());
+        assert_eq!(parts.iter().map(Vec::len).collect::<Vec<_>>(), [8, 8, 0, 6]);
         let all: Vec<u8> = parts.concat();
         let unique: HashSet<u8> = all.iter().copied().collect();
         assert_eq!(all.len(), unique.len());
+    }
+
+    #[test]
+    fn parts_that_fit_the_pool_keep_their_symbols() {
+        let parts = assign(&[8, 6, 8], counter());
+        assert_eq!(parts.iter().map(Vec::len).collect::<Vec<_>>(), [8, 6, 8]);
+    }
+
+    #[test]
+    fn matches_the_drawings_in_the_frontend() {
+        let source = include_str!("../../../frontend/src/game/glyphs.ts");
+        let drawings = source
+            .lines()
+            .skip_while(|line| !line.starts_with("export const GLYPHS"))
+            .skip(1)
+            .take_while(|line| !line.starts_with(']'))
+            .filter(|line| line.starts_with("  '"))
+            .count();
+        assert_eq!(drawings, usize::from(GLYPH_COUNT));
     }
 
     #[test]
