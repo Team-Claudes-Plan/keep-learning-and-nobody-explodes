@@ -4,6 +4,7 @@ use grpc::akasha::{
     Chronicle, Language, ManifestTrialsRequest, akasha_service_client::AkashaServiceClient,
 };
 use tonic::transport::{Channel, Endpoint};
+use uuid::Uuid;
 
 /// Cloneable gRPC client whose channel connects on first use and reconnects
 /// automatically.
@@ -24,21 +25,24 @@ impl AkashaClient {
         })
     }
 
-    /// Sends one chronicle to Akasha for question extraction.
+    /// Sends one chronicle to Akasha for question extraction. Akasha files the
+    /// questions under topics of `island_id`, which must own the document.
     pub async fn manifest_trials(
         &self,
-        document_id: &str,
-        topic: &str,
+        document_id: Uuid,
+        island_id: Uuid,
+        island_name: &str,
         text: &str,
     ) -> Result<(), tonic::Status> {
         let mut client = self.client.clone();
         client
             .manifest_trials(ManifestTrialsRequest {
                 chronicle: Some(Chronicle {
-                    id: document_id.to_owned(),
+                    id: document_id.to_string(),
+                    island_id: island_id.to_string(),
+                    island_name: island_name.to_owned(),
                     language: self.language as i32,
                     text: text.to_owned(),
-                    topic: topic.to_owned(),
                 }),
             })
             .await?;
