@@ -217,7 +217,7 @@ pub async fn islands_list(
     for summary in summaries {
         let topics = state
             .db
-            .island_topics(summary.id)
+            .island_topics(summary.id, state.language)
             .await
             .map_err(|error| ApiError::db("load island topics", &error))?;
         islands.push(island(summary, &topics));
@@ -271,6 +271,7 @@ fn house(topic: &TopicProgress) -> House {
 #[cfg(test)]
 mod tests {
     use axum::http::Method;
+    use grpc::akasha::Language;
     use serde_json::{Value, json};
 
     use super::*;
@@ -365,23 +366,27 @@ mod tests {
         db.create_user(name).await.expect("user")
     }
 
-    /// A topic with `skills` skills (one task each) on `island`, the first
-    /// `passed` of which `players` won a bomb on together.
+    /// A topic with `skills` skills (one task each) on `island` in `language`,
+    /// the first `passed` of which `players` won a bomb on together.
     async fn seed_topic(
         db: &Database,
         island: Uuid,
         skills: usize,
         passed: usize,
         players: [Uuid; 2],
+        language: Language,
     ) -> Uuid {
         let pool = db.pool();
-        let topic: Uuid =
-            sqlx::query_scalar("INSERT INTO topics (island_id, name) VALUES ($1, $2) RETURNING id")
-                .bind(island)
-                .bind(format!("topic {}", Uuid::new_v4()))
-                .fetch_one(pool)
-                .await
-                .expect("topic");
+        let topic: Uuid = sqlx::query_scalar(
+            "INSERT INTO topics (island_id, language, name)
+             VALUES ($1, $2, $3) RETURNING id",
+        )
+        .bind(island)
+        .bind(crate::db::language_code(language))
+        .bind(format!("topic {}", Uuid::new_v4()))
+        .fetch_one(pool)
+        .await
+        .expect("topic");
         let document: Uuid = sqlx::query_scalar(
             "INSERT INTO documents (bucket, object_key, island_id) VALUES ('test', $1, $2) RETURNING id",
         )
@@ -545,9 +550,9 @@ mod tests {
             .await
             .expect("island");
         // alex and mia passed all of `known`, leo none of it
-        let known = seed_topic(&db, island, 4, 4, [alex, mia]).await;
+        let known = seed_topic(&db, island, 4, 4, [alex, mia], Language::German).await;
         // alex and leo passed half of `shared` in other games
-        let shared = seed_topic(&db, island, 4, 2, [alex, leo]).await;
+        let shared = seed_topic(&db, island, 4, 2, [alex, leo], Language::German).await;
 
         let (status, body) = call(
             &app,
@@ -594,6 +599,27 @@ mod tests {
         assert_eq!(
             db.content_island(second).await.expect("lookup"),
             Some(island)
+        );
+    }
+
+    #[tokio::test]
+    #[ignore = "requires the dev stack (`nix run .#dev`) and its environment"]
+    async fn hides_topics_of_the_other_language() {
+        let (app, db) = app().await;
+        let (alex, mia) = (user(&db, "Alex").await, user(&db, "Mia").await);
+        let island = db
+            .create_island("Languages", alex, Some(mia))
+            .await
+            .expect("island");
+        let german = seed_topic(&db, island, 1, 0, [alex, mia], Language::German).await;
+        seed_topic(&db, island, 1, 0, [alex, mia], Language::English).await;
+
+        let (status, body) = call(&app, Method::GET, "/api/islands", Some(alex), None).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(
+            houses(&body, island),
+            [(german.to_string(), 0, true)],
+            "the English variant does not exist for a German reader; the German ground floor is open"
         );
     }
 

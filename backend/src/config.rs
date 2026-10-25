@@ -34,7 +34,8 @@ pub struct Config {
     pub webhook_token: String,
     /// Address of the Akasha gRPC service (`AKASHA_GRPC_URL`).
     pub akasha_grpc_url: String,
-    /// Language sent to Akasha (`AKASHA_LANGUAGE`).
+    /// Language sent to Akasha and used to read topics/skills/tasks
+    /// (`AKASHA_LANGUAGE`).
     pub akasha_language: Language,
     /// S3 connection settings.
     pub s3: S3Config,

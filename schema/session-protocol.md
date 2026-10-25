@@ -24,6 +24,8 @@ strikes. Clients only render what they are told.
 - A **lobby game** (`create` with `topics` only) draws its questions from whole
   houses (topics) of an island, spread over their skills. It does not count
   towards any storey.
+- Only houses of the backend's configured language exist; topic ids of another
+  language are treated as unknown.
 - A bomb has `question_count` parts (1–11). **Turn n** plays part n.
 - Each turn one player is the **defuser** (sees the module, answers) and the
   other is the **expert** (sees the prompt and the manual page). **Roles swap

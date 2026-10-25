@@ -54,6 +54,7 @@ export default defineConfig({
         DATABASE_URL,
         LISTEN_ADDR: BACKEND,
         WEBHOOK_TOKEN: 'e2e-webhook-token',
+        AKASHA_LANGUAGE: 'german',
         // uploads are not part of the tests; the S3 client connects lazily
         S3_ENDPOINT: 'http://127.0.0.1:9',
         S3_ACCESS_KEY: 'e2e',

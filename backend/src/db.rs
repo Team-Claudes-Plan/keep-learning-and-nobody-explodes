@@ -1,4 +1,5 @@
 use chrono::{DateTime, Utc};
+use grpc::akasha::Language;
 use serde::Serialize;
 use serde_json::Value;
 use sqlx::{
@@ -9,6 +10,15 @@ use sqlx::{
 use uuid::Uuid;
 
 use crate::session::protocol::{GameEvent, Role};
+
+/// Stable lowercase language code stored on topics.
+#[must_use]
+pub const fn language_code(language: Language) -> &'static str {
+    match language {
+        Language::English => "english",
+        Language::German | Language::Unspecified => "german",
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct UserSummary {
@@ -505,11 +515,15 @@ impl Database {
             .collect())
     }
 
-    /// The topics of an island (shared with its origin, if it is a fork) with
-    /// their skills in skill tree order and how many bombs on each skill
-    /// every member has won. Topics without skills are returned with an empty
-    /// skill list.
-    pub async fn island_topics(&self, island_id: Uuid) -> Result<Vec<TopicProgress>, sqlx::Error> {
+    /// The topics of an island (shared with its origin, if it is a fork) in
+    /// `language`, with their skills in skill tree order and how many bombs on
+    /// each skill every member has won. Topics without skills are returned
+    /// with an empty skill list.
+    pub async fn island_topics(
+        &self,
+        island_id: Uuid,
+        language: Language,
+    ) -> Result<Vec<TopicProgress>, sqlx::Error> {
         type Row = (
             Uuid,
             String,
@@ -535,10 +549,11 @@ impl Database {
              JOIN topics t ON t.island_id = COALESCE(i.origin_id, i.id)
              LEFT JOIN skills s ON s.topic_id = t.id
              JOIN island_members m ON m.island_id = i.id
-             WHERE i.id = $1
+             WHERE i.id = $1 AND t.language = $2
              ORDER BY t.created_at, t.id, s.position, s.created_at, s.id, m.user_id",
         )
         .bind(island_id)
+        .bind(language_code(language))
         .fetch_all(&self.pool)
         .await?;
 
@@ -578,6 +593,20 @@ impl Database {
             }
         }
         Ok(topics)
+    }
+
+    /// The requested topics that exist in `language`. Unknown topics and
+    /// variants of another language are omitted.
+    pub async fn topics_in_language(
+        &self,
+        topics: &[Uuid],
+        language: Language,
+    ) -> Result<Vec<Uuid>, sqlx::Error> {
+        sqlx::query_scalar("SELECT id FROM topics WHERE id = ANY($1) AND language = $2")
+            .bind(topics)
+            .bind(language_code(language))
+            .fetch_all(&self.pool)
+            .await
     }
 
     /// Every task of `skill_id` that has an instruction (one picked at random
@@ -676,23 +705,26 @@ impl Database {
     }
 
     /// Draws `count` random tasks (each with an instruction) from the topics
-    /// (houses). Each round takes one task per skill, so a game spreads over the
-    /// skills of the chosen topics instead of filling up from one skill.
+    /// (houses) in `language`. Each round takes one task per skill, so a game
+    /// spreads over the skills of the chosen topics instead of filling up from
+    /// one skill.
     pub async fn pick_tasks(
         &self,
         topics: &[Uuid],
         count: u16,
+        language: Language,
     ) -> Result<Vec<PickedTask>, sqlx::Error> {
         let rows: Vec<(Uuid, Uuid, String, Json<Value>)> = sqlx::query_as(
             "WITH candidates AS (
-                 SELECT DISTINCT ON (t.id) t.id AS task_id, i.id AS instruction_id,
-                        s.id AS skill_id, t.question_type, t.content,
-                        random() AS task_random
-                 FROM tasks t
-                 JOIN skills s ON s.id = t.skill_id
-                 JOIN instructions i ON i.task_id = t.id
-                 WHERE s.topic_id = ANY($1)
-                 ORDER BY t.id, random()
+                 SELECT DISTINCT ON (task.id) task.id AS task_id,
+                        instruction.id AS instruction_id, skill.id AS skill_id,
+                        task.question_type, task.content, random() AS task_random
+                 FROM tasks task
+                 JOIN skills skill ON skill.id = task.skill_id
+                 JOIN topics topic ON topic.id = skill.topic_id
+                 JOIN instructions instruction ON instruction.task_id = task.id
+                 WHERE topic.id = ANY($1) AND topic.language = $3
+                 ORDER BY task.id, random()
              ), ranked AS (
                  SELECT task_id, instruction_id, question_type, content, task_random,
                         row_number() OVER (PARTITION BY skill_id ORDER BY task_random)
@@ -706,6 +738,7 @@ impl Database {
         )
         .bind(topics)
         .bind(i64::from(count))
+        .bind(language_code(language))
         .fetch_all(&self.pool)
         .await?;
         Ok(rows
@@ -855,9 +888,31 @@ impl Database {
         .await
     }
 
+    /// Whether a game has topics in `language`. Games of another language are
+    /// treated as if they did not exist.
+    pub async fn game_in_language(
+        &self,
+        game_id: Uuid,
+        language: Language,
+    ) -> Result<bool, sqlx::Error> {
+        sqlx::query_scalar(
+            "SELECT EXISTS (
+                 SELECT 1
+                 FROM game_topics visible
+                 JOIN topics topic ON topic.id = visible.topic_id
+                 WHERE visible.game_id = $1 AND topic.language = $2
+             )",
+        )
+        .bind(game_id)
+        .bind(language_code(language))
+        .fetch_one(&self.pool)
+        .await
+    }
+
     /// Public games from the last hour that are still waiting for a second
-    /// player; games with an invited player are left out.
-    pub async fn list_lobbies(&self) -> Result<Vec<Lobby>, sqlx::Error> {
+    /// player and were started on topics of `language`; games with an invited
+    /// player are left out.
+    pub async fn list_lobbies(&self, language: Language) -> Result<Vec<Lobby>, sqlx::Error> {
         let rows: Vec<(Uuid, i16, Vec<Uuid>, Option<String>)> = sqlx::query_as(
             "SELECT g.id, g.question_count,
                     array_remove(array_agg(gt.topic_id), NULL),
@@ -867,10 +922,17 @@ impl Database {
              LEFT JOIN game_topics gt ON gt.game_id = g.id
              WHERE g.status = 'waiting' AND g.invited_id IS NULL
                AND g.created_at > now() - interval '1 hour'
+               AND EXISTS (
+                   SELECT 1
+                   FROM game_topics visible
+                   JOIN topics topic ON topic.id = visible.topic_id
+                   WHERE visible.game_id = g.id AND topic.language = $1
+               )
              GROUP BY g.id, p.preferred_role
              ORDER BY g.created_at DESC
              LIMIT 50",
         )
+        .bind(language_code(language))
         .fetch_all(&self.pool)
         .await?;
         Ok(rows
@@ -1006,6 +1068,7 @@ mod tests {
 
     #[tokio::test]
     #[ignore = "requires the dev stack (`nix run .#dev`) and its environment"]
+    #[expect(clippy::too_many_lines, reason = "one scenario, read top to bottom")]
     async fn pick_tasks_spreads_over_the_skills_of_a_topic() {
         let url = std::env::var("DATABASE_URL").expect("DATABASE_URL");
         let db = Database::connect(&url, 2).await.expect("database");
@@ -1018,7 +1081,8 @@ mod tests {
             .await
             .expect("island");
         let topic: Uuid = sqlx::query_scalar(
-            "INSERT INTO topics (island_id, name) VALUES ($1, 'Mathe') RETURNING id",
+            "INSERT INTO topics (island_id, language, name)
+             VALUES ($1, 'german', 'Mathe') RETURNING id",
         )
         .bind(island)
         .fetch_one(pool)
@@ -1062,7 +1126,56 @@ mod tests {
             }
         }
 
-        let picked = db.pick_tasks(&[topic], 3).await.expect("picked tasks");
+        let english: Uuid = sqlx::query_scalar(
+            "INSERT INTO topics (island_id, language, name)
+             VALUES ($1, 'english', 'Math') RETURNING id",
+        )
+        .bind(island)
+        .fetch_one(pool)
+        .await
+        .expect("english topic");
+        let english_skill: Uuid = sqlx::query_scalar(
+            "INSERT INTO skills (topic_id, name) VALUES ($1, 'Arithmetic') RETURNING id",
+        )
+        .bind(english)
+        .fetch_one(pool)
+        .await
+        .expect("english skill");
+        let english_task: Uuid = sqlx::query_scalar(
+            "INSERT INTO tasks (document_id, skill_id, question_type, solution)
+             VALUES ($1, $2, 'text_input', $3) RETURNING id",
+        )
+        .bind(document)
+        .bind(english_skill)
+        .bind(Json(json!({ "correct_answer": "x" })))
+        .fetch_one(pool)
+        .await
+        .expect("english task");
+        sqlx::query("INSERT INTO instructions (task_id) VALUES ($1)")
+            .bind(english_task)
+            .execute(pool)
+            .await
+            .expect("english instruction");
+
+        assert!(
+            db.topics_in_language(&[english], Language::German)
+                .await
+                .expect("visible topics")
+                .is_empty(),
+            "a topic of another language does not exist for this reader"
+        );
+        assert!(
+            db.pick_tasks(&[english], 1, Language::German)
+                .await
+                .expect("picked tasks")
+                .is_empty(),
+            "tasks of another language are not playable"
+        );
+
+        let picked = db
+            .pick_tasks(&[topic], 3, Language::German)
+            .await
+            .expect("picked tasks");
         assert_eq!(picked.len(), 3);
 
         let task_ids = picked.iter().map(|task| task.task_id).collect::<Vec<_>>();
@@ -1076,5 +1189,21 @@ mod tests {
             3,
             "one task from each skill is picked before a skill repeats"
         );
+
+        sqlx::query("DELETE FROM tasks WHERE document_id = $1")
+            .bind(document)
+            .execute(pool)
+            .await
+            .expect("cleanup tasks");
+        sqlx::query("DELETE FROM islands WHERE id = $1")
+            .bind(island)
+            .execute(pool)
+            .await
+            .expect("cleanup island");
+        sqlx::query("DELETE FROM users WHERE id = $1")
+            .bind(user)
+            .execute(pool)
+            .await
+            .expect("cleanup user");
     }
 }

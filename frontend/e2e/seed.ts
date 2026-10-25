@@ -46,7 +46,7 @@ export async function seed(): Promise<Seed> {
   await client.connect()
   try {
     const topic = await client.query<{ id: string }>(
-      'INSERT INTO topics (island_id, name) VALUES ($1, $2) RETURNING id',
+      "INSERT INTO topics (island_id, language, name) VALUES ($1, 'german', $2) RETURNING id",
       [islandId, 'Bombenkunde'],
     )
     const topicId = topic.rows[0].id

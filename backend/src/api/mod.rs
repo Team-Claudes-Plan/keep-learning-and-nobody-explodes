@@ -60,7 +60,8 @@ pub(crate) mod testing {
         db.migrate().await.expect("migrations should apply");
         let state = Arc::new(GlobalState {
             db: db.clone(),
-            sessions: Sessions::new(db.clone()),
+            sessions: Sessions::new(db.clone(), config.akasha_language),
+            language: config.akasha_language,
             presence: Hub::new(),
         });
         (super::routes().with_state(state), db)

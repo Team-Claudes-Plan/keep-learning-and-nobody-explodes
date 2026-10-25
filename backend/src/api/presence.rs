@@ -218,6 +218,7 @@ mod tests {
     use std::time::Duration;
 
     use futures_util::{SinkExt, StreamExt};
+    use grpc::akasha::Language;
     use serde_json::{Value, json};
     use tokio::{net::TcpStream, time::timeout};
     use tokio_tungstenite::{MaybeTlsStream, WebSocketStream, connect_async, tungstenite::Message};
@@ -267,9 +268,10 @@ mod tests {
 
         let pool = db.pool().clone();
         let state = std::sync::Arc::new(GlobalState {
-            sessions: Sessions::new(db.clone()),
+            sessions: Sessions::new(db.clone(), Language::German),
             presence: Hub::new(),
             db,
+            language: Language::German,
         });
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
             .await
@@ -308,7 +310,8 @@ mod tests {
 
         // a waiting game of alex, private to mia
         let topic: Uuid = sqlx::query_scalar(
-            "INSERT INTO topics (island_id, name) VALUES ($1, 'Kanal') RETURNING id",
+            "INSERT INTO topics (island_id, language, name)
+             VALUES ($1, 'german', 'Kanal') RETURNING id",
         )
         .bind(island)
         .fetch_one(&pool)

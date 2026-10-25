@@ -285,6 +285,12 @@
               backend = {
                 description = "Rust upload backend (cargo watch)";
                 command = backend-run;
+                # Readiness failures follow the availability policy and restart the
+                # process. During a (cold) cargo build the health endpoint is not up
+                # yet, so an automatic restart would kill the build before it finishes.
+                # cargo watch already handles rebuilds; keep the probe for the
+                # dependent processes, but never restart the backend on its failures.
+                availability.restart = "no";
                 depends_on.setup.condition = "process_completed_successfully";
                 readiness_probe = {
                   exec.command = "${pkgs.curl}/bin/curl -fsS -o /dev/null http://localhost:8081/health";

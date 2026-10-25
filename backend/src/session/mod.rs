@@ -12,9 +12,13 @@ pub mod protocol;
 mod state;
 mod task;
 
-use std::{collections::HashMap, sync::Arc};
+use std::{
+    collections::{HashMap, HashSet},
+    sync::Arc,
+};
 
 use chrono::Utc;
+use grpc::akasha::Language;
 use tokio::sync::{Mutex, broadcast, mpsc, oneshot};
 use uuid::Uuid;
 
@@ -135,22 +139,43 @@ type Games = Arc<Mutex<HashMap<Uuid, mpsc::Sender<Request>>>>;
 pub struct Sessions {
     db: Database,
     games: Games,
+    language: Language,
 }
 
 impl Sessions {
     #[must_use]
-    pub fn new(db: Database) -> Self {
+    pub fn new(db: Database, language: Language) -> Self {
         Self {
             db,
             games: Arc::default(),
+            language,
         }
     }
 
     pub async fn lobbies(&self) -> Result<Vec<Lobby>, SessionError> {
         self.db
-            .list_lobbies()
+            .list_lobbies(self.language)
             .await
             .map_err(|e| SessionError::db(&e))
+    }
+
+    /// The requested topics that exist in this backend's language, in request
+    /// order and without duplicates. Topics of another language are treated as
+    /// if they did not exist.
+    async fn visible_topics(&self, requested: &[Uuid]) -> Result<Vec<Uuid>, SessionError> {
+        let visible: HashSet<Uuid> = self
+            .db
+            .topics_in_language(requested, self.language)
+            .await
+            .map_err(|e| SessionError::db(&e))?
+            .into_iter()
+            .collect();
+        let mut seen = HashSet::new();
+        Ok(requested
+            .iter()
+            .copied()
+            .filter(|topic| visible.contains(topic) && seen.insert(*topic))
+            .collect())
     }
 
     pub async fn create(&self, request: CreateGame) -> Result<Seat, SessionError> {
@@ -252,7 +277,8 @@ impl Sessions {
     }
 
     /// The topics of the game and its tasks: from one storey (skill), or
-    /// spread over whole topics for a lobby game.
+    /// spread over whole topics for a lobby game. Only topics of this backend's
+    /// language exist.
     async fn game_tasks(
         &self,
         request: &CreateGame,
@@ -261,9 +287,16 @@ impl Sessions {
             let (topic, tasks) = self.storey_tasks(request, storey).await?;
             return Ok((vec![topic], tasks));
         }
+        let topics = self.visible_topics(&request.topics).await?;
+        if topics.is_empty() {
+            return Err(SessionError::new(
+                ErrorCode::NoTasks,
+                "the topics have no tasks in this language",
+            ));
+        }
         let tasks = self
             .db
-            .pick_tasks(&request.topics, request.question_count)
+            .pick_tasks(&topics, request.question_count, self.language)
             .await
             .map_err(|e| SessionError::db(&e))?;
         if tasks.len() < usize::from(request.question_count) {
@@ -272,7 +305,7 @@ impl Sessions {
                 format!("the topics only have {} playable tasks", tasks.len()),
             ));
         }
-        Ok((request.topics.clone(), tasks))
+        Ok((topics, tasks))
     }
 
     /// Checks that the storey can be played on the island and picks its
@@ -299,7 +332,11 @@ impl Sessions {
             }
         }
 
-        let topics = self.db.island_topics(storey.island_id).await.map_err(db)?;
+        let topics = self
+            .db
+            .island_topics(storey.island_id, self.language)
+            .await
+            .map_err(db)?;
         let Some((topic, unlocked)) = topics.iter().find_map(|topic| {
             knowledge::skill_unlocked(topic, storey.skill_id).map(|unlocked| (topic.id, unlocked))
         }) else {
@@ -341,6 +378,9 @@ impl Sessions {
         player: Uuid,
         role: Option<Role>,
     ) -> Result<Seat, SessionError> {
+        if !self.visible_game(game_id).await? {
+            return Err(SessionError::new(ErrorCode::UnknownGame, "unknown game"));
+        }
         self.request(game_id, |reply| Request::Join {
             player,
             role,
@@ -350,11 +390,24 @@ impl Sessions {
     }
 
     pub async fn authenticate(&self, game_id: Uuid, token: Uuid) -> Result<Uuid, SessionError> {
-        self.db
+        let player = self
+            .db
             .find_player(game_id, token)
             .await
             .map_err(|e| SessionError::db(&e))?
-            .ok_or_else(|| SessionError::new(ErrorCode::InvalidToken, "unknown game or token"))
+            .ok_or_else(|| SessionError::new(ErrorCode::InvalidToken, "unknown game or token"))?;
+        if !self.visible_game(game_id).await? {
+            return Err(SessionError::new(ErrorCode::UnknownGame, "unknown game"));
+        }
+        Ok(player)
+    }
+
+    /// Whether `game_id` exists for readers of this backend's language.
+    async fn visible_game(&self, game_id: Uuid) -> Result<bool, SessionError> {
+        self.db
+            .game_in_language(game_id, self.language)
+            .await
+            .map_err(|e| SessionError::db(&e))
     }
 
     pub async fn connect(
