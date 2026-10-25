@@ -4,7 +4,7 @@
 
 Run Rust/Nix commands from the repository root.
 
-- `nix run .#dev` — start the complete local backend stack (Postgres, RustFS, setup, webhook configuration, and the backend under `cargo watch`). Run it in its own terminal.
+- `nix run .#dev` — start the complete local backend stack (Postgres, RustFS, setup, webhook configuration, the backend under `cargo watch`, and Akasha). Run it in its own terminal.
 - `nix develop` — enter the backend development shell with the required environment and native libraries; `.envrc` uses this automatically through direnv.
 - `cargo test --workspace` — run Rust tests, excluding ignored integration tests.
 - `cargo test -p backend <test_name>` — run a focused backend test.
@@ -82,6 +82,6 @@ The frontend is a separate Bun package, not part of the Cargo workspace. From `f
 
 ## Environment and local state
 
-- A plain `cargo run` is insufficient unless backend dependencies and environment are already configured. Required runtime variables are `DATABASE_URL`, `WEBHOOK_TOKEN`, `S3_ENDPOINT`, `S3_ACCESS_KEY`, `S3_SECRET_KEY`, and `S3_BUCKET`; optional are `LISTEN_ADDR` (default `127.0.0.1:8081`), `MAX_UPLOAD_BYTES` (default 256 MiB) and `S3_REGION`. The Nix dev stack supplies development values.
+- A plain `cargo run` is insufficient unless backend dependencies and environment are already configured. Required runtime variables are `DATABASE_URL`, `WEBHOOK_TOKEN`, `S3_ENDPOINT`, `S3_ACCESS_KEY`, `S3_SECRET_KEY`, and `S3_BUCKET`; optional are `LISTEN_ADDR` (default `0.0.0.0:8081`), `MAX_UPLOAD_BYTES` (default 256 MiB) and `S3_REGION`. The Nix dev stack supplies development values.
 - The Rust build needs native ONNX Runtime/libheif and build tools supplied by the Nix shell. Outside Nix, `ORT_LIB_PATH` and dynamic-link configuration may also be needed; prefer the flake environment rather than reconstructing it manually.
 - Local Postgres data, RustFS objects, notification queues, and process logs live under `.data/`. Delete it only when intentionally resetting all local dev state. Logs are in `.data/logs/`.

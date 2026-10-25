@@ -6,8 +6,8 @@ Code and definitions shared by the Rust services ([backend](../backend/) and
 ## What happens here
 
 - [`proto/`](proto/) — protobuf sources of the service interfaces, currently
-  `akasha.proto` (backend → Akasha: `ManifestTrials` with the extracted text
-  of a document).
+  `akasha.proto` (backend → Akasha: `ManifestTrials` with the document id,
+  island id/name, language and extracted text).
 - [`grpc/`](grpc/) — the `grpc` crate. Its `build.rs` compiles the `.proto`
   files into Rust client and server code (tonic/prost) at build time. Edit the
   `.proto` files, never the generated code; `protoc` is needed outside the Nix
