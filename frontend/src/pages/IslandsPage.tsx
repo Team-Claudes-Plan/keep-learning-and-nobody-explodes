@@ -5,6 +5,7 @@ import Hud from '../components/Hud'
 import Bridge from '../components/islands/Bridge'
 import IslandCamera from '../components/islands/IslandCamera'
 import IslandScene from '../components/islands/IslandScene'
+import UploadDialog, { UploadIcon } from '../components/islands/UploadDialog'
 import { usePresence, useIslands } from '../api/useIslands'
 import type { IslandsResponse } from '../api/types'
 import { bridgeBetween, islandCenter, resolveIsland } from '../data/islands'
@@ -15,6 +16,7 @@ function IslandsView({ data }: { data: IslandsResponse }) {
   const navigate = useNavigate()
   const { islandId } = useParams()
   const [storeyDelta, setStoreyDelta] = useState(0)
+  const [uploadOpen, setUploadOpen] = useState(false)
   const { me, islands } = data
 
   const resolved = useMemo(() => islands.map(resolveIsland), [islands])
@@ -36,13 +38,15 @@ function IslandsView({ data }: { data: IslandsResponse }) {
   )
 
   useEffect(() => {
+    // The upload is tied to the current island, so stay put while the dialog is open.
+    if (uploadOpen) return
     const handleKey = (event: KeyboardEvent) => {
       if (event.key === 'ArrowRight') goTo(activeIndex + 1)
       if (event.key === 'ArrowLeft') goTo(activeIndex - 1)
     }
     window.addEventListener('keydown', handleKey)
     return () => window.removeEventListener('keydown', handleKey)
-  }, [activeIndex, goTo])
+  }, [activeIndex, goTo, uploadOpen])
 
   if (!active) {
     return (
@@ -142,6 +146,23 @@ function IslandsView({ data }: { data: IslandsResponse }) {
           ))}
         </ul>
       </Hud>
+
+      <button
+        type="button"
+        className="upload-fab"
+        onClick={() => setUploadOpen(true)}
+        title={`Upload documents to ${active.island.name}`}
+        aria-label={`Upload documents to ${active.island.name}`}
+      >
+        <span className="upload-fab-body chamfer">
+          <span className="upload-fab-face chamfer">
+            <UploadIcon size={40} className="upload-fab-icon" />
+            <span className="upload-fab-label">Upload</span>
+          </span>
+        </span>
+      </button>
+
+      {uploadOpen && <UploadDialog island={active.island} onClose={() => setUploadOpen(false)} />}
     </>
   )
 }
