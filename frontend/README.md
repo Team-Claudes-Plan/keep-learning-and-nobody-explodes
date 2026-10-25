@@ -1,10 +1,18 @@
-# Iso City (frontend)
+# Frontend
 
-React + TypeScript + Vite app rendering three.js scenes via
+The game client that players see. It renders each learning group's floating
+island, where every topic is a house and every skill is a storey. It also
+handles uploading course material and the cooperative bomb game: the defuser
+works the 3D modules while the expert reads the page-turning manual.
+
+It is needed because this is where learning turns into play. The client only
+shows what the [backend](../backend/) tells it over REST and websockets. It
+never decides on answers itself. Without a backend it has in-memory mockups for some actions, but it's not fully functional.
+
+It is a React + TypeScript + Vite app that renders three.js scenes via
 [React Three Fiber](https://docs.pmnd.rs/react-three-fiber) and
 [drei](https://github.com/pmndrs/drei), with client-side routing via
-[React Router](https://reactrouter.com). It is a starting point for an
-isometric game.
+[React Router](https://reactrouter.com).
 
 ## Stack
 
