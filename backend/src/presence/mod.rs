@@ -6,6 +6,7 @@
 //! are fine). [`Hub`] holds no IO; the websocket glue in `api/presence.rs`
 //! checks memberships and games before it calls in.
 
+pub mod listener;
 pub mod protocol;
 
 use std::{
@@ -324,6 +325,16 @@ impl Hub {
             );
         }
     }
+
+    /// The content of `island_id` changed. Every user in `audience` that is
+    /// online hears about it.
+    pub fn island_updated(&self, island_id: Uuid, audience: &[Uuid]) {
+        let inner = self.lock();
+        let message = Arc::new(ServerMessage::IslandUpdated { island_id });
+        for user in audience {
+            inner.send(*user, &message);
+        }
+    }
 }
 
 fn unknown_invite() -> PresenceError {
@@ -520,5 +531,20 @@ mod tests {
             ]
         );
         hub.invite_to(MIA, second).expect_err("cancelled with alex");
+    }
+
+    #[test]
+    fn island_updates_reach_the_audience_only() {
+        let hub = Hub::new();
+        let mut alex = hub.connect(ALEX, vec![]);
+        let mut leo = hub.connect(LEO, vec![]);
+        let island_id = Uuid::from_u128(10);
+
+        hub.island_updated(island_id, &[ALEX, MIA]);
+        assert_eq!(
+            drain(&mut alex),
+            [ServerMessage::IslandUpdated { island_id }]
+        );
+        assert_eq!(drain(&mut leo), []);
     }
 }

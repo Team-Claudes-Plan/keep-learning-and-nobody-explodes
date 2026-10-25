@@ -1,5 +1,5 @@
 import { useEffect, useSyncExternalStore } from 'react'
-import { USES_BACKEND, currentUserId, userSocketUrl } from './client'
+import { MOCK_UPLOAD_EVENT, USES_BACKEND, currentUserId, userSocketUrl } from './client'
 import { mockIsOnline, mockUser } from './mockIslands'
 import type { Presence, PresenceStatus, UserSummary } from './types'
 
@@ -29,6 +29,7 @@ type ServerMessage =
   | { type: 'invite_answered'; invite_id: string; accepted: boolean }
   | { type: 'invite_cancelled'; invite_id: string }
   | { type: 'added_to_island'; island_id: string; by: UserSummary }
+  | { type: 'island_updated'; island_id: string }
   | { type: 'error'; request_id?: string; code: string; message: string }
 
 // ---- What the app sees ----
@@ -82,6 +83,7 @@ class UserChannel {
   private requests = new Map<string, { resolve(id: string): void; reject(error: Error): void }>()
   private outgoing = new Map<string, (outcome: InviteOutcome) => void>()
   private islandListeners = new Set<(islandId: string) => void>()
+  private updateListeners = new Set<(islandId: string) => void>()
   private started = false
 
   getState = () => this.state
@@ -98,6 +100,14 @@ class UserChannel {
     this.islandListeners.add(listener)
     return () => {
       this.islandListeners.delete(listener)
+    }
+  }
+
+  /** Calls `listener` whenever an upload to an island (its root id) finished processing. */
+  onIslandUpdated = (listener: (islandId: string) => void) => {
+    this.updateListeners.add(listener)
+    return () => {
+      this.updateListeners.delete(listener)
     }
   }
 
@@ -185,6 +195,9 @@ class UserChannel {
         break
       case 'added_to_island':
         for (const listener of this.islandListeners) listener(message.island_id)
+        break
+      case 'island_updated':
+        for (const listener of this.updateListeners) listener(message.island_id)
         break
       case 'error': {
         const request = message.request_id ? this.requests.get(message.request_id) : undefined
@@ -289,17 +302,20 @@ function socketTransport(url: string, events: TransportEvents): Transport {
 
 const MOCK_PARTNERS = ['user-mia', 'user-leo']
 const MOCK_ANSWER_MS = 3000
+const MOCK_PROCESSING_MS = 8000
 
 /**
  * Plays the server and the partners: reports the mock presence, and an online partner accepts
  * every invite after a few seconds. `window.mockInvite()` lets Mia invite you,
- * `window.mockAddedToIsland()` pretends she added you to an island.
+ * `window.mockAddedToIsland()` pretends she added you to an island. A mock upload is "processed"
+ * after a few seconds (`island_updated`).
  */
 class MockServer implements Transport {
   private timers = new Set<number>()
   private online: Record<string, boolean> = {}
   private nextId = 1
   private readonly events: TransportEvents
+  private readonly onUpload: (event: Event) => void
 
   constructor(events: TransportEvents) {
     this.events = events
@@ -309,6 +325,11 @@ class MockServer implements Transport {
     })
     const poll = window.setInterval(() => this.reportPresence(), 1000)
     this.timers.add(poll)
+    this.onUpload = (event: Event) => {
+      const islandId = (event as CustomEvent<string>).detail
+      this.later(MOCK_PROCESSING_MS, () => events.message({ type: 'island_updated', island_id: islandId }))
+    }
+    window.addEventListener(MOCK_UPLOAD_EVENT, this.onUpload)
     ;(window as unknown as { mockInvite?: () => void }).mockInvite = () => this.inviteMe()
     ;(window as unknown as { mockAddedToIsland?: () => void }).mockAddedToIsland = () =>
       events.message({
@@ -368,6 +389,7 @@ class MockServer implements Transport {
   }
 
   close() {
+    window.removeEventListener(MOCK_UPLOAD_EVENT, this.onUpload)
     for (const timer of this.timers) window.clearTimeout(timer)
     this.timers.clear()
   }
@@ -390,6 +412,12 @@ export function sendInvite(request: InviteRequest, onOutcome: (outcome: InviteOu
 export function onAddedToIsland(listener: (islandId: string) => void): () => void {
   channel.start()
   return channel.onAddedToIsland(listener)
+}
+
+/** Calls `listener` with the root island id whenever an upload to it finished processing. */
+export function onIslandUpdated(listener: (islandId: string) => void): () => void {
+  channel.start()
+  return channel.onIslandUpdated(listener)
 }
 
 export function cancelInvite(inviteId: string) {

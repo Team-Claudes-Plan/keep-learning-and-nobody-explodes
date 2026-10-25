@@ -11,11 +11,14 @@ import FriendsDialog, { FriendsIcon } from '../components/islands/FriendsDialog'
 import BannerDialog from '../components/islands/BannerDialog'
 import WelcomeDialog from '../components/islands/WelcomeDialog'
 import { reloadIslands, usePresence, useIslands } from '../api/useIslands'
-import { onAddedToIsland } from '../api/invites'
-import type { IslandsResponse } from '../api/types'
+import { onAddedToIsland, onIslandUpdated } from '../api/invites'
+import type { Island, IslandsResponse } from '../api/types'
 import { bridgeBetween, islandCenter, resolveIsland } from '../data/islands'
 
 const MIN_ZOOM = 30
+
+/** The island that owns the documents and houses: the island itself, or the origin of a fork. */
+const contentIsland = (island: Island) => island.origin_id ?? island.id
 
 function IslandsView({ data }: { data: IslandsResponse }) {
   const navigate = useNavigate()
@@ -23,9 +26,18 @@ function IslandsView({ data }: { data: IslandsResponse }) {
   const [storeyDelta, setStoreyDelta] = useState(0)
   const [uploadOpen, setUploadOpen] = useState(false)
   const [friendsOpen, setFriendsOpen] = useState(false)
+  // Content islands I just uploaded to. The backend counts them in `building` only once the
+  // storage webhook registered the files, so this covers the moments in between.
+  const [uploadedTo, setUploadedTo] = useState<ReadonlySet<string>>(() => new Set())
   const { me, islands } = data
 
-  const resolved = useMemo(() => islands.map(resolveIsland), [islands])
+  const resolved = useMemo(
+    () =>
+      islands.map((island) =>
+        resolveIsland(island, Math.max(island.building, uploadedTo.has(contentIsland(island)) ? 1 : 0)),
+      ),
+    [islands, uploadedTo],
+  )
   const activeIndex = Math.max(0, islands.findIndex((island) => island.id === islandId))
   const active = resolved[activeIndex]
 
@@ -34,6 +46,15 @@ function IslandsView({ data }: { data: IslandsResponse }) {
     [islands],
   )
   const presence = usePresence(memberIds, me.id)
+
+  // An upload finished processing: reload the page so its new houses show up.
+  useEffect(
+    () =>
+      onIslandUpdated((rootId) => {
+        if (islands.some((island) => contentIsland(island) === rootId)) window.location.reload()
+      }),
+    [islands],
+  )
 
   const open = useCallback((id: string) => navigate(`/islands/${id}`, { replace: true }), [navigate])
 
@@ -156,7 +177,10 @@ function IslandsView({ data }: { data: IslandsResponse }) {
         </div>
 
         <div className="hud-section">Houses</div>
-        {active.island.houses.length === 0 && <div>No houses yet: upload documents to build some.</div>}
+        {active.island.houses.length === 0 && !active.construction && (
+          <div>No houses yet: upload documents to build some.</div>
+        )}
+        {active.construction && <div>🚧 New houses are being built from your upload…</div>}
         <ul className="hud-links">
           {active.houses.map((placed) => (
             <li key={placed.topicId}>
@@ -210,7 +234,13 @@ function IslandsView({ data }: { data: IslandsResponse }) {
         </span>
       </button>
 
-      {uploadOpen && <UploadDialog island={active.island} onClose={() => setUploadOpen(false)} />}
+      {uploadOpen && (
+        <UploadDialog
+          island={active.island}
+          onClose={() => setUploadOpen(false)}
+          onUploaded={(result) => setUploadedTo((current) => new Set(current).add(result.island_id))}
+        />
+      )}
       {friendsOpen && (
         <FriendsDialog island={active.island} me={me} onForked={open} onClose={() => setFriendsOpen(false)} />
       )}

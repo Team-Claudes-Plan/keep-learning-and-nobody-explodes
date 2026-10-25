@@ -24,6 +24,10 @@ pub enum Command {
         role: Option<Role>,
         coin: bool,
     },
+    /// The player is ready; the second one starts the game.
+    Ready {
+        player: Uuid,
+    },
     Submit {
         player: Uuid,
         turn: u32,
@@ -39,6 +43,7 @@ pub enum Command {
 struct Player {
     id: Uuid,
     role: Option<Role>,
+    ready: bool,
 }
 
 #[derive(Debug)]
@@ -103,16 +108,16 @@ impl GameState {
         matches!(self.status, Status::Won | Status::Lost | Status::Aborted)
     }
 
-    /// Roles swap every turn, starting with `starting_defuser` on turn 0.
+    /// `(defuser, expert)`: the roles dealt on join hold for every turn of the game.
     #[must_use]
-    pub fn roles(&self, turn: u32) -> Option<(Uuid, Uuid)> {
-        let start = self.starting_defuser?;
-        let other = self.players.iter().map(|p| p.id).find(|&id| id != start)?;
-        Some(if turn.is_multiple_of(2) {
-            (start, other)
-        } else {
-            (other, start)
-        })
+    pub fn roles(&self) -> Option<(Uuid, Uuid)> {
+        let defuser = self.starting_defuser?;
+        let expert = self
+            .players
+            .iter()
+            .map(|p| p.id)
+            .find(|&id| id != defuser)?;
+        Some((defuser, expert))
     }
 
     pub fn decide(
@@ -122,7 +127,8 @@ impl GameState {
         details: &[PartDetails],
     ) -> Result<Vec<GameEvent>, SessionError> {
         match command {
-            Command::Join { player, role, coin } => self.decide_join(player, role, coin, now),
+            Command::Join { player, role, coin } => self.decide_join(player, role, coin),
+            Command::Ready { player } => self.decide_ready(player, now),
             Command::Submit {
                 player,
                 turn,
@@ -161,7 +167,6 @@ impl GameState {
         player: Uuid,
         role: Option<Role>,
         coin: bool,
-        now: DateTime<Utc>,
     ) -> Result<Vec<GameEvent>, SessionError> {
         if self.status != Status::Waiting {
             return Err(SessionError::new(
@@ -199,16 +204,58 @@ impl GameState {
                 seat: 1,
                 role,
             },
-            GameEvent::GameStarted {
-                deadline: now + TimeDelta::seconds(i64::from(self.time_limit_secs)),
-                starting_defuser,
-            },
-            GameEvent::TurnStarted {
-                turn: 0,
+            GameEvent::RolesAssigned {
                 defuser: starting_defuser,
                 expert,
             },
         ])
+    }
+
+    /// Marks `player` ready; when the other player already is, the clock
+    /// starts and so does the first turn. Repeated or late `ready`s change
+    /// nothing.
+    fn decide_ready(
+        &self,
+        player: Uuid,
+        now: DateTime<Utc>,
+    ) -> Result<Vec<GameEvent>, SessionError> {
+        let Some(me) = self.players.iter().find(|p| p.id == player) else {
+            return Err(SessionError::new(
+                ErrorCode::InvalidToken,
+                "not a player of this game",
+            ));
+        };
+        match self.status {
+            Status::Ready => {}
+            Status::Active => return Ok(Vec::new()),
+            _ => {
+                return Err(SessionError::new(
+                    ErrorCode::InvalidState,
+                    "game is not waiting for players to be ready",
+                ));
+            }
+        }
+        if me.ready {
+            return Ok(Vec::new());
+        }
+        let mut events = vec![GameEvent::PlayerReady { player_id: player }];
+        let others_ready = self
+            .players
+            .iter()
+            .filter(|p| p.id != player)
+            .all(|p| p.ready);
+        if others_ready && let Some((defuser, expert)) = self.roles() {
+            events.push(GameEvent::GameStarted {
+                deadline: now + TimeDelta::seconds(i64::from(self.time_limit_secs)),
+                starting_defuser: defuser,
+            });
+            events.push(GameEvent::TurnStarted {
+                turn: 0,
+                defuser,
+                expert,
+            });
+        }
+        Ok(events)
     }
 
     fn decide_submit(
@@ -235,7 +282,7 @@ impl GameState {
                 format!("turn {turn} is not the current turn {current}"),
             ));
         }
-        let Some((defuser, _)) = self.roles(turn) else {
+        let Some((defuser, _)) = self.roles() else {
             return Err(SessionError::internal("game has no roles"));
         };
         if player != defuser {
@@ -284,7 +331,7 @@ impl GameState {
                 outcome: Outcome::Won,
                 reason: EndReason::AllResolved,
             });
-        } else if let Some((defuser, expert)) = self.roles(next) {
+        } else if let Some((defuser, expert)) = self.roles() {
             events.push(GameEvent::TurnStarted {
                 turn: next,
                 defuser,
@@ -316,7 +363,17 @@ impl GameState {
             } => self.players.push(Player {
                 id: *player_id,
                 role: *role,
+                ready: false,
             }),
+            GameEvent::RolesAssigned { defuser, .. } => {
+                self.status = Status::Ready;
+                self.starting_defuser = Some(*defuser);
+            }
+            GameEvent::PlayerReady { player_id } => {
+                if let Some(player) = self.players.iter_mut().find(|p| p.id == *player_id) {
+                    player.ready = true;
+                }
+            }
             GameEvent::GameStarted {
                 deadline,
                 starting_defuser,
@@ -352,10 +409,13 @@ impl GameState {
     }
 
     pub fn view(&self, online: impl Fn(Uuid) -> bool) -> GameView {
-        let roles = self
-            .turn
-            .filter(|_| self.status == Status::Active)
-            .and_then(|turn| self.roles(turn));
+        let roles = match self.status {
+            // before the start too, so each player gets to their side of the table
+            Status::Ready | Status::Active => self.roles(),
+            _ => None,
+        };
+        // games started before the ready step had no `player_ready` events
+        let started = self.deadline.is_some();
         GameView {
             game_id: self.id,
             status: self.status,
@@ -370,6 +430,7 @@ impl GameState {
                     player_id: p.id,
                     seat,
                     online: online(p.id),
+                    ready: p.ready || started,
                 })
                 .collect(),
             deadline: self.deadline,
@@ -398,7 +459,7 @@ impl GameState {
             return None;
         }
         let turn = self.turn?;
-        let (defuser, expert) = self.roles(turn)?;
+        let (defuser, expert) = self.roles()?;
         let index = usize::try_from(turn).ok()?;
         let (info, _) = self.parts.get(index)?;
         let part = details.get(index)?;
@@ -528,7 +589,16 @@ mod tests {
             Ok(events)
         }
 
+        /// Joins and gets both players ready, which starts the game.
         fn join(&mut self, role: Option<Role>, coin: bool) {
+            self.seat(role, coin);
+            for player in [CREATOR, JOINER] {
+                self.run(Command::Ready { player }).expect("ready");
+            }
+        }
+
+        /// Takes the second seat; the game then waits for both to be ready.
+        fn seat(&mut self, role: Option<Role>, coin: bool) {
             self.run(Command::Join {
                 player: JOINER,
                 role,
@@ -582,13 +652,14 @@ mod tests {
     }
 
     #[test]
-    fn roles_swap_every_turn() {
+    fn roles_hold_for_the_whole_game() {
         let mut game = Game::new(3, Some(Role::Defuser));
         game.join(None, false);
         assert_eq!(game.defuser(), CREATOR);
         game.answer(CREATOR, 0, 1).expect("answer");
-        assert_eq!(game.defuser(), JOINER);
-        game.answer(JOINER, 1, 0).expect("answer");
+        assert_eq!(game.defuser(), CREATOR);
+        assert_eq!(code(game.answer(JOINER, 1, 0)), ErrorCode::NotYourTurn);
+        game.answer(CREATOR, 1, 0).expect("answer");
         assert_eq!(game.defuser(), CREATOR);
     }
 
@@ -633,7 +704,7 @@ mod tests {
         let mut game = Game::new(2, Some(Role::Defuser));
         game.join(None, false);
         game.answer(CREATOR, 0, 0).expect("answer");
-        game.answer(JOINER, 1, 1).expect("answer");
+        game.answer(CREATOR, 1, 1).expect("answer");
         let view = game.state.view(|_| true);
         assert_eq!(view.status, Status::Won);
         assert_eq!(
@@ -666,6 +737,104 @@ mod tests {
                 ..
             }]
         ));
+    }
+
+    #[test]
+    fn game_starts_once_both_are_ready() {
+        let mut game = Game::new(2, Some(Role::Expert));
+        game.seat(None, false);
+        let view = game.state.view(|_| true);
+        assert_eq!(view.status, Status::Ready);
+        assert_eq!((view.defuser, view.expert), (Some(JOINER), Some(CREATOR)));
+        assert_eq!(view.deadline, None);
+        assert!(game.state.briefing(JOINER, &game.details).is_none());
+        // no clock before the start
+        game.now += TimeDelta::seconds(1000);
+        assert_eq!(game.run(Command::Timeout).expect("timeout"), []);
+        assert_eq!(code(game.answer(JOINER, 0, 1)), ErrorCode::InvalidState);
+
+        let first = game.run(Command::Ready { player: JOINER }).expect("ready");
+        assert_eq!(first, [GameEvent::PlayerReady { player_id: JOINER }]);
+        // pressing twice changes nothing
+        assert_eq!(
+            game.run(Command::Ready { player: JOINER }).expect("again"),
+            []
+        );
+        let view = game.state.view(|_| true);
+        assert_eq!(view.status, Status::Ready);
+        assert_eq!(
+            view.players.iter().map(|p| p.ready).collect::<Vec<_>>(),
+            [false, true]
+        );
+
+        let second = game.run(Command::Ready { player: CREATOR }).expect("ready");
+        assert!(matches!(
+            second.as_slice(),
+            [
+                GameEvent::PlayerReady { .. },
+                GameEvent::GameStarted { starting_defuser, .. },
+                GameEvent::TurnStarted { turn: 0, .. },
+            ] if *starting_defuser == JOINER
+        ));
+        let view = game.state.view(|_| true);
+        assert_eq!(view.status, Status::Active);
+        assert_eq!(view.deadline, Some(game.now + TimeDelta::seconds(300)));
+        assert!(game.state.briefing(JOINER, &game.details).is_some());
+        // a late ready after the start is ignored
+        assert_eq!(
+            game.run(Command::Ready { player: CREATOR }).expect("late"),
+            []
+        );
+    }
+
+    #[test]
+    fn ready_rules() {
+        let mut game = Game::new(1, None);
+        // alone in the game, nobody to be ready with
+        assert_eq!(
+            code(game.run(Command::Ready { player: CREATOR })),
+            ErrorCode::InvalidState
+        );
+        game.seat(None, false);
+        assert_eq!(
+            code(game.run(Command::Ready {
+                player: Uuid::from_u128(3)
+            })),
+            ErrorCode::InvalidToken
+        );
+        // giving up before the start ends the game
+        game.run(Command::Forfeit { player: JOINER })
+            .expect("forfeit");
+        assert_eq!(game.state.status, Status::Aborted);
+        assert_eq!(
+            code(game.run(Command::Ready { player: CREATOR })),
+            ErrorCode::InvalidState
+        );
+    }
+
+    #[test]
+    fn games_started_before_the_ready_step_still_replay() {
+        let mut game = Game::new(2, Some(Role::Defuser));
+        game.push(vec![
+            GameEvent::PlayerJoined {
+                player_id: JOINER,
+                seat: 1,
+                role: None,
+            },
+            GameEvent::GameStarted {
+                deadline: game.now + TimeDelta::seconds(300),
+                starting_defuser: CREATOR,
+            },
+            GameEvent::TurnStarted {
+                turn: 0,
+                defuser: CREATOR,
+                expert: JOINER,
+            },
+        ]);
+        let view = game.state.view(|_| true);
+        assert_eq!(view.status, Status::Active);
+        assert!(view.players.iter().all(|p| p.ready));
+        game.answer(CREATOR, 0, 1).expect("answer");
     }
 
     #[test]
@@ -849,7 +1018,7 @@ mod tests {
         let mut game = Game::new(3, None);
         game.join(Some(Role::Expert), false);
         game.answer(CREATOR, 0, 1).expect("answer");
-        game.answer(JOINER, 1, 0).expect("answer");
+        game.answer(CREATOR, 1, 0).expect("answer");
 
         // events survive the round trip through the database representation
         let log: Vec<GameEvent> = game

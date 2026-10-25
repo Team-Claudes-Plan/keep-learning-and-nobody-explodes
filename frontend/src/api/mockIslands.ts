@@ -89,6 +89,7 @@ function toIsland(island: MockIsland): Island {
     origin_id: island.originId,
     group: { id: island.id, members: members as Island['group']['members'] },
     houses: TOPICS.filter((topic) => topic.islandId === root(island)).map((topic) => house(topic, island.members)),
+    building: 0,
   }
 }
 

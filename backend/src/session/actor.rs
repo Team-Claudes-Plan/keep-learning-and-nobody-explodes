@@ -48,6 +48,10 @@ pub enum Request {
         answer: Answer,
         reply: oneshot::Sender<Result<(), SessionError>>,
     },
+    Ready {
+        player: Uuid,
+        reply: oneshot::Sender<Result<(), SessionError>>,
+    },
     Forfeit {
         player: Uuid,
         reply: oneshot::Sender<Result<(), SessionError>>,
@@ -194,6 +198,9 @@ impl Actor {
                     })
                     .await;
                 let _ = reply.send(result);
+            }
+            Request::Ready { player, reply } => {
+                let _ = reply.send(self.execute(Command::Ready { player }).await);
             }
             Request::Forfeit { player, reply } => {
                 let _ = reply.send(self.execute(Command::Forfeit { player }).await);

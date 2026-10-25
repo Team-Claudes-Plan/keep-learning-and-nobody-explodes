@@ -20,7 +20,7 @@ function storeys(page: Page) {
   return page.getByRole('list', { name: 'Storeys' })
 }
 
-/** Alex invites Mia to the storey; Mia accepts. Both end up on the game page. */
+/** Alex invites Mia to the storey; Mia accepts, both press "Bereit". Only then both get to the game page. */
 async function startStorey(players: Players, s: Seed, storey: string) {
   const { alex, mia } = players
   await storeys(alex).getByRole('link', { name: new RegExp(storey) }).click()
@@ -31,8 +31,18 @@ async function startStorey(players: Players, s: Seed, storey: string) {
   await expect(invite).toContainText(storey)
   await invite.getByRole('button', { name: 'Annehmen' }).click()
 
+  // the first one ready still waits for the other, on the same page
+  const ready = (page: Page) => page.getByRole('button', { name: 'Bereit' })
+  await expect(ready(alex)).toBeEnabled()
+  await ready(alex).click()
+  await expect(alex.getByText(`Warte auf ${s.mia.name}`)).toBeVisible()
+  await expect(alex).toHaveURL(new RegExp(`${housePath(s)}$`))
+  await expect(ready(mia)).toBeEnabled()
+  await ready(mia).click()
+
   await expect(alex).toHaveURL(/\/koop\/spiel\//)
   await expect(mia).toHaveURL(/\/koop\/spiel\/.*rolle=expert/)
+  for (const page of [alex, mia]) await expect(screen(page)).toHaveAttribute('data-status', 'active')
 }
 
 function screen(page: Page) {
@@ -50,8 +60,10 @@ async function rolesOf(players: Players, turn: number): Promise<{ defuser: Page;
 /** The expert reads the manual of `turn` and tells the defuser a symbol, who picks it on the bomb. */
 async function playTurn(players: Players, turn: number, pick: 'right' | 'wrong') {
   const { defuser, expert } = await rolesOf(players, turn)
-  await expect(expert.locator('.session-manual h2')).toContainText(`Modul ${turn + 1}`)
-  const symbols = expert.locator('.book-glyphs li[data-glyph]')
+  // the book opens at the module's page; the other page of the spread may show the previous one
+  const page = expert.locator('.book-paper', { has: expert.locator('h2', { hasText: `Modul ${turn + 1} ·` }) })
+  await expect(page).toBeVisible()
+  const symbols = page.locator('.book-glyphs li[data-glyph]')
   await expect(symbols).toHaveCount(2)
   const said = symbols.filter(pick === 'right' ? { hasText: RIGHT } : { hasNotText: RIGHT })
   const glyph = Number(await said.getAttribute('data-glyph'))
@@ -88,10 +100,10 @@ test.describe('a storey session between two island partners', () => {
       alex: await open(browser, s.alex.id, housePath(s)),
       mia: await open(browser, s.mia.id, `/islands/${s.islandId}`),
     }
-    // the house shows the ground floor to play and how many storeys wait above
-    await expect(storeys(players.alex).getByRole('link')).toHaveCount(1)
-    await expect(storeys(players.alex)).toContainText(SKILLS[0])
-    await expect(storeys(players.alex)).toContainText('2 more storeys above')
+    // the house shows every storey: the ground floor to play, the ones above locked
+    await expect(storeys(players.alex).getByRole('link')).toHaveCount(SKILLS.length)
+    await expect(storeys(players.alex).locator('[data-storey="next"]')).toContainText(SKILLS[0])
+    await expect(storeys(players.alex).locator('[data-storey="locked"]')).toHaveCount(SKILLS.length - 1)
   })
 
   test.afterEach(async () => {
@@ -110,7 +122,7 @@ test.describe('a storey session between two island partners', () => {
     }
     await players.alex.getByRole('link', { name: /Zurück zum Haus/ }).click()
     await expect(players.alex).toHaveURL(new RegExp(`${housePath(s)}$`))
-    await expect(storeys(players.alex).getByRole('link')).toHaveCount(2)
+    await expect(storeys(players.alex).locator('[data-storey="locked"]')).toHaveCount(SKILLS.length - 2)
     await expect(storeys(players.alex).getByRole('link', { name: new RegExp(SKILLS[0]) })).toContainText('✓ passed')
     await expect(storeys(players.alex).getByRole('link', { name: new RegExp(SKILLS[1]) })).toContainText('▶ up next')
 
@@ -127,9 +139,12 @@ test.describe('a storey session between two island partners', () => {
       await expect(screen(page)).toHaveAttribute('data-status', 'lost')
       await expect(page.getByText('Drei Fehler.')).toBeVisible()
     }
+    // the expert sees the bomb go off too
+    const expert = (await screen(players.alex).getAttribute('data-role')) === 'expert' ? players.alex : players.mia
+    await expect(expert.locator('.blast-overlay .bomb-flash')).toBeAttached()
     await players.mia.getByRole('link', { name: /Zurück zum Haus/ }).click()
-    await expect(storeys(players.mia).getByRole('link')).toHaveCount(1)
-    await expect(storeys(players.mia)).toContainText('▶ up next')
+    await expect(storeys(players.mia).locator('[data-storey="next"]')).toContainText(SKILLS[0])
+    await expect(storeys(players.mia).locator('[data-storey="locked"]')).toHaveCount(SKILLS.length - 1)
   })
 
   test('a reloaded page resumes the running game', async () => {

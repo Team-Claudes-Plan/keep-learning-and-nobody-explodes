@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router'
 import { USES_BACKEND } from '../api/client'
 import { InviteError, cancelInvite, channelState, presenceOf, sendInvite, useUserChannel } from '../api/invites'
-import { SessionRefused, acquireSession, createSession, releaseSession, type SessionClient } from '../api/session'
+import { SessionRefused, acquireSession, createSession, isOver, releaseSession, type SessionClient } from '../api/session'
 import type { UserSummary } from '../api/types'
 import { sessionErrorText } from './sessionErrors'
 import { questionsForStorey, secondsForQuestions } from './sessionRules'
@@ -14,6 +14,8 @@ export type InviteFlow =
   | { step: 'idle' }
   | { step: 'starting' }
   | { step: 'waiting'; partner: UserSummary }
+  /** Accepted: both press "Bereit"; the game page opens once the server started the game. `client` is null without a backend. */
+  | { step: 'ready'; partner: UserSummary; client: SessionClient | null }
   | { step: 'error'; title: string; message: string }
 
 /** The storey to play: `storeyId` is the id of its skill, `storeyIndex` its floor (0 is the ground floor). */
@@ -40,11 +42,21 @@ function mockGameId() {
   return String(Math.floor(100000 + Math.random() * 900000))
 }
 
-type Pending = { inviteId: string | null; client: SessionClient | null; timer: number | undefined; done: boolean }
+type Pending = {
+  inviteId: string | null
+  client: SessionClient | null
+  gameId: string | null
+  timer: number | undefined
+  /** The partner accepted (or joined): no more invite to take back. */
+  accepted: boolean
+  done: boolean
+  unsubscribe?: () => void
+}
 
 /**
  * Starting a game from a storey: check that the partner is online, open the game, invite them and
- * wait. On accept the inviter goes to the bomb; decline, timeout or leaving the page cancel the game.
+ * wait. On accept both players press "Bereit"; once the server started the game the inviter goes to
+ * the bomb. Decline, timeout or leaving the page cancel the game.
  */
 export function useInviteFlow(partner: UserSummary | null, target: Target | null) {
   const navigate = useNavigate()
@@ -59,6 +71,7 @@ export function useInviteFlow(partner: UserSummary | null, target: Target | null
     pending.current = null
     current.done = true
     window.clearTimeout(current.timer)
+    current.unsubscribe?.()
     if (!handover) {
       if (current.inviteId) cancelInvite(current.inviteId)
       current.client?.forfeit()
@@ -116,11 +129,20 @@ export function useInviteFlow(partner: UserSummary | null, target: Target | null
       return
     }
 
-    const current: Pending = { inviteId: null, client: null, timer: undefined, done: false }
+    const current: Pending = { inviteId: null, client: null, gameId: null, timer: undefined, accepted: false, done: false }
     pending.current = current
     setFlow({ step: 'starting' })
 
-    const accepted = (gameId: string) => {
+    /** The partner is in: on to the ready check. */
+    const accepted = () => {
+      if (current.done || current.accepted) return
+      current.accepted = true
+      current.inviteId = null
+      window.clearTimeout(current.timer)
+      setFlow({ step: 'ready', partner, client: current.client })
+    }
+    /** Both are ready and the clock runs: hand the socket over to the game page. */
+    const started = (gameId: string) => {
       if (current.done) return
       teardown(true)
       setFlow({ step: 'idle' })
@@ -147,15 +169,19 @@ export function useInviteFlow(partner: UserSummary | null, target: Target | null
           return
         }
         current.client = client
-        // The partner joining starts the game, even if the accept message got lost on the way.
-        const unsubscribe = client.subscribe(() => {
-          if (client.getState().game?.status === 'active') {
-            unsubscribe()
-            accepted(gameId)
-          }
+        current.gameId = gameId
+        const id = gameId
+        current.unsubscribe = client.subscribe(() => {
+          const { game, connection } = client.getState()
+          // The partner joining fills the game, even if the accept message got lost on the way.
+          if (game?.status === 'ready' || game?.status === 'active') accepted()
+          if (game?.status === 'active') started(id)
+          else if (isOver(game)) fail('Abgebrochen', `${partner.name} hat die Session abgebrochen.`)
+          else if (connection === 'failed') fail('Verbindung verloren', 'Die Verbindung zum Spiel ist abgerissen. Starte die Session neu.')
         })
       } else {
         gameId = mockGameId()
+        current.gameId = gameId
       }
       if (current.done) return
 
@@ -163,8 +189,9 @@ export function useInviteFlow(partner: UserSummary | null, target: Target | null
         { to: partner.id, islandId: target.islandId, topicId: target.topicId, storeyId: target.storeyId, gameId },
         (outcome) => {
           if (current.done) return
-          if (outcome === 'accepted') accepted(gameId)
+          if (outcome === 'accepted') accepted()
           else if (outcome === 'declined') fail('Abgelehnt', `${partner.name} hat die Einladung abgelehnt.`)
+          else if (current.accepted) return
           else if (outcome === 'cancelled') fail('Einladung verfallen', 'Die Einladung gilt nicht mehr.')
           else fail('Verbindung verloren', 'Die Verbindung zum Server ist abgerissen. Starte die Session neu.')
         },
@@ -173,6 +200,7 @@ export function useInviteFlow(partner: UserSummary | null, target: Target | null
         cancelInvite(inviteId)
         return
       }
+      if (current.accepted) return
       current.inviteId = inviteId
       current.timer = window.setTimeout(
         () => fail('Keine Antwort', `${partner.name} hat nicht reagiert. Die Einladung ist zurückgezogen.`),
@@ -191,6 +219,16 @@ export function useInviteFlow(partner: UserSummary | null, target: Target | null
     }
   }, [partner, target, navigate, teardown, fail])
 
+  /** Without a backend: the played partner is ready too, off to the bomb. */
+  const enterMockGame = useCallback(() => {
+    const current = pending.current
+    if (!current?.accepted || !current.gameId || !target) return
+    const gameId = current.gameId
+    teardown(true)
+    setFlow({ step: 'idle' })
+    navigate(gamePath(gameId, 'defuser', target.islandId))
+  }, [target, navigate, teardown])
+
   const cancel = useCallback(() => {
     teardown(false)
     setFlow({ step: 'idle' })
@@ -198,5 +236,5 @@ export function useInviteFlow(partner: UserSummary | null, target: Target | null
 
   const partnerOnline = partner !== null && presenceOf(channel, partner.id) === 'online'
 
-  return { flow, start, cancel, dismiss: cancel, partnerOnline }
+  return { flow, start, cancel, dismiss: cancel, enterMockGame, partnerOnline }
 }

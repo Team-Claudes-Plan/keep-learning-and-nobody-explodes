@@ -149,10 +149,13 @@ export type SessionClientMessage =
     }
   | { type: 'join'; game_id: string; role?: Role }
   | { type: 'resume'; game_id: string; token: string; last_sequence?: number }
+  /** Ready to play; the game starts once both players are. */
+  | { type: 'ready' }
   | { type: 'submit_answer'; turn: number; answer: SessionAnswer }
   | { type: 'forfeit' }
 
-export type GameStatus = 'waiting' | 'active' | 'won' | 'lost' | 'aborted'
+/** `ready`: both seats taken and roles dealt, waiting until both players sent `ready`. */
+export type GameStatus = 'waiting' | 'ready' | 'active' | 'won' | 'lost' | 'aborted'
 export type EndReason = 'all_resolved' | 'strikes' | 'timeout' | 'forfeit'
 
 export type GameView = {
@@ -162,7 +165,7 @@ export type GameView = {
   /** The storey (skill) the bomb is played on, if any. */
   skill_id: string | null
   invited: string | null
-  players: { player_id: string; seat: 0 | 1; online: boolean }[]
+  players: { player_id: string; seat: 0 | 1; online: boolean; ready: boolean }[]
   deadline: string | null
   turn: number | null
   defuser: string | null
@@ -187,6 +190,9 @@ export type GameEvent =
       invited?: string
     }
   | { type: 'player_joined'; player_id: string; seat: 0 | 1; role: Role | null }
+  /** Both seats taken: the roles of turn 0. */
+  | { type: 'roles_assigned'; defuser: string; expert: string }
+  | { type: 'player_ready'; player_id: string }
   | { type: 'game_started'; deadline: string; starting_defuser: string }
   | { type: 'turn_started'; turn: number; defuser: string; expert: string }
   | {
@@ -296,6 +302,8 @@ export type Island = {
   origin_id: string | null
   group: LearningGroup
   houses: IslandHouse[]
+  /** Uploaded documents still being turned into houses; the island shows a construction site. */
+  building: number
 }
 
 /** The islands the current user is a member of; the backend enforces this. */

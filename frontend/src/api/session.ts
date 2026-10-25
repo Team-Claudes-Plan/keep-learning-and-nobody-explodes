@@ -114,7 +114,7 @@ function applyEvent(game: GameView, event: GameEvent, sequence: number): GameVie
         topics: event.topics,
         skill_id: event.skill_id ?? null,
         invited: event.invited ?? null,
-        players: [{ player_id: event.created_by, seat: 0, online: true }],
+        players: [{ player_id: event.created_by, seat: 0, online: true, ready: false }],
         parts: event.parts.map((part) => ({ position: part.position, question_type: part.question_type, result: null })),
       }
     case 'player_joined':
@@ -122,11 +122,23 @@ function applyEvent(game: GameView, event: GameEvent, sequence: number): GameVie
         ...next,
         players: [
           ...game.players.filter((player) => player.player_id !== event.player_id),
-          { player_id: event.player_id, seat: event.seat, online: true },
+          { player_id: event.player_id, seat: event.seat, online: true, ready: false },
         ].sort((a, b) => a.seat - b.seat),
       }
+    case 'roles_assigned':
+      return { ...next, status: 'ready', defuser: event.defuser, expert: event.expert }
+    case 'player_ready':
+      return {
+        ...next,
+        players: game.players.map((player) => (player.player_id === event.player_id ? { ...player, ready: true } : player)),
+      }
     case 'game_started':
-      return { ...next, status: 'active', deadline: event.deadline }
+      return {
+        ...next,
+        status: 'active',
+        deadline: event.deadline,
+        players: game.players.map((player) => ({ ...player, ready: true })),
+      }
     case 'turn_started':
       return { ...next, turn: event.turn, defuser: event.defuser, expert: event.expert }
     case 'answer_submitted':
@@ -198,6 +210,11 @@ export class SessionClient {
 
   submitAnswer(turn: number, answer: SessionAnswer): boolean {
     return this.send({ type: 'submit_answer', turn, answer })
+  }
+
+  /** Ready to play; the game starts once both players are. */
+  ready(): boolean {
+    return this.send({ type: 'ready' })
   }
 
   forfeit(): boolean {

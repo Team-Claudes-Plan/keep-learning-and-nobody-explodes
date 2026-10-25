@@ -8,12 +8,17 @@ import Skyscraper from '../Skyscraper'
 import Animals from './Animals'
 import Avatar from './Avatar'
 import Birds from './Birds'
+import ConstructionSite from './ConstructionSite'
 import Island from './Island'
 import River from './River'
 import Streets from './Streets'
 import Traffic from './Traffic'
 
 const MEMBER_COLORS = ['#2563eb', '#e0592a']
+
+/** Footprint and crane height of the construction site model, for the birds to fly around. */
+const CONSTRUCTION_SIZE: [number, number] = [2.8, 2.8]
+const CONSTRUCTION_TOP = 4
 
 function sidewalkLoop([cx, cz]: Vec2): Vec2[] {
   const half = BLOCK_SIZE / 2 + SIDEWALK_WIDTH / 2
@@ -36,7 +41,7 @@ type IslandSceneProps = {
 
 /** One island with its grid, houses, wildlife and the members of its learning group. */
 export default function IslandScene({ resolved, center, me, presence, storeyDelta, onHouseClick }: IslandSceneProps) {
-  const { island, houses, fieldBlocks } = resolved
+  const { island, houses, construction, fieldBlocks } = resolved
 
   // Members walk around a free cell. The one nearest the camera (largest x + z) can't be hidden
   // behind a house; ties go to the cell nearer the middle.
@@ -50,13 +55,15 @@ export default function IslandScene({ resolved, center, me, presence, storeyDelt
   }, [fieldBlocks])
 
   const obstacles = useMemo(
-    (): Obstacle[] =>
-      houses.map((placed) => ({
+    (): Obstacle[] => [
+      ...houses.map((placed) => ({
         center: placed.position,
         size: placed.house.footprint,
         top: previewHeights(placed.house, storeyDelta).reduce((sum, height) => sum + height, 0),
       })),
-    [houses, storeyDelta],
+      ...(construction ? [{ center: construction.position, size: CONSTRUCTION_SIZE, top: CONSTRUCTION_TOP }] : []),
+    ],
+    [houses, construction, storeyDelta],
   )
 
   return (
@@ -77,6 +84,8 @@ export default function IslandScene({ resolved, center, me, presence, storeyDelt
           onClick={() => onHouseClick(placed.topicId)}
         />
       ))}
+
+      {construction && <ConstructionSite position={construction.position} />}
 
       {island.group.members.map((member, index) => (
         <Avatar

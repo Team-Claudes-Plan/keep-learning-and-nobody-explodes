@@ -239,6 +239,9 @@ function uploadErrorMessage(xhr: XMLHttpRequest): string {
   return `Upload failed: ${xhr.status}`
 }
 
+/** Fired by the mock upload with the island id, so the mock user channel can report it processed. */
+export const MOCK_UPLOAD_EVENT = 'mock-upload'
+
 async function mockUploadDocuments(
   islandId: string,
   files: File[],
@@ -249,6 +252,7 @@ async function mockUploadDocuments(
     if (signal?.aborted) throw new DOMException('Upload cancelled', 'AbortError')
     onProgress?.(step / 10)
   }
+  window.dispatchEvent(new CustomEvent(MOCK_UPLOAD_EVENT, { detail: islandId }))
   return {
     island_id: islandId,
     objects: files.map((file) => ({

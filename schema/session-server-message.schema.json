@@ -50,17 +50,18 @@
       "required": ["game_id", "status", "topics", "players", "strikes", "max_strikes", "parts"],
       "properties": {
         "game_id": { "$ref": "#/$defs/uuid" },
-        "status": { "enum": ["waiting", "active", "won", "lost", "aborted"] },
+        "status": { "enum": ["waiting", "ready", "active", "won", "lost", "aborted"] },
         "topics": { "type": "array", "items": { "$ref": "#/$defs/uuid" } },
         "players": {
           "type": "array",
           "items": {
             "type": "object",
-            "required": ["player_id", "seat", "online"],
+            "required": ["player_id", "seat", "online", "ready"],
             "properties": {
               "player_id": { "$ref": "#/$defs/uuid" },
               "seat": { "$ref": "#/$defs/seat" },
-              "online": { "type": "boolean" }
+              "online": { "type": "boolean" },
+              "ready": { "description": "Sent ready (always true once the game started).", "type": "boolean" }
             }
           }
         },
@@ -140,6 +141,22 @@
             "role": { "oneOf": [{ "$ref": "#/$defs/role" }, { "type": "null" }] }
           },
           "required": ["type", "player_id", "seat"]
+        },
+        {
+          "description": "Both seats are taken: the roles of turn 0. The game waits for both players to be ready.",
+          "properties": {
+            "type": { "const": "roles_assigned" },
+            "defuser": { "$ref": "#/$defs/uuid" },
+            "expert": { "$ref": "#/$defs/uuid" }
+          },
+          "required": ["type", "defuser", "expert"]
+        },
+        {
+          "properties": {
+            "type": { "const": "player_ready" },
+            "player_id": { "$ref": "#/$defs/uuid" }
+          },
+          "required": ["type", "player_id"]
         },
         {
           "properties": {

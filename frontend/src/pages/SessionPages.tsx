@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { Suspense, useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router'
 import { fetchLobbies } from '../api/client'
 import {
@@ -14,17 +14,21 @@ import {
 } from '../api/session'
 import type { EndReason, IslandsResponse, Lobby, Role } from '../api/types'
 import { reloadIslands, useIslands } from '../api/useIslands'
-import Bomb3D from '../game/Bomb3D'
+import BombRoom, { PLAIN_ROOM, StoreyBombRoom, type BombRoomProps } from '../components/storey/BombRoom'
+import { useIslandHouse } from '../data/useIslandHouse'
+import BlastOverlay from '../game/BlastOverlay'
 import Celebration from '../game/Celebration'
-import GlyphIcon from '../game/GlyphIcon'
+import type { Manual } from '../game/briefing'
 import { QUESTION_TYPE_LABELS } from '../game/questionTypes'
 import { sessionErrorText } from '../game/sessionErrors'
 import { useSessionBomb, useTimeLeft } from '../game/useSessionBomb'
+import ReadyButton3D from '../components/session/ReadyButton3D'
 import { CopyLink } from './KoopPages'
+import ManualBook from './ManualBook'
 
 // Koop over the backend's game session (schema/session-protocol.md): the server picks the
-// questions, runs the timer and judges answers. Each turn one player defuses one module and the
-// other reads the manual page; the roles swap after every turn.
+// questions, runs the timer and judges answers. One player defuses the modules, the other reads
+// the manual pages; the roles hold for the whole bomb.
 
 const ROLE_LABELS: Record<Role, string> = { defuser: '💣 Entschärfer', expert: '📖 Experte' }
 const MAX_PARTS = 11
@@ -320,6 +324,9 @@ function SessionGame({ client, islandId }: { client: SessionClient; islandId: st
   const timeLeft = useTimeLeft(game?.deadline ?? null, game?.status === 'active', 0)
   const toast = useAnswerToast(session)
   const ended = isOver(game)
+  /** The expert's side of the explosion went off (shakes the book). */
+  const [blasted, setBlasted] = useState(false)
+  const onBlast = useCallback(() => setBlasted(true), [])
 
   // A won storey unlocks the next one: show the houses as they are now.
   useEffect(() => {
@@ -372,25 +379,33 @@ function SessionGame({ client, islandId }: { client: SessionClient; islandId: st
 
   const over = ended
   const result = resultTarget(game, islandId)
+  /** Both seats taken, the clock starts once both players are ready. */
+  const starting = game.status === 'ready'
+  const meReady = game.players.find((player) => player.player_id === me)?.ready ?? false
 
   return (
-    <div className="bomb-screen" data-role={myRole ?? undefined} data-status={game.status} data-turn={game.turn ?? undefined}>
+    <div className={`bomb-screen ${blasted ? 'is-blasted' : ''}`} data-role={myRole ?? undefined} data-status={game.status} data-turn={game.turn ?? undefined}>
       {myRole === 'defuser' ? (
-        <Bomb3D
-          bare
-          modules={bomb.bombModules}
-          focused={bomb.focused}
-          overlay={bomb.focusedOnBomb ? 'side' : 'center'}
-          onSelect={bomb.select}
-          onBack={bomb.back}
+        <DefuserRoom
+          game={game}
+          islandId={islandId}
+          bomb={bomb}
           timeLeft={timeLeft}
-          strikes={game.strikes}
-          exploded={game.status === 'lost'}
-        >
-          {bomb.card}
-        </Bomb3D>
+          ready={starting ? <ReadyButton client={client} meReady={meReady} partnerName={partnerName} /> : null}
+        />
       ) : (
-        <ExpertManual briefing={session.briefing?.role === 'expert' && session.briefing.turn === game.turn ? session.briefing : null} over={over} />
+        <>
+          <ExpertBook
+            game={game}
+            briefing={session.briefing?.role === 'expert' && session.briefing.turn === game.turn ? session.briefing : null}
+          />
+          {game.status === 'lost' && <BlastOverlay onBlast={onBlast} />}
+          {starting && (
+            <div className="session-ready">
+              <ReadyButton client={client} meReady={meReady} partnerName={partnerName} />
+            </div>
+          )}
+        </>
       )}
 
       <div className="session-bar">
@@ -401,11 +416,12 @@ function SessionGame({ client, islandId }: { client: SessionClient; islandId: st
         <span aria-label="Strikes">
           {Array.from({ length: game.max_strikes }, (_, i) => (i < game.strikes ? '✖' : '○')).join(' ')}
         </span>
-        <span>⏱ {formatTime(timeLeft)}</span>
+        {!starting && <span>⏱ {formatTime(timeLeft)}</span>}
         {partnerName && (
           <span className={partner?.online ? 'session-online' : 'session-offline'}>
             ● {partnerName}
             {!partner?.online && ' (offline)'}
+            {starting && partner?.ready && ' · bereit'}
           </span>
         )}
         {!over && (
@@ -420,13 +436,12 @@ function SessionGame({ client, islandId }: { client: SessionClient; islandId: st
         )}
       </div>
       <ConnectionNote session={session} />
-      {bomb.unplayable && myRole === 'defuser' && (
+      {bomb.unplayable && myRole === 'defuser' && !starting && (
         <p className="bomb-screen-message">Für diese Frage gibt es noch kein passendes Modul.</p>
       )}
       {toast !== null && (
         <div className={`session-toast ${toast ? 'is-good' : 'is-bad'}`}>
           {toast ? '✅ Richtig!' : '❌ Falsch – Strike!'}
-          {!over && myRole && ` · Jetzt bist du ${ROLE_LABELS[myRole]}`}
         </div>
       )}
 
@@ -440,6 +455,90 @@ function SessionGame({ client, islandId }: { client: SessionClient; islandId: st
         </Link>
       )}
     </div>
+  )
+}
+
+/** The big green button both players press before the clock starts. */
+function ReadyButton({ client, meReady, partnerName }: { client: SessionClient; meReady: boolean; partnerName: string | null }) {
+  const [sent, setSent] = useState(false)
+  const pressed = meReady || sent
+  return (
+    <>
+      <ReadyButton3D pressed={pressed} onPress={() => setSent(client.ready())} />
+      <p className="session-ready-wait">
+        {pressed ? `Warte auf ${partnerName ?? 'deinen Mitspieler'}…` : 'Drück auf Bereit, sobald ihr loslegen wollt.'}
+      </p>
+    </>
+  )
+}
+
+type DefuserRoomProps = {
+  game: NonNullable<SessionState['game']>
+  islandId: string | null
+  bomb: ReturnType<typeof useSessionBomb>
+  timeLeft: number
+  /** The ready button, shown until the game starts. */
+  ready: ReactNode
+}
+
+/** The defuser's side: the storey's room, the bomb lying on the workbench until it is picked up. */
+function DefuserRoom({ game, islandId, bomb, timeLeft, ready }: DefuserRoomProps) {
+  const [lifted, setLifted] = useState(false)
+  const { focused, back } = bomb
+  const lift = useCallback(() => setLifted(true), [])
+
+  // A module to work on is opened for the defuser: the bomb comes off the table with it.
+  useEffect(() => {
+    if (focused !== null) setLifted(true)
+  }, [focused])
+
+  // Esc: close the open module first, then put the bomb back on the table.
+  useEffect(() => {
+    if (!lifted) return
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return
+      if (focused !== null) back()
+      else setLifted(false)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [lifted, focused, back])
+
+  const house = useIslandHouse(islandId ?? '', game.topics[0] ?? '')
+  const placed = house.status === 'ready' ? house.placed : null
+  const storey = placed?.house.storeys.find((entry) => entry.id === game.skill_id) ?? placed?.house.storeys[0]
+
+  const props: Omit<BombRoomProps, 'room' | 'wallSurface'> = {
+    lifted,
+    onLift: lift,
+    onPutDown: () => setLifted(false),
+    modules: bomb.bombModules,
+    focused,
+    onSelect: bomb.select,
+    onBack: back,
+    timeLeft,
+    strikes: game.strikes,
+    exploded: game.status === 'lost',
+  }
+
+  return (
+    <>
+      {placed && storey ? (
+        <Suspense fallback={null}>
+          <StoreyBombRoom house={placed.house} storey={storey} {...props} />
+        </Suspense>
+      ) : (
+        <BombRoom room={PLAIN_ROOM} {...props} />
+      )}
+      <div className="room-bomb-ui">
+        {focused !== null && bomb.card && (
+          <div className={`bomb-zoom is-${bomb.focusedOnBomb ? 'side' : 'center'}`}>
+            <div className="bomb-zoom-panel">{bomb.card}</div>
+          </div>
+        )}
+        {ready && <div className="session-ready">{ready}</div>}
+      </div>
+    </>
   )
 }
 
@@ -470,68 +569,48 @@ const SYMBOL_FIELD: Record<string, string> = {
 
 const asText = (value: unknown) => (typeof value === 'string' ? value : JSON.stringify(value))
 
-/** The expert's page for this turn: the question, what the symbols mean and the manual entry. */
-function ExpertManual({ briefing, over }: { briefing: Extract<Briefing, { role: 'expert' }> | null; over: boolean }) {
-  if (!briefing) {
-    return (
-      <div className="book-screen">
-        <p className="book-loading">{over ? 'Spiel vorbei.' : 'Warte auf das Handbuch…'}</p>
-      </div>
-    )
-  }
-  const { instruction, symbols } = briefing
-  const prompt = briefing.prompt ?? (typeof instruction.prompt === 'string' ? instruction.prompt : null)
-  const hidden = symbols?.length ? SYMBOL_FIELD[briefing.question_type] : undefined
-  const entries = Object.entries(instruction).filter(([key]) => key !== 'prompt' && key !== hidden)
+type ExpertBriefing = Extract<Briefing, { role: 'expert' }>
 
+/** One expert briefing as a page of the manual book. */
+function toManual(briefing: ExpertBriefing): Manual {
+  const { instruction, symbols } = briefing
+  const prompt = briefing.prompt ?? (typeof instruction.prompt === 'string' ? instruction.prompt : undefined)
+  const hidden = symbols?.length ? SYMBOL_FIELD[briefing.question_type] : undefined
+  const manual: Manual = {
+    title: `Modul ${briefing.turn + 1} · ${QUESTION_TYPE_LABELS[briefing.question_type] ?? briefing.question_type}`,
+    prompt,
+    glyphs: symbols?.length ? symbols.map(({ glyph, text }) => ({ glyph, text: asText(text) })) : undefined,
+    lists: [],
+    notes: [],
+  }
+  for (const [key, value] of Object.entries(instruction)) {
+    if (key === 'prompt' || key === hidden) continue
+    if (key === 'statements' && Array.isArray(value)) manual.statements = value.map(asText)
+    else if (Array.isArray(value)) manual.lists!.push({ title: LIST_LABELS[key] ?? key, items: value.map(asText) })
+    else manual.notes!.push(asText(value))
+  }
+  return manual
+}
+
+/**
+ * The expert's side: the manual book. The server hands out one page per turn, so the book collects
+ * them as the game goes on. It starts closed; once opened, it turns to the current module.
+ */
+function ExpertBook({ game, briefing }: { game: NonNullable<SessionState['game']>; briefing: ExpertBriefing | null }) {
+  const [pages, setPages] = useState<Map<number, Manual>>(new Map())
+  if (briefing && !pages.has(briefing.turn)) setPages(new Map(pages).set(briefing.turn, toManual(briefing)))
+
+  const turns = [...pages.keys()].sort((a, b) => a - b)
+  const current = briefing ? turns.indexOf(briefing.turn) : -1
   return (
-    <div className="book-screen">
-      <div className="session-manual">
-        <article className="book-paper">
-          <h2>
-            Modul {briefing.turn + 1} · {QUESTION_TYPE_LABELS[briefing.question_type] ?? briefing.question_type}
-          </h2>
-          <p className="mg-muted">
-            Dein Partner sieht die Bombe, aber nicht die Frage. Lies sie vor, lass dir das Modul beschreiben und sag, was
-            zu tun ist.
-          </p>
-          {prompt && (
-            <section>
-              <h3>Die Frage</h3>
-              <p className="book-question">{prompt}</p>
-            </section>
-          )}
-          {symbols && symbols.length > 0 && (
-            <section>
-              <h3>Bedeutung der Symbole</h3>
-              <ul className="book-glyphs">
-                {symbols.map(({ glyph, text }) => (
-                  <li key={glyph} data-glyph={glyph}>
-                    <GlyphIcon index={glyph} size={34} stroke={5} />
-                    <span>{asText(text)}</span>
-                  </li>
-                ))}
-              </ul>
-            </section>
-          )}
-          {entries.map(([key, value]) => (
-            <section key={key}>
-              {Array.isArray(value) ? (
-                <>
-                  <h3>{LIST_LABELS[key] ?? key}</h3>
-                  <ol className="book-statements">
-                    {value.map((item, i) => (
-                      <li key={i}>{asText(item)}</li>
-                    ))}
-                  </ol>
-                </>
-              ) : (
-                <p>{asText(value)}</p>
-              )}
-            </section>
-          ))}
-        </article>
-      </div>
-    </div>
+    <ManualBook
+      manuals={turns.map((turn) => pages.get(turn)!)}
+      seed={seedOf(game.game_id)}
+      ordered
+      open={current === -1 ? undefined : current}
+    />
   )
 }
+
+/** A stable number from the game id (for the book's paper details). */
+const seedOf = (id: string) => [...id].reduce((hash, char) => (hash * 31 + char.charCodeAt(0)) >>> 0, 7) % 100000

@@ -25,11 +25,15 @@ strikes. Clients only render what they are told.
   houses (topics) of an island, spread over their skills. It does not count
   towards any storey.
 - A bomb has `question_count` parts (1–11). **Turn n** plays part n.
-- Each turn one player is the **defuser** (sees the module, answers) and the
-  other is the **expert** (sees the prompt and the manual page). **Roles swap
-  after every turn.**
+- One player is the **defuser** (sees the modules, answers) and the other is
+  the **expert** (sees the prompt and the manual page). **The roles hold for
+  the whole game**: the defuser defuses every part.
 - Starting role: if the creator picked a `role`, the joiner gets the other one.
   If only the joiner picked one, theirs counts. If nobody picked, it is random.
+  The roles are dealt when the second player joins (`roles_assigned`, status
+  **ready**), so each player can get to their side of the table.
+- The game starts once **both players sent `ready`**: only then the clock runs
+  and turn 0 begins.
 - A wrong answer is a strike and the part counts as failed. Either way the next
   turn starts.
 - **Lost** at 3 strikes or when the deadline (`time_limit_secs` after the
@@ -40,9 +44,9 @@ strikes. Clients only render what they are told.
   the game is not listed in `GET /api/sessions`.
 
 ```
-waiting ──join──▶ active ──┬─ all parts resolved ──▶ won
-   │                       ├─ 3 strikes / deadline ─▶ lost
-   └──────forfeit──────────┴─ forfeit ──────────────▶ aborted
+waiting ──join──▶ ready ──both ready──▶ active ──┬─ all parts resolved ──▶ won
+   │                │                            ├─ 3 strikes / deadline ─▶ lost
+   └────forfeit─────┴──────────forfeit───────────┴─ forfeit ──────────────▶ aborted
 ```
 
 ## Storeys
@@ -72,7 +76,7 @@ The first message decides how the socket enters a game:
 | message | effect |
 |---|---|
 | `create` | opens a lobby; you take seat 0 |
-| `join` | takes seat 1 of a waiting game and starts it |
+| `join` | takes seat 1 of a waiting game; the game then waits for both to be `ready` |
 | `resume` | reconnects with the `token` from `welcome` |
 
 `create`/`join` answer with `welcome { game_id, player_id, token, seat }`.
@@ -95,6 +99,7 @@ pushed live.
 | `create` | `topics: uuid[]` (house ids), `question_count`, `role?`, `time_limit_secs?` (30–3600), `skill_id?` + `island_id?` (a storey game; `topics` may then be empty), `invited?` (user id) | first message |
 | `join` | `game_id`, `role?` | first message, game `waiting` |
 | `resume` | `game_id`, `token`, `last_sequence?` | first message |
+| `ready` | – | game `ready`; repeats and a `ready` after the start are ignored |
 | `submit_answer` | `turn`, `answer: { type, answer }` | your turn as defuser |
 | `forfeit` | – | game not over |
 
@@ -108,7 +113,7 @@ resent answer is rejected with `stale_turn` and never costs a second strike.
 | type | content |
 |---|---|
 | `welcome` | `game_id, player_id, token, seat` |
-| `snapshot` | `state`: status, topics, `skill_id`, `invited`, players (+ online), deadline, turn, defuser, expert, strikes, parts with results, `last_sequence` |
+| `snapshot` | `state`: status, topics, `skill_id`, `invited`, players (+ online, ready), deadline, turn, defuser, expert, strikes, parts with results, `last_sequence` |
 | `event` | `sequence, at, event`: one logged game event, see below |
 | `briefing` | private, per turn: `{ turn, role: "defuser", task, glyphs? }` or `{ turn, role: "expert", question_type, prompt, instruction, symbols? }` |
 | `presence` | `player_id, online` |
@@ -155,6 +160,8 @@ server restart. Clients should ignore events with
 |---|---|
 | `game_created` | `topics, question_count, time_limit_secs, created_by, parts: [{ position, task_id, question_type, glyphs? }], skill_id?, invited?` |
 | `player_joined` | `player_id, seat, role` (the role they asked for) |
+| `roles_assigned` | `defuser, expert` (the roles for the whole game; status becomes `ready`) |
+| `player_ready` | `player_id` |
 | `game_started` | `deadline, starting_defuser` |
 | `turn_started` | `turn, defuser, expert` |
 | `answer_submitted` | `turn, actor, answer, correct, solution, strikes` |
@@ -176,8 +183,15 @@ client never sees an event that could be lost on a restart.
 { "type": "join", "game_id": "G" }
 // server → A and B
 { "type": "event", "sequence": 2, "event": { "type": "player_joined", "player_id": "B", "seat": 1, "role": null } }
-{ "type": "event", "sequence": 3, "event": { "type": "game_started", "deadline": "…", "starting_defuser": "A" } }
-{ "type": "event", "sequence": 4, "event": { "type": "turn_started", "turn": 0, "defuser": "A", "expert": "B" } }
+{ "type": "event", "sequence": 3, "event": { "type": "roles_assigned", "defuser": "A", "expert": "B" } }
+
+// A and B → server, each when they are at the table
+{ "type": "ready" }
+// server → A and B
+{ "type": "event", "sequence": 4, "event": { "type": "player_ready", "player_id": "A" } }
+{ "type": "event", "sequence": 5, "event": { "type": "player_ready", "player_id": "B" } }
+{ "type": "event", "sequence": 6, "event": { "type": "game_started", "deadline": "…", "starting_defuser": "A" } }
+{ "type": "event", "sequence": 7, "event": { "type": "turn_started", "turn": 0, "defuser": "A", "expert": "B" } }
 // server → A only
 { "type": "briefing", "turn": 0, "role": "defuser", "task": { "type": "single_choice", "id": "…", "options": ["4", "8"] } }
 // server → B only
@@ -186,11 +200,11 @@ client never sees an event that could be lost on a restart.
 // A → server
 { "type": "submit_answer", "turn": 0, "answer": { "type": "single_choice", "answer": 1 } }
 // server → A and B
-{ "type": "event", "sequence": 5, "event": { "type": "answer_submitted", "turn": 0, "actor": "A", "correct": true, "strikes": 0, … } }
-{ "type": "event", "sequence": 6, "event": { "type": "turn_started", "turn": 1, "defuser": "B", "expert": "A" } }
+{ "type": "event", "sequence": 8, "event": { "type": "answer_submitted", "turn": 0, "actor": "A", "correct": true, "strikes": 0, … } }
+{ "type": "event", "sequence": 9, "event": { "type": "turn_started", "turn": 1, "defuser": "A", "expert": "B" } }
 
 // B's connection drops; B reconnects and only gets what it missed
-{ "type": "resume", "game_id": "G", "token": "T_B", "last_sequence": 6 }
+{ "type": "resume", "game_id": "G", "token": "T_B", "last_sequence": 9 }
 ```
 
 ## Content conventions

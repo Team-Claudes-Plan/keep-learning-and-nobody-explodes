@@ -195,12 +195,30 @@ async fn plays_a_game_and_restores_it() {
         .expect("connect b");
 
     let seen = drain(&mut a_updates, a.player_id).await;
+    assert_eq!(events(&seen), [(2, "player_joined"), (3, "roles_assigned")]);
+    // no turn before both are ready
+    let early = sessions.submit(a.game_id, a.player_id, 0, answer(1)).await;
+    assert_eq!(
+        early.expect_err("not started").code,
+        ErrorCode::InvalidState
+    );
+    sessions
+        .ready(a.game_id, a.player_id)
+        .await
+        .expect("a ready");
+    sessions
+        .ready(a.game_id, b.player_id)
+        .await
+        .expect("b ready");
+
+    let seen = drain(&mut a_updates, a.player_id).await;
     assert_eq!(
         events(&seen),
         [
-            (2, "player_joined"),
-            (3, "game_started"),
-            (4, "turn_started")
+            (4, "player_ready"),
+            (5, "player_ready"),
+            (6, "game_started"),
+            (7, "turn_started")
         ]
     );
     // the creator picked defuser, so the joiner's wish loses
@@ -224,17 +242,23 @@ async fn plays_a_game_and_restores_it() {
         .expect("wrong answer");
     let stale = sessions.submit(a.game_id, a.player_id, 0, answer(0)).await;
     assert_eq!(stale.expect_err("resent").code, ErrorCode::StaleTurn);
+    // the roles hold for the whole game: a defuses every part
+    let b_turn = sessions.submit(a.game_id, b.player_id, 1, answer(1)).await;
+    assert_eq!(
+        b_turn.expect_err("a still defuses").code,
+        ErrorCode::NotYourTurn
+    );
     sessions
-        .submit(a.game_id, b.player_id, 1, answer(1))
+        .submit(a.game_id, a.player_id, 1, answer(1))
         .await
-        .expect("b answers");
+        .expect("a answers");
 
     let b_seen = drain(&mut b_updates, b.player_id).await;
     assert!(b_seen.iter().any(|m| matches!(
         m,
         ServerMessage::Briefing {
             turn: 1,
-            brief: Brief::Defuser { .. }
+            brief: Brief::Expert { .. }
         }
     )));
     assert!(b_seen.iter().any(|m| matches!(
@@ -251,12 +275,12 @@ async fn plays_a_game_and_restores_it() {
         .expect("token");
     assert_eq!(player, b.player_id);
     let resumed = restarted
-        .connect(a.game_id, b.player_id, Some(6))
+        .connect(a.game_id, b.player_id, Some(9))
         .await
         .expect("resume");
     assert_eq!(
         events(&resumed.initial),
-        [(7, "answer_submitted"), (8, "turn_started")]
+        [(10, "answer_submitted"), (11, "turn_started")]
     );
 
     restarted
@@ -281,12 +305,12 @@ async fn plays_a_game_and_restores_it() {
     .fetch_one(db.pool())
     .await
     .expect("game row");
-    assert_eq!((status.as_str(), failures, next), ("won", 1, 11));
+    assert_eq!((status.as_str(), failures, next), ("won", 1, 14));
 
     let log = db.load_game_events(a.game_id).await.expect("log");
     assert_eq!(
         log.iter().map(|e| e.sequence).collect::<Vec<_>>(),
-        (0..11).collect::<Vec<_>>()
+        (0..14).collect::<Vec<_>>()
     );
     assert!(matches!(
         log.last().map(|e| &e.event),
@@ -306,7 +330,7 @@ async fn plays_a_game_and_restores_it() {
     assert_eq!(solved, 2);
 }
 
-/// Answers every turn of `game` correctly (option 1), whoever defuses it.
+/// Answers every turn of `game` correctly (option 1), whichever player defuses.
 async fn win(sessions: &Sessions, game: Uuid, players: [Uuid; 2], turns: u32) {
     for turn in 0..turns {
         let first = sessions.submit(game, players[0], turn, answer(1)).await;
@@ -385,6 +409,9 @@ async fn climbs_the_storeys_of_a_house() {
     );
 
     sessions.join(game.game_id, mia, None).await.expect("join");
+    for player in [alex, mia] {
+        sessions.ready(game.game_id, player).await.expect("ready");
+    }
     win(&sessions, game.game_id, [alex, mia], 5).await;
 
     let topics = db.island_topics(island).await.expect("progress");
@@ -494,7 +521,11 @@ mod websocket {
         send(&mut b, json!({ "type": "join", "game_id": game_id })).await;
         let b_id = expect(&mut b, "welcome").await["player_id"].clone();
         assert_eq!(b_id, mia.to_string());
-        expect(&mut b, "snapshot").await;
+        let snapshot = expect(&mut b, "snapshot").await;
+        assert_eq!(snapshot["state"]["status"], "ready");
+        for socket in [&mut a, &mut b] {
+            send(socket, json!({ "type": "ready" })).await;
+        }
 
         let turn = loop {
             let event = expect(&mut a, "event").await;
@@ -543,8 +574,8 @@ mod websocket {
         assert_eq!(submitted["event"]["type"], "answer_submitted");
         assert_eq!(submitted["event"]["correct"], true);
 
-        // roles swapped: the other player defuses turn 1, and gives up
-        assert_eq!(expect(other, "briefing").await["role"], "defuser");
+        // roles hold: the same player defuses turn 1, the other gives up
+        assert_eq!(expect(defuser, "briefing").await["role"], "defuser");
         send(other, json!({ "type": "forfeit" })).await;
         let ended = loop {
             let event = expect(defuser, "event").await;

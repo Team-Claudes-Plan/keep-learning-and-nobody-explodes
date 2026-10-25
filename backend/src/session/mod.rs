@@ -404,6 +404,11 @@ impl Sessions {
         .await?
     }
 
+    pub async fn ready(&self, game_id: Uuid, player: Uuid) -> Result<(), SessionError> {
+        self.request(game_id, |reply| Request::Ready { player, reply })
+            .await?
+    }
+
     pub async fn forfeit(&self, game_id: Uuid, player: Uuid) -> Result<(), SessionError> {
         self.request(game_id, |reply| Request::Forfeit { player, reply })
             .await?

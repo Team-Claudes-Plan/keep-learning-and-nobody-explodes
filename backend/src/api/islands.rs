@@ -55,6 +55,8 @@ pub struct Island {
     origin_id: Option<Uuid>,
     group: Group,
     houses: Vec<House>,
+    /// Uploaded documents still being turned into houses.
+    building: i64,
 }
 
 /// The members of an island; the island id doubles as the group id.
@@ -231,7 +233,12 @@ pub async fn islands_list(
             .island_topics(summary.id)
             .await
             .map_err(|error| ApiError::db("load island topics", &error))?;
-        islands.push(island(summary, &topics));
+        let building = state
+            .db
+            .pending_documents(summary.id)
+            .await
+            .map_err(|error| ApiError::db("count pending documents", &error))?;
+        islands.push(island(summary, &topics, building));
     }
 
     Ok(Json(IslandsResponse {
@@ -240,7 +247,7 @@ pub async fn islands_list(
     }))
 }
 
-fn island(summary: IslandSummary, topics: &[TopicProgress]) -> Island {
+fn island(summary: IslandSummary, topics: &[TopicProgress], building: i64) -> Island {
     Island {
         id: summary.id,
         name: summary.name,
@@ -250,6 +257,7 @@ fn island(summary: IslandSummary, topics: &[TopicProgress]) -> Island {
             members: summary.members,
         },
         houses: topics.iter().map(house).collect(),
+        building,
     }
 }
 
@@ -606,6 +614,70 @@ mod tests {
             db.content_island(second).await.expect("lookup"),
             Some(island)
         );
+    }
+
+    #[tokio::test]
+    #[ignore = "requires the dev stack (`nix run .#dev`) and its environment"]
+    async fn pending_documents_build_until_processed() {
+        let (app, db) = app().await;
+        let (alex, mia, leo) = (
+            user(&db, "Alex").await,
+            user(&db, "Mia").await,
+            user(&db, "Leo").await,
+        );
+        let island = db
+            .create_island("Semester 1", alex, Some(mia))
+            .await
+            .expect("island");
+        let fork = db
+            .fork_island(island, Some("Fork"), alex, leo)
+            .await
+            .expect("fork")
+            .expect("island exists");
+        let document: Uuid = sqlx::query_scalar(
+            "INSERT INTO documents (island_id, bucket, object_key)
+             VALUES ($1, 'test', $2) RETURNING id",
+        )
+        .bind(island)
+        .bind(format!("uploads/{island}/{}/notes.pdf", Uuid::new_v4()))
+        .fetch_one(db.pool())
+        .await
+        .expect("document");
+
+        let building = |body: &Value, id: Uuid| {
+            body["islands"]
+                .as_array()
+                .expect("islands")
+                .iter()
+                .find(|candidate| candidate["id"] == id.to_string())
+                .expect("island is listed")["building"]
+                .as_i64()
+                .expect("building")
+        };
+        let (_, body) = call(&app, Method::GET, "/api/islands", Some(alex), None).await;
+        assert_eq!(building(&body, island), 1);
+        assert_eq!(building(&body, fork), 1, "the fork shares the upload");
+
+        let mut audience = db.content_audience(fork).await.expect("audience");
+        audience.sort();
+        let mut expected = vec![alex, mia, leo];
+        expected.sort();
+        assert_eq!(audience, expected);
+
+        let mut listener = sqlx::postgres::PgListener::connect_with(db.pool())
+            .await
+            .expect("listener");
+        listener.listen("island_documents").await.expect("listen");
+        sqlx::query("UPDATE documents SET trials_status = 'completed' WHERE id = $1")
+            .bind(document)
+            .execute(db.pool())
+            .await
+            .expect("complete");
+        let notification = listener.recv().await.expect("notification");
+        assert_eq!(notification.payload(), island.to_string());
+
+        let (_, body) = call(&app, Method::GET, "/api/islands", Some(alex), None).await;
+        assert_eq!(building(&body, island), 0);
     }
 
     #[tokio::test]

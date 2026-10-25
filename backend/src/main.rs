@@ -68,7 +68,7 @@ async fn main() -> Result<()> {
             bucket: config.s3.bucket.clone(),
             token: config.webhook_token,
         }))
-        .merge(api::routes().with_state(state))
+        .merge(api::routes().with_state(Arc::clone(&state)))
         .layer(TraceLayer::new_for_http())
         .layer(CorsLayer::permissive());
 
@@ -85,6 +85,7 @@ async fn main() -> Result<()> {
     tokio::try_join!(
         async { server.await.context("server failed") },
         worker::run(db, store, backend, akasha),
+        presence::listener::run(state),
     )?;
     Ok(())
 }

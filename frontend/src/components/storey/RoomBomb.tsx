@@ -90,7 +90,7 @@ function useBombEnvironment() {
   return env
 }
 
-type RoomBombProps = Omit<BombContentProps, 'interactive' | 'ownMaterials'> & {
+export type RoomBombProps = Omit<BombContentProps, 'interactive' | 'ownMaterials'> & {
   /** Middle of the bomb's underside while it lies on the table. */
   rest: [number, number, number]
   /** Picked up: floats in front of the camera and can be turned by dragging. */

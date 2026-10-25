@@ -8,6 +8,8 @@ import type { PlannedModule, Random } from './plan'
 
 /** What the expert's manual says about one module. */
 export type Manual = {
+  /** Page heading, e.g. "Modul 2 · Einfachauswahl" (session games, where pages arrive turn by turn). */
+  title?: string
   /** The question, when only the expert has it (free text, numbers, the radar). */
   prompt?: string
   /** True/false: the statements behind "Aussage 1, 2, …" on the bomb. */
@@ -16,6 +18,10 @@ export type Manual = {
   glyphs?: { glyph: number; text: string }[]
   /** Free-text terminals: the user shown on the terminal; the manual lists these together. */
   user?: string
+  /** Further lists from the manual entry (session games), e.g. the groups to sort into. */
+  lists?: { title: string; items: string[] }[]
+  /** Further notes from the manual entry (session games). */
+  notes?: string[]
 }
 
 const USER_NAMES = ['falke', 'otter', 'luchs', 'kranich', 'dachs', 'marder', 'uhu', 'wiesel', 'biber', 'reiher', 'fuchs', 'specht']

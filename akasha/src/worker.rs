@@ -37,9 +37,15 @@ pub async fn process_chronicle(
         characters = job.text.len(),
     );
 
-    run_chronicle(job, pipeline, database, document_id)
+    let result = run_chronicle(job, pipeline, database.clone(), document_id)
         .instrument(span)
-        .await
+        .await;
+    if result.is_err()
+        && let Err(error) = database.mark_trials_failed(document_id).await
+    {
+        tracing::error!(document_id = %document_id, error = %error, "failed to record failed chronicle");
+    }
+    result
 }
 
 async fn run_chronicle(

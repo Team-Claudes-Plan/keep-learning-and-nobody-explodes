@@ -187,7 +187,8 @@ function KitShell({ kit, room, depth, storeyHeights, onRoofHeight }: KitShellPro
 /** What a storey of the house stands for in the skill tree. */
 function storeyStatus(storey: Storey): string {
   if (!storey.skill || storey.skill.tasks === 0) return 'no questions yet'
-  return storey.skill.passed ? '✓ passed' : '▶ up next'
+  if (storey.skill.passed) return '✓ passed'
+  return storey.skill.unlocked ? '▶ up next' : '🔒 locked'
 }
 
 function HouseView({ island, placed }: { island: ResolvedIsland; placed: PlacedHouse }) {
@@ -209,9 +210,10 @@ function HouseView({ island, placed }: { island: ResolvedIsland; placed: PlacedH
     [island.island.id, placed.topicId, selected, selectedIndex],
   )
   const invite = useInviteFlow(partner, target)
-  /** Only storeys with a skill that has questions can be played. */
+  /** Only unlocked storeys with a skill that has questions can be played. */
   const pick = (storey: Storey) => {
-    if (invite.flow.step === 'waiting' || !storey.skill || storey.skill.tasks === 0) return
+    if (invite.flow.step === 'waiting' || invite.flow.step === 'ready') return
+    if (!storey.skill || !storey.skill.unlocked || storey.skill.tasks === 0) return
     setSelectedId(storey.id)
   }
   const close = () => {
@@ -320,7 +322,7 @@ function HouseView({ island, placed }: { island: ResolvedIsland; placed: PlacedH
               <li key={storey.id}>
                 <Link
                   to={`${base}/storeys/${storey.id}`}
-                  data-storey={storey.skill.passed ? 'passed' : 'next'}
+                  data-storey={storey.skill.passed ? 'passed' : storey.skill.unlocked ? 'next' : 'locked'}
                   onClick={(event) => {
                     event.preventDefault()
                     pick(storey)
@@ -331,12 +333,6 @@ function HouseView({ island, placed }: { island: ResolvedIsland; placed: PlacedH
                 </Link>
               </li>
             ) : null,
-          )}
-          {placed.totalStoreys > house.storeys.length && (
-            <li className="hud-locked">
-              🔒 {placed.totalStoreys - house.storeys.length} more{' '}
-              {placed.totalStoreys - house.storeys.length === 1 ? 'storey' : 'storeys'} above
-            </li>
           )}
         </ul>
       </Hud>
@@ -351,6 +347,7 @@ function HouseView({ island, placed }: { island: ResolvedIsland; placed: PlacedH
           onStart={invite.start}
           onCancel={invite.cancel}
           onClose={close}
+          onMockStart={invite.enterMockGame}
           soloPath={USES_BACKEND ? undefined : `${base}/storeys/${selected.id}`}
         />
       )}

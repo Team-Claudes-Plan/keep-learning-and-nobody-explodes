@@ -122,7 +122,8 @@ pub enum ClientMessage {
         island_id: Option<Uuid>,
         invited: Option<Uuid>,
     },
-    /// Takes seat 1 of a waiting game, which starts it.
+    /// Takes seat 1 of a waiting game. The roles are dealt, then both
+    /// players confirm with `ready`.
     Join {
         game_id: Uuid,
         role: Option<Role>,
@@ -134,6 +135,8 @@ pub enum ClientMessage {
         token: Uuid,
         last_sequence: Option<u32>,
     },
+    /// The sender is ready to play; once both are, the game starts.
+    Ready,
     /// Only the defuser of `turn` may answer, once.
     SubmitAnswer {
         turn: u32,
@@ -163,6 +166,15 @@ pub enum GameEvent {
         player_id: Uuid,
         seat: u8,
         role: Option<Role>,
+    },
+    /// Both seats are taken: who defuses first. The game waits for both
+    /// players to be ready.
+    RolesAssigned {
+        defuser: Uuid,
+        expert: Uuid,
+    },
+    PlayerReady {
+        player_id: Uuid,
     },
     GameStarted {
         deadline: DateTime<Utc>,
@@ -194,6 +206,8 @@ impl GameEvent {
         match self {
             Self::GameCreated { .. } => "game_created",
             Self::PlayerJoined { .. } => "player_joined",
+            Self::RolesAssigned { .. } => "roles_assigned",
+            Self::PlayerReady { .. } => "player_ready",
             Self::GameStarted { .. } => "game_started",
             Self::TurnStarted { .. } => "turn_started",
             Self::AnswerSubmitted { .. } => "answer_submitted",
@@ -206,9 +220,14 @@ impl GameEvent {
     pub fn actor(&self) -> Option<Uuid> {
         match self {
             Self::GameCreated { created_by, .. } => Some(*created_by),
-            Self::PlayerJoined { player_id, .. } => Some(*player_id),
+            Self::PlayerJoined { player_id, .. } | Self::PlayerReady { player_id } => {
+                Some(*player_id)
+            }
             Self::AnswerSubmitted { actor, .. } => Some(*actor),
-            Self::GameStarted { .. } | Self::TurnStarted { .. } | Self::GameEnded { .. } => None,
+            Self::RolesAssigned { .. }
+            | Self::GameStarted { .. }
+            | Self::TurnStarted { .. }
+            | Self::GameEnded { .. } => None,
         }
     }
 }
@@ -310,6 +329,8 @@ pub struct GameView {
 #[serde(rename_all = "snake_case")]
 pub enum Status {
     Waiting,
+    /// Both players are seated; the game starts once both are ready.
+    Ready,
     Active,
     Won,
     Lost,
@@ -331,6 +352,8 @@ pub struct PlayerView {
     pub player_id: Uuid,
     pub seat: u8,
     pub online: bool,
+    /// Confirmed `ready` (always true once the game started).
+    pub ready: bool,
 }
 
 #[derive(Clone, Debug, Serialize)]

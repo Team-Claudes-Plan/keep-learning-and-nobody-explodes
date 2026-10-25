@@ -1978,6 +1978,48 @@ canvas {
   100% { background: rgba(255, 80, 20, 0); }
 }
 
+/* The expert's side of the explosion: fireball and sparks over the book, soot left behind */
+.blast-overlay {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+}
+
+.blast-overlay-fire {
+  position: absolute !important;
+  inset: 0;
+}
+
+.blast-overlay-soot {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(ellipse at 50% 50%, rgba(20, 8, 2, 0.15) 0%, rgba(10, 4, 0, 0.6) 75%);
+  animation: blast-soot 1.2s ease-out forwards;
+}
+
+@keyframes blast-soot {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.bomb-screen.is-blasted .book-stage {
+  animation: book-shake 0.7s cubic-bezier(0.36, 0.07, 0.19, 0.97);
+}
+
+@keyframes book-shake {
+  0%, 100% { transform: translate(0, 0) rotate(0); }
+  10% { transform: translate(-18px, 10px) rotate(-1.5deg); }
+  25% { transform: translate(16px, -12px) rotate(1.2deg); }
+  40% { transform: translate(-12px, 8px) rotate(-0.8deg); }
+  55% { transform: translate(9px, -5px) rotate(0.5deg); }
+  70% { transform: translate(-5px, 3px) rotate(-0.3deg); }
+  85% { transform: translate(2px, -1px) rotate(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bomb-screen.is-blasted .book-stage { animation: none; }
+}
+
 /* Defused: confetti, a warm glow and a big banner over the bomb */
 .celebration {
   position: absolute;
@@ -3285,22 +3327,6 @@ canvas {
   background: #ff6b6b;
 }
 
-/* one manual page for the current turn; book-paper sizes its text by the container */
-.session-manual {
-  container-type: inline-size;
-  width: min(560px, calc(100vw - 32px));
-  max-height: calc(100vh - 120px);
-  margin: 80px auto 0;
-  overflow-y: auto;
-  border-radius: 6px;
-  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.45);
-}
-
-.session-manual .book-paper {
-  height: auto;
-  overflow: visible;
-}
-
 /* ---- Session start from a storey, and game invites ---- */
 
 .session-start {
@@ -3629,4 +3655,112 @@ canvas {
   .session-dots span {
     animation: none;
   }
+}
+
+/* Before the start: both players press "Bereit" */
+
+.session-ready {
+  position: fixed;
+  left: 50%;
+  bottom: 12vh;
+  transform: translateX(-50%);
+  z-index: 4;
+  display: grid;
+  justify-items: center;
+  max-width: calc(100% - 32px);
+  pointer-events: none;
+}
+
+.session-ready-button {
+  pointer-events: auto;
+  display: block;
+  width: min(340px, 80vw);
+  aspect-ratio: 17 / 11;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  animation: session-ready-in 0.3s ease-out both;
+}
+
+.session-ready-button:disabled {
+  cursor: default;
+}
+
+.session-ready-button:focus-visible {
+  outline: 3px solid #2fbf68;
+  outline-offset: 4px;
+  border-radius: 24px;
+}
+
+.session-ready-canvas {
+  pointer-events: none;
+}
+
+.session-ready-wait {
+  margin: 0;
+  padding: 10px 18px;
+  border-radius: 10px;
+  background: rgba(13, 15, 19, 0.75);
+  color: #e6e9ef;
+  font-size: 16px;
+  text-align: center;
+}
+
+@keyframes session-ready-in {
+  from {
+    opacity: 0;
+    transform: scale(0.85);
+  }
+}
+
+/* "Bereit" inside the start panel and the invite card, before the game page opens */
+.ready-check {
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+  text-align: center;
+}
+
+.ready-check .session-ready-button {
+  width: min(240px, 100%);
+}
+
+.ready-check .session-ready-button:disabled:not([aria-pressed='true']) {
+  opacity: 0.55;
+  filter: grayscale(0.6);
+}
+
+.ready-check-players {
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ready-check-players li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border: 2px solid #1f2937;
+  border-radius: 6px;
+  background: #e5e7eb;
+  font-weight: 700;
+}
+
+.ready-check-players li.is-ready {
+  background: #22c55e;
+  color: #fff;
+  text-shadow: 0 1px 0 #15803d;
+}
+
+.ready-check-mark {
+  font-weight: 900;
+}
+
+.ready-check small {
+  color: #6b7280;
 }
