@@ -52,7 +52,7 @@ function Fuse({ x, top, width, holderHeight, label, inserted, stateLabel, disabl
         fontSize={0.026}
         anchorX="center"
         anchorY="top"
-        color={inserted ? ACTIVE : '#7d8590'}
+        color={inserted ? ACTIVE : '#a3abb7'}
       >
         {stateLabel}
       </Text>

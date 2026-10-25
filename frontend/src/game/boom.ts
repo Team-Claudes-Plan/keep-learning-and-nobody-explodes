@@ -64,3 +64,32 @@ export function playClank(speed: number) {
     // no audio available
   }
 }
+
+/** Victory fanfare: a quick rising arpeggio and a held major chord, made on the fly. */
+export function playFanfare() {
+  try {
+    const ctx = new AudioContext()
+    const now = ctx.currentTime
+    const out = ctx.createGain()
+    out.gain.value = 0.22
+    out.connect(ctx.destination)
+    const note = (freq: number, start: number, length: number) => {
+      const osc = ctx.createOscillator()
+      osc.type = 'square'
+      osc.frequency.value = freq
+      const env = ctx.createGain()
+      env.gain.setValueAtTime(0, now + start)
+      env.gain.linearRampToValueAtTime(1, now + start + 0.02)
+      env.gain.exponentialRampToValueAtTime(0.001, now + start + length)
+      osc.connect(env).connect(out)
+      osc.start(now + start)
+      osc.stop(now + start + length + 0.05)
+    }
+    // C E G C', then a C major chord held
+    ;[523.25, 659.25, 783.99, 1046.5].forEach((f, i) => note(f, i * 0.11, 0.18))
+    ;[523.25, 659.25, 783.99, 1046.5].forEach((f) => note(f, 0.5, 1.2))
+    setTimeout(() => void ctx.close(), 2200)
+  } catch {
+    // no audio available
+  }
+}

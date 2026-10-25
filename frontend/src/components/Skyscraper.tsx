@@ -6,7 +6,9 @@ import Facade from './facade/Facade'
 import KitFacade from './facade/KitFacade'
 
 type SkyscraperProps = {
+  /** The house as built on its island (see houseAtLevel). */
   house: House
+  position: [number, number]
   onClick: (id: string) => void
   /** Preview only: show this many more (or fewer) storeys than the house has. */
   storeyDelta?: number
@@ -18,12 +20,12 @@ function previewHeights(house: House, delta: number): number[] {
   return [...heights, ...Array.from({ length: delta }, () => KIT_MIDDLE_HEIGHT)]
 }
 
-export default function Skyscraper({ house, onClick, storeyDelta = 0 }: SkyscraperProps) {
+export default function Skyscraper({ house, position, onClick, storeyDelta = 0 }: SkyscraperProps) {
   const [hovered, setHovered] = useState(false)
   const [w, d] = house.footprint
   const storeyHeights = useMemo(() => previewHeights(house, storeyDelta), [house, storeyDelta])
   const height = storeyHeights.reduce((sum, h) => sum + h, 0)
-  const [x, z] = house.position
+  const [x, z] = position
 
   const handleClick = (event: ThreeEvent<MouseEvent>) => {
     event.stopPropagation()

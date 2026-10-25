@@ -33,6 +33,8 @@ export type TextPrimitive = {
   kind: 'text'
   /** Case does not matter, so input is shown and sent in upper case. */
   uppercase?: boolean
+  /** Koop: account the terminal is logged in as; the manual lists the question per user. */
+  user?: string
 }
 
 /** Arrange all items in an order. Value: item indices in the chosen order. */

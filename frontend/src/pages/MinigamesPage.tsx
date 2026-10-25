@@ -6,7 +6,7 @@ export default function MinigamesPage() {
     <div className="mg-page">
       <header className="mg-header">
         <h1>Minigames</h1>
-        <Link to="/city">← Zur Stadt</Link>
+        <Link to="/islands">← Zu den Inseln</Link>
       </header>
       <div className="mg-grid">
         <Link to="/minigames/bomb" className="mg-tile mg-tile-main">

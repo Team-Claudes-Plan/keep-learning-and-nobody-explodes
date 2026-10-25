@@ -1,7 +1,8 @@
-import { useRef } from 'react'
+import { useMemo, useRef } from 'react'
 import { useFrame } from '@react-three/fiber'
 import type { Group, Mesh } from 'three'
-import { BIRDS, PERCHED_BIRDS, type BirdSpec, type PerchedBird } from '../../data/life'
+import type { GridBlock } from '../../data/islandGrid'
+import { BIRDS, buildPerchedBirds, type BirdSpec, type PerchedBird } from '../../data/life'
 
 function BirdBody({ color, scale = 1 }: { color: string; scale?: number }) {
   return (
@@ -75,13 +76,14 @@ function Perched({ bird }: { bird: PerchedBird }) {
   )
 }
 
-export default function Birds() {
+export default function Birds({ fieldBlocks }: { fieldBlocks: GridBlock[] }) {
+  const perched = useMemo(() => buildPerchedBirds(fieldBlocks), [fieldBlocks])
   return (
     <group>
       {BIRDS.map((bird) => (
         <FlyingBird key={bird.id} bird={bird} />
       ))}
-      {PERCHED_BIRDS.map((bird) => (
+      {perched.map((bird) => (
         <Perched key={bird.id} bird={bird} />
       ))}
     </group>

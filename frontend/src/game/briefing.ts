@@ -14,6 +14,15 @@ export type Manual = {
   statements?: string[]
   /** What each symbol on the bomb stands for. */
   glyphs?: { glyph: number; text: string }[]
+  /** Free-text terminals: the user shown on the terminal; the manual lists these together. */
+  user?: string
+}
+
+const USER_NAMES = ['falke', 'otter', 'luchs', 'kranich', 'dachs', 'marder', 'uhu', 'wiesel', 'biber', 'reiher', 'fuchs', 'specht']
+
+/** A login name like "luchs_42", the same on both sides for a seed. */
+function userName(random: Random) {
+  return `${USER_NAMES[Math.floor(random() * USER_NAMES.length)]}_${10 + Math.floor(random() * 90)}`
 }
 
 export type Briefed = PlannedModule & { manual: Manual }
@@ -72,7 +81,11 @@ export function brief(planned: PlannedModule, random: Random): Briefed {
     case 'number_input':
       // the bomb only shows the unit (on the lock or terminal), the question is in the manual
       return { ...planned, heading: null, manual: { prompt: task.prompt } }
-    case 'text_input':
+    case 'text_input': {
+      // the terminal shows only who is logged in; the manual says which question belongs to that user
+      const user = userName(random)
+      return { ...planned, task: withPrimitive(task, { user }), heading: null, manual: { prompt: task.prompt, user } }
+    }
     case 'coords':
       // just the controls on the bomb, the question is in the manual
       return { ...planned, heading: null, manual: { prompt: task.prompt } }

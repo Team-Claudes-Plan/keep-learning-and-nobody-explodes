@@ -14,23 +14,18 @@ export function planKoop(questions: Question[], seed: number, type: QuestionType
   const random = seededRandom(seed)
   const plan = type ? planForType(questions, MODULES, type, random) : planBomb(questions, MODULES, KOOP_BOMB_SIZE, random)
   // own random stream per module, so the symbols never depend on anything else on the bomb
-  return plan.map((planned, i) => brief(planned, seededRandom(seed * 31 + i + 1)))
+  const briefed = plan.map((planned, i) => brief(planned, seededRandom(seed * 31 + i + 1)))
+  // terminal logins must be unique, or the manual's user list would be ambiguous
+  const taken = new Set<string>()
+  return briefed.map((entry) => {
+    let user = entry.manual.user
+    if (!user) return entry
+    for (let n = 2; taken.has(user); n++) user = `${entry.manual.user}${n}`
+    taken.add(user)
+    if (user === entry.manual.user) return entry
+    return { ...entry, task: { ...entry.task, primitive: { ...entry.task.primitive, user } } as Briefed['task'], manual: { ...entry.manual, user } }
+  })
 }
-
-/** Where plan entry i sits on the bomb (Slot_{i+1}); left/right as seen from the timer side. */
-export const SLOT_LABELS = [
-  'Vorne rechts',
-  'Oben vorne, links',
-  'Oben vorne, rechts',
-  'Oben hinten, links',
-  'Oben hinten, rechts',
-  'Hinten, links',
-  'Hinten, rechts',
-  'Unten hinten, links',
-  'Unten hinten, rechts',
-  'Unten vorne, links',
-  'Unten vorne, rechts',
-]
 
 export function newSeed() {
   return Math.floor(100000 + Math.random() * 900000)

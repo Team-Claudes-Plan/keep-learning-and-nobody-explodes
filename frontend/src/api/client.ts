@@ -1,5 +1,6 @@
 import { mockFetchQuestions, mockSubmitAnswer } from './mock'
-import type { AnswerResult, AnswerSubmission, Question } from './types'
+import { mockFetchIslands, mockSubscribePresence } from './mockIslands'
+import type { AnswerResult, AnswerSubmission, IslandsResponse, Presence, Question } from './types'
 
 // Set VITE_API_URL (e.g. in .env.local) to talk to a real backend.
 // Without it, mock data is used.
@@ -9,6 +10,7 @@ const API_URL: string | undefined = import.meta.env.VITE_API_URL
 const ENDPOINTS = {
   questions: '/questions',
   answer: (questionId: string) => `/questions/${encodeURIComponent(questionId)}/answer`,
+  islands: '/islands',
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -31,4 +33,22 @@ export function submitAnswer(submission: AnswerSubmission): Promise<AnswerResult
     method: 'POST',
     body: JSON.stringify(submission),
   })
+}
+
+/** Islands of the learning groups the current user belongs to. */
+export function fetchIslands(signal?: AbortSignal): Promise<IslandsResponse> {
+  if (!API_URL) return mockFetchIslands()
+  return request(ENDPOINTS.islands, { signal })
+}
+
+/**
+ * Online status of the given users: called once per user right away, then on every change.
+ * Returns a function that stops listening.
+ */
+export function subscribePresence(userIds: string[], onPresence: (presence: Presence) => void): () => void {
+  // TODO: Real presence needs a backend channel (e.g. a websocket like the game session's
+  // 'presence' message). Until then everyone else shows as offline.
+  if (!API_URL) return mockSubscribePresence(userIds, onPresence)
+  for (const userId of userIds) onPresence({ userId, status: 'offline' })
+  return () => undefined
 }

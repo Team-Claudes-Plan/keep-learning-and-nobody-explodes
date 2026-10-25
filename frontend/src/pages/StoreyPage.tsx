@@ -1,7 +1,7 @@
 import { Suspense, useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router'
 import SceneCanvas from '../components/SceneCanvas'
-import { ROOM_CAMERA } from '../components/cameras'
+import { ROOM_CAMERA, roomZoom } from '../components/cameras'
 import RoomStage from '../components/RoomStage'
 import BombTable, { BOMB_SPOT } from '../components/storey/BombTable'
 import RoomBomb from '../components/storey/RoomBomb'
@@ -9,10 +9,13 @@ import RoomDecor from '../components/storey/RoomDecor'
 import Hud from '../components/Hud'
 import { useWallTextures } from '../components/facade/useHouseTextures'
 import type { SurfaceSpec } from '../components/surfaces'
-import { getHouse, getStorey, type House, type Storey } from '../data/houses'
+import type { House, Storey } from '../data/houses'
+import type { ResolvedIsland } from '../data/islands'
+import { useIslandHouse } from '../data/useIslandHouse'
 import { DEFAULT_WALL_ATLAS, resolveParts } from '../data/houseParts'
 import { resolveDesign } from '../data/baseDesigns'
 import { getModule } from '../game/modules'
+import Celebration from '../game/Celebration'
 import { useBombGame } from '../game/useBombGame'
 
 /** Front and centre of the room, in front of the furniture. */
@@ -29,7 +32,7 @@ const ROOM_MODULES = ROOM_MODULE ? [ROOM_MODULE] : []
 /** Shown on the bomb until the questions are there. */
 const PLACEHOLDER_MODULES = ROOM_MODULES.map((m) => ({ id: m.id, status: 'active' as const }))
 
-function StoreyRoom({ house, storey }: { house: House; storey: Storey }) {
+function StoreyRoom({ island, house, storey }: { island: ResolvedIsland; house: House; storey: Storey }) {
   const [lifted, setLifted] = useState(false)
   const game = useBombGame({ modules: ROOM_MODULES, paused: !lifted })
   const ready = game.load.status === 'ready'
@@ -71,8 +74,9 @@ function StoreyRoom({ house, storey }: { house: House; storey: Storey }) {
         camera={{
           position: ROOM_CAMERA.position,
           rotation: ROOM_CAMERA.rotation,
-          zoom: ROOM_CAMERA.zoom,
-          near: 0.1,
+          zoom: roomZoom({ width: window.innerWidth, height: window.innerHeight }),
+          // orthographic: zoomed out on narrow screens, the floor reaches below the camera
+          near: -20,
           far: 200,
         }}
         controls={false}
@@ -104,7 +108,8 @@ function StoreyRoom({ house, storey }: { house: House; storey: Storey }) {
       {focused === null && (
         <Hud title={storey.label}>
           <div className="hud-breadcrumb">
-            <Link to="/city">City</Link> / <Link to={`/houses/${house.id}`}>{house.name}</Link> /{' '}
+            <Link to={`/islands/${island.island.id}`}>{island.island.name}</Link> /{' '}
+            <Link to={`/islands/${island.island.id}/houses/${house.id}`}>{house.name}</Link> /{' '}
             <span>{storey.label}</span>
           </div>
           <div>
@@ -120,6 +125,7 @@ function StoreyRoom({ house, storey }: { house: House; storey: Storey }) {
             <div className="bomb-zoom-panel">{game.card}</div>
           </div>
         )}
+        {lifted && game.outcome === 'defused' && <Celebration />}
         {lifted && over && (
           <button className={`bomb-screen-result ${game.exploded ? 'is-bad' : 'is-good'}`} onClick={game.restart}>
             {game.exploded ? '💥 BOOM' : '✅ Entschärft'}
@@ -132,23 +138,33 @@ function StoreyRoom({ house, storey }: { house: House; storey: Storey }) {
 }
 
 export default function StoreyPage() {
-  const { houseId = '', storeyId = '' } = useParams()
+  const { islandId = '', houseId = '', storeyId = '' } = useParams()
+  const state = useIslandHouse(islandId, houseId)
 
-  const house = getHouse(houseId)
-  const storey = getStorey(houseId, storeyId)
+  if (state.status === 'loading') return null
 
-  if (!house || !storey) {
+  // Only storeys up to the house's level on this island can be entered.
+  const storey = state.status === 'ready' ? state.placed.house.storeys.find((entry) => entry.id === storeyId) : undefined
+
+  if (state.status !== 'ready' || !storey) {
     return (
       <Hud title="Storey not found">
         <div>
-          No storey <strong>{storeyId}</strong> in house <strong>{houseId}</strong>.
+          {state.status === 'error' ? (
+            <>⚠️ {state.message}</>
+          ) : (
+            <>
+              No storey <strong>{storeyId}</strong> in house <strong>{houseId}</strong> on island{' '}
+              <strong>{islandId}</strong>.
+            </>
+          )}
         </div>
         <div className="hud-links">
-          <Link to="/city">Back to city</Link>
+          <Link to={state.status === 'ready' ? `/islands/${islandId}/houses/${houseId}` : '/islands'}>Back</Link>
         </div>
       </Hud>
     )
   }
 
-  return <StoreyRoom house={house} storey={storey} />
+  return <StoreyRoom island={state.island} house={state.placed.house} storey={storey} />
 }

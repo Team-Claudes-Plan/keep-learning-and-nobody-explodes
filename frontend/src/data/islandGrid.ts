@@ -12,43 +12,39 @@ export function blockCenter(i: number, j: number): [number, number] {
   return [i * BLOCK_SPACING, j * BLOCK_SPACING]
 }
 
-export type CityBlock = {
-  i: number
-  j: number
+export type GridCell = { i: number; j: number }
+
+export type GridBlock = GridCell & {
   center: [number, number]
   color: string
 }
 
-export const HOUSE_BLOCKS = [
-  { id: 'house-a', i: -1, j: -1 },
-  { id: 'house-b', i: 1, j: -1 },
-  { id: 'house-c', i: 0, j: 0 },
-  { id: 'house-math-tower', i: -1, j: 1 },
-] as const
+export const cellKey = (cell: GridCell) => `${cell.i}:${cell.j}`
 
-const occupiedKeys = new Set(HOUSE_BLOCKS.map((block) => `${block.i}:${block.j}`))
-
-export function houseBlockCenter(houseId: string): [number, number] {
-  const block = HOUSE_BLOCKS.find((entry) => entry.id === houseId)
-  return block ? blockCenter(block.i, block.j) : [0, 0]
-}
-
-export const CITY_BLOCKS: CityBlock[] = []
-export const FIELD_BLOCKS: CityBlock[] = []
+/** Every buildable cell of an island's grid, the same on every island. */
+export const GRID_BLOCKS: GridBlock[] = []
 
 let blockIndex = 0
 for (let i = -GRID_RADIUS; i <= GRID_RADIUS; i += 1) {
   for (let j = -GRID_RADIUS; j <= GRID_RADIUS; j += 1) {
-    const block: CityBlock = {
+    GRID_BLOCKS.push({
       i,
       j,
       center: blockCenter(i, j),
       color: GRASS_COLORS[Math.abs(i * 3 + j * 5 + blockIndex) % GRASS_COLORS.length],
-    }
-    CITY_BLOCKS.push(block)
-    if (!occupiedKeys.has(`${i}:${j}`)) FIELD_BLOCKS.push(block)
+    })
     blockIndex += 1
   }
+}
+
+export function isGridCell(cell: GridCell): boolean {
+  return Math.abs(cell.i) <= GRID_RADIUS && Math.abs(cell.j) <= GRID_RADIUS
+}
+
+/** Cells without a house; they get trees, bushes and lamps instead. */
+export function freeBlocks(occupied: GridCell[]): GridBlock[] {
+  const taken = new Set(occupied.map(cellKey))
+  return GRID_BLOCKS.filter((block) => !taken.has(cellKey(block)))
 }
 
 const FRONT_FACING_ROAD_LINE = (GRID_RADIUS + 0.5) * BLOCK_SPACING
@@ -60,7 +56,7 @@ for (let i = -GRID_RADIUS - 1; i <= GRID_RADIUS; i += 1) {
   ROAD_LINES.push(line)
 }
 
-export const CITY_EXTENT = GRID_RADIUS * BLOCK_SPACING + BLOCK_SIZE / 2 + SIDEWALK_WIDTH
+export const GRID_EXTENT = GRID_RADIUS * BLOCK_SPACING + BLOCK_SIZE / 2 + SIDEWALK_WIDTH
 
 export type FieldProp = {
   id: string
@@ -85,12 +81,12 @@ function mulberry32(seed: number) {
   }
 }
 
-function buildFieldProps(): FieldProp[] {
+export function buildFieldProps(fieldBlocks: GridBlock[]): FieldProp[] {
   const props: FieldProp[] = []
   const half = BLOCK_SIZE / 2 - 0.45
   const y = SIDEWALK_HEIGHT
 
-  FIELD_BLOCKS.forEach((block, index) => {
+  fieldBlocks.forEach((block, index) => {
     const random = mulberry32(1000 + index * 97 + block.i * 13 + block.j * 29)
     const [cx, cz] = block.center
 
@@ -128,5 +124,3 @@ function buildFieldProps(): FieldProp[] {
 
   return props
 }
-
-export const FIELD_PROPS: FieldProp[] = buildFieldProps()
