@@ -10,8 +10,8 @@ Run Rust/Nix commands from the repository root.
 - `cargo test -p backend <test_name>` — run a focused backend test.
 - With the dev stack running and inside `nix develop`: `cargo test -p backend -- --ignored` — run tests requiring Postgres/S3 and the dev environment variables (the upload and session end-to-end tests).
 - `cargo test -p backend -- --ignored session:: api:: db:: presence` — the database tests that need only Postgres (no S3); this is what CI runs.
-- `cargo fmt --all --check` then `cargo clippy --workspace --all-targets --all-features --locked -- -D warnings` — match Rust CI (`.github/workflows/lint.yml`). Clippy treats the workspace's extensive warning set as errors.
-- CI (`.github/workflows/test.yml`) runs the unit tests, the database tests above and Akasha's against a Postgres service, the frontend lint/build, and the frontend e2e tests (`frontend/e2e/README.md`).
+- `cargo fmt --all --check` then `cargo clippy --workspace --all-targets --all-features --locked -- -D warnings` — match Rust CI (`.github/workflows/ci.yml`). Clippy treats the workspace's extensive warning set as errors.
+- CI (`.github/workflows/ci.yml`) runs fmt, clippy, the unit tests, the database tests above and Akasha's against a Postgres service, and the frontend lint/build. The frontend e2e tests (`frontend/e2e/README.md`) are local only.
 - `nix fmt` — format Nix files after changing the flake.
 
 The frontend is a separate Bun package, not part of the Cargo workspace. From `frontend/`:

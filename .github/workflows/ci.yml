@@ -1,0 +1,105 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  # tests that need a database run against the Postgres service
+  DATABASE_URL: postgres://postgres@localhost:5432/upload
+  # compile sqlx macros (apalis-postgres) from their shipped .sqlx data, not against the empty
+  # CI database, which has no apalis schema until the backend runs its migrations
+  SQLX_OFFLINE: "true"
+  WEBHOOK_TOKEN: ci-webhook-token
+  # no S3 in CI: the client connects lazily and the upload tests are not run
+  S3_ENDPOINT: http://127.0.0.1:9
+  S3_ACCESS_KEY: ci
+  S3_SECRET_KEY: ci
+  S3_BUCKET: ci
+
+jobs:
+  # Lint and tests share one job and one target dir: clippy and the test build reuse the
+  # dependencies' build scripts (cmake, protobuf).
+  rust:
+    name: rust (lint, tests)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_DB: upload
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 5s --health-timeout 5s --health-retries 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Install Rust toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          components: rustfmt, clippy
+          rustflags: ""
+          cache: false
+
+      - name: Cache Rust
+        uses: Swatinem/rust-cache@v2
+        with:
+          cache-bin: false
+          cache-on-failure: true
+
+      - name: Install native build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends build-essential cmake pkg-config protobuf-compiler
+
+      - name: Check formatting
+        run: cargo fmt --all --check
+
+      - name: Run clippy
+        run: cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
+
+      - name: Unit tests
+        run: cargo test --workspace --locked
+
+      # the database tests of sessions, the API, the user channel and Akasha's store; the upload
+      # tests need S3 and stay local
+      - name: Database tests
+        run: |
+          cargo test -p backend --locked -- --ignored session:: api:: db:: presence
+          cargo test -p akasha --locked -- --ignored
+
+  frontend:
+    name: frontend build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Install Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Lint
+        run: bun run lint
+
+      - name: Typecheck and build
+        run: bun run build
+
