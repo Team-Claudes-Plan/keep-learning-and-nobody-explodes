@@ -28,6 +28,12 @@
       systems = [ "x86_64-linux" "aarch64-linux" "x86_64-darwin" "aarch64-darwin" ];
       imports = [ inputs.process-compose-flake.flakeModule ];
 
+      # NixOS module hosting the whole app behind the host's nginx, see nix/module.nix.
+      flake.nixosModules = rec {
+        keep-learning-and-nobody-explodes = import ./nix/module.nix { inherit (inputs) self; };
+        default = keep-learning-and-nobody-explodes;
+      };
+
       perSystem = { self', system, lib, ... }:
         let
           # nixpkgs with the rust-overlay for the pinned toolchain.
@@ -66,7 +72,17 @@
           };
           craneLib = (inputs.crane.mkLib pkgs).overrideToolchain (_: toolchain);
 
-          src = craneLib.cleanCargoSource ./.;
+          # Cargo sources plus the non-Rust files the crates read at build time.
+          src = lib.fileset.toSource {
+            root = ./.;
+            fileset = lib.fileset.unions [
+              (craneLib.fileset.commonCargoSources ./.)
+              ./common/proto
+              ./backend/migrations
+              ./akasha/src/pipeline/prompt
+              ./frontend/src/game/glyphs.ts
+            ];
+          };
           # ONNX Runtime for ort-sys (pulled in by kreuzberg-paddle-ocr); linked dynamically.
           onnxruntime = pkgs.onnxruntime;
           ortEnv = {
@@ -75,14 +91,49 @@
           };
 
           # Native (build-time) and linked system libraries needed by xberg "full".
-          nativeLibs = [ pkgs.pkg-config pkgs.cmake pkgs.rustPlatform.bindgenHook ];
+          nativeLibs = [ pkgs.pkg-config pkgs.cmake pkgs.protobuf pkgs.rustPlatform.bindgenHook ];
           linkLibs = [ onnxruntime pkgs.libheif ];
+          # xberg-tesseract's build script downloads the Tesseract/Leptonica sources,
+          # which the sandbox forbids. It accepts verified copies in its cache
+          # (<cache>/source-artifacts/<key>/<sha256>/<name>), so Nix fetches them.
+          # Revisions and hashes come from xberg-tesseract's build.rs; update them with it.
+          tesseractArtifacts = [
+            {
+              key = "leptonica-source";
+              name = "leptonica.zip";
+              sha256 = "0febcd4fc5cdc9c52d59509b45483d107f9f40922899e3f134ea615094ecbc77";
+              url = "https://codeload.github.com/DanBloomberg/leptonica/zip/13275a278eb55b5746e33f95fbf5a2c8f604b3ab";
+            }
+            {
+              key = "tesseract-source";
+              name = "tesseract.zip";
+              sha256 = "d2470cc33ee34deeae6fc47809d0b33a3623a4343d92ff317ac3b9903c507bad";
+              url = "https://codeload.github.com/tesseract-ocr/tesseract/zip/db0ec62f81b0737fbbe184d8fea40af5738f8eef";
+            }
+            {
+              key = "tessdata-fast-eng";
+              name = "eng.traineddata";
+              sha256 = "7d4322bd2a7749724879683fc3912cb542f19906c83bcc1a52132556427170b2";
+              url = "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/87416418657359cb625c412a48b6e1d6d41c29bd/eng.traineddata";
+            }
+          ];
+          seedTesseractCache = ''
+            export TESSERACT_RS_CACHE_DIR="$TMPDIR/xberg-tesseract-cache"
+          '' + lib.concatMapStrings (a: ''
+            mkdir -p "$TESSERACT_RS_CACHE_DIR/source-artifacts/${a.key}/${a.sha256}"
+            cp ${pkgs.fetchurl { inherit (a) url sha256; }} \
+              "$TESSERACT_RS_CACHE_DIR/source-artifacts/${a.key}/${a.sha256}/${a.name}"
+          '') tesseractArtifacts;
+
           commonArgs = {
             inherit src;
+            pname = "keep-learning-and-nobody-explodes";
+            version = "0.1.0";
             strict-deps = true;
             SQLX_OFFLINE = true;
             nativeBuildInputs = nativeLibs;
             buildInputs = linkLibs;
+            preBuild = seedTesseractCache;
           } // ortEnv;
           cargoArtifacts = craneLib.buildDepsOnly commonArgs;
           backend = craneLib.buildPackage (commonArgs // { inherit cargoArtifacts; });
@@ -205,7 +256,16 @@
           };
         in
         {
+          # The workspace build contains both service binaries: backend and akasha.
           packages.default = backend;
+          packages.server = backend;
+          packages.frontend = pkgs.callPackage ./nix/frontend.nix { };
+          # Re-exported so the NixOS module does not depend on the host's nixpkgs having it.
+          packages.rustfs = pkgs.rustfs;
+
+          checks = lib.optionalAttrs (lib.hasSuffix "-linux" system) {
+            nixos-module = import ./nix/test.nix { inherit (inputs) self; inherit pkgs; };
+          };
 
           formatter = pkgs.nixfmt-rfc-style;
 
