@@ -34,6 +34,7 @@ declare module 'page-flip' {
     getPageCount(): number
     on(event: 'flip', callback: (e: { data: number }) => void): PageFlip
     on(event: 'changeOrientation', callback: (e: { data: 'portrait' | 'landscape' }) => void): PageFlip
+    on(event: 'changeState', callback: (e: { data: 'user_fold' | 'fold_corner' | 'flipping' | 'read' }) => void): PageFlip
     destroy(): void
   }
 }

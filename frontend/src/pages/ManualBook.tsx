@@ -21,6 +21,10 @@ function shuffled<T>(items: T[], random: Random): T[] {
   return copy
 }
 
+/** Height of the paper stack under the open pages, per leaf and at most. */
+const STACK_PER_LEAF = 2.5
+const STACK_MAX = 18
+
 /** Pages of the spread, each the size of an A5-ish sheet (StPageFlip stretches them to the space). */
 const PAGE_WIDTH = 520
 const PAGE_HEIGHT = 730
@@ -65,6 +69,8 @@ export default function ManualBook({ seed, typeLabel, plan }: Props) {
   const host = useRef<HTMLDivElement>(null)
   const flip = useRef<PageFlip | null>(null)
   const [page, setPage] = useState(0)
+  /** A page is being dragged or turning. */
+  const [turning, setTurning] = useState(false)
 
   useEffect(() => {
     if (!host.current) return
@@ -83,8 +89,9 @@ export default function ManualBook({ seed, typeLabel, plan }: Props) {
       showCover: true,
       usePortrait: true,
       drawShadow: true,
-      maxShadowOpacity: 0.35,
-      flippingTime: 900,
+      // a slower turn with a deeper shadow under the lifted page, like picking it up and laying it over
+      maxShadowOpacity: 0.5,
+      flippingTime: 1200,
       mobileScrollSupport: false,
       // corners only bend once a page is grabbed, not on hover
       showPageCorners: false,
@@ -92,6 +99,7 @@ export default function ManualBook({ seed, typeLabel, plan }: Props) {
     })
     book.loadFromHTML(sheets)
     book.on('flip', (e) => setPage(e.data))
+    book.on('changeState', (e) => setTurning(e.data !== 'read'))
     flip.current = book
     return () => {
       flip.current = null
@@ -99,7 +107,10 @@ export default function ManualBook({ seed, typeLabel, plan }: Props) {
     }
   }, [sheets])
 
+  /** Direction of the turn in progress (from the button, key or the half of the book grabbed). */
+  const [heading, setHeading] = useState<1 | -1>(1)
   const turn = useCallback((dir: 1 | -1) => {
+    setHeading(dir)
     if (dir === 1) flip.current?.flipNext()
     else flip.current?.flipPrev()
   }, [])
@@ -115,11 +126,19 @@ export default function ManualBook({ seed, typeLabel, plan }: Props) {
 
   const last = count - 1
   // paper stack under the open pages: thicker on the side where more pages lie
-  const STACK_MIN = 6
-  const STACK_MAX = 18
-  const stackFor = (share: number) => Math.round(STACK_MIN + (STACK_MAX - STACK_MIN) * share)
-  const leftStack = page === 0 ? 0 : stackFor(Math.min(page, last) / last)
-  const rightStack = page >= last ? 0 : stackFor((last - page) / last)
+  // Leaves (sheets, two pages each) turned to the left; the visible page on each side lies on top,
+  // only the leaves underneath show as a stack. At the first spread nothing lies under the left
+  // page but the cover, at the last nothing under the right one.
+  // While a page turns, the book already slides to where the spread it goes to lies (centred when
+  // it closes), instead of jumping there once the page has landed.
+  const shownPage = turning ? (page === 0 ? 1 : page >= last ? last - 1 : Math.max(0, Math.min(last, page + 2 * heading))) : page
+  const leaves = count / 2
+  const turned = Math.floor((page + 1) / 2)
+  const open = page > 0 && page < last
+  const stackFor = (under: number) => (under <= 0 ? 0 : Math.min(STACK_MAX, 3 + under * STACK_PER_LEAF))
+  // hidden while a page is moving: the stack only fits the spread that is lying still
+  const leftStack = open && !turning ? stackFor(turned - 1) : 0
+  const rightStack = open && !turning ? stackFor(leaves - turned - 1) : 0
   const label =
     page === 0 ? 'Cover' : page >= last ? 'Rückseite' : page <= 2 ? 'Anleitung · Seite 2' : `Seite ${page} – ${page + 1}`
 
@@ -136,7 +155,13 @@ export default function ManualBook({ seed, typeLabel, plan }: Props) {
             <span className="book-table-gem is-br" />
           </div>
           {/* closed, the book sits in the middle: the cover is the right half of the spread */}
-          <div className={`book-spread ${page === 0 ? 'is-closed-front' : page >= last ? 'is-closed-back' : ''}`}>
+          <div
+            className={`book-spread ${shownPage === 0 ? 'is-closed-front' : shownPage >= last ? 'is-closed-back' : ''}`}
+            onPointerDownCapture={(e) => {
+              const rect = e.currentTarget.getBoundingClientRect()
+              setHeading(e.clientX < rect.left + rect.width / 2 ? -1 : 1)
+            }}
+          >
             {/* edges of the pages lying underneath, peeking out below and at the outer sides */}
             {leftStack > 0 && <div className="book-stack is-left" style={{ ['--stack' as string]: `${leftStack}px` }} />}
             {rightStack > 0 && <div className="book-stack is-right" style={{ ['--stack' as string]: `${rightStack}px` }} />}
