@@ -1,7 +1,7 @@
 import { useEffect, useMemo } from 'react'
 import { useFrame } from '@react-three/fiber'
 import { useGLTF } from '@react-three/drei'
-import { Color, Group, Mesh, MeshStandardMaterial, Plane, Quaternion, Vector3, type Material, type Object3D } from 'three'
+import { Box3, Color, Group, Mesh, MeshStandardMaterial, Plane, Quaternion, Vector3, type Material, type Object3D } from 'three'
 import { HOUSE_KITS, type HouseKitId } from '../../data/houseKits'
 
 type ModuleName = 'base' | 'middle' | 'top'
@@ -151,6 +151,17 @@ function applyGlow(material: MeshStandardMaterial, glow: number) {
     material.emissive.copy(material.color)
     material.emissiveIntensity = glow * 0.12
   }
+}
+
+/** Height of the kit's roof crown above the top storey, as KitFacade draws it. */
+export function useKitCrownHeight(kit: HouseKitId): number {
+  const { scene } = useGLTF(HOUSE_KITS[kit].url)
+  return useMemo(() => {
+    const crown = findModule(scene, 'top').clone(true)
+    crown.position.set(0, 0, 0)
+    crown.updateMatrixWorld(true)
+    return Math.max(0, new Box3().setFromObject(crown).max.y)
+  }, [scene])
 }
 
 export default function KitFacade({ kit, footprint, storeyHeights, hovered, cutaway }: KitFacadeProps) {

@@ -1,4 +1,4 @@
-import { Suspense, useMemo, useState } from 'react'
+import { Suspense, useEffect, useMemo, useState } from 'react'
 import type { ThreeEvent } from '@react-three/fiber'
 import { Link, useNavigate, useParams } from 'react-router'
 import SceneCanvas from '../components/SceneCanvas'
@@ -23,7 +23,7 @@ import { resolveDesign } from '../data/baseDesigns'
 import { resolveConcept } from '../data/storeyConcepts'
 import type { InteriorDesign } from '../data/interiorTypes'
 import { isDrag } from '../components/interaction'
-import KitFacade from '../components/facade/KitFacade'
+import KitFacade, { useKitCrownHeight } from '../components/facade/KitFacade'
 import { HOUSE_KITS, type HouseKitId } from '../data/houseKits'
 
 const WALL_THICKNESS = 0.08
@@ -138,6 +138,8 @@ type KitShellProps = {
   /** Kit depth to use, the house's real footprint depth. */
   depth: number
   storeyHeights: number[]
+  /** Reports how far the roof reaches above the top storey. */
+  onRoofHeight: (height: number) => void
 }
 
 /**
@@ -145,7 +147,10 @@ type KitShellProps = {
  * so the rooms show through. Rooms are centred on the origin; the kit's front lines up
  * with the rooms' open front (minus the kit's recess).
  */
-function KitShell({ kit, room, depth, storeyHeights }: KitShellProps) {
+function KitShell({ kit, room, depth, storeyHeights, onRoofHeight }: KitShellProps) {
+  const roofHeight = useKitCrownHeight(kit)
+  useEffect(() => onRoofHeight(roofHeight), [roofHeight, onRoofHeight])
+
   const [w, d] = room
   const outer = WALL_THICKNESS / 2 + SHELL_GAP
   const kitW = w + 2 * outer
@@ -177,6 +182,8 @@ function HouseView({ house }: { house: House }) {
   const wall = useWallTextures(house.facade.textures, design, atlas)
 
   const totalHeight = houseHeight(house)
+  // Lets the view scroll up far enough to show the whole roof.
+  const [roofHeight, setRoofHeight] = useState(0)
   const [w, d] = house.footprint
   const [blockX, blockZ] = house.position
   const offsets = house.storeys.map((_, index) =>
@@ -213,7 +220,7 @@ function HouseView({ house }: { house: House }) {
       <SceneCanvas
         camera={{ position: [1.8, focusY + 1.8, 16], zoom: 340, near: 0.1, far: 1000 }}
         controls={{ target: [0, focusY, 0] }}
-        verticalScroll={{ min: 0.6, max: totalHeight - 0.6, step: 0.4 }}
+        verticalScroll={{ min: 0.6, max: totalHeight + roofHeight - 0.6, step: 0.4 }}
         grid={false}
         fog={['#cfe8ff', 15, 26]}
       >
@@ -228,6 +235,7 @@ function HouseView({ house }: { house: House }) {
             room={[w, d / 2]}
             depth={d}
             storeyHeights={storeyHeights}
+            onRoofHeight={setRoofHeight}
           />
         )}
 
