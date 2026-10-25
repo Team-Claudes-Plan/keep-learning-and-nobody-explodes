@@ -114,6 +114,12 @@ export default function ManualBook({ seed, typeLabel, plan }: Props) {
   }, [turn])
 
   const last = count - 1
+  // paper stack under the open pages: thicker on the side where more pages lie
+  const STACK_MIN = 6
+  const STACK_MAX = 18
+  const stackFor = (share: number) => Math.round(STACK_MIN + (STACK_MAX - STACK_MIN) * share)
+  const leftStack = page === 0 ? 0 : stackFor(Math.min(page, last) / last)
+  const rightStack = page >= last ? 0 : stackFor((last - page) / last)
   const label =
     page === 0 ? 'Cover' : page >= last ? 'Rückseite' : page <= 2 ? 'Anleitung · Seite 2' : `Seite ${page} – ${page + 1}`
 
@@ -131,7 +137,10 @@ export default function ManualBook({ seed, typeLabel, plan }: Props) {
           </div>
           {/* closed, the book sits in the middle: the cover is the right half of the spread */}
           <div className={`book-spread ${page === 0 ? 'is-closed-front' : page >= last ? 'is-closed-back' : ''}`}>
-            <div ref={host} />
+            {/* edges of the pages lying underneath, peeking out below and at the outer sides */}
+            {leftStack > 0 && <div className="book-stack is-left" style={{ ['--stack' as string]: `${leftStack}px` }} />}
+            {rightStack > 0 && <div className="book-stack is-right" style={{ ['--stack' as string]: `${rightStack}px` }} />}
+            <div ref={host} className="book-pages" />
           </div>
         </div>
       </div>

@@ -2063,7 +2063,7 @@ canvas {
 
 .book-tilt {
   position: relative;
-  transform: rotateX(8deg);
+  transform: rotateX(13deg);
   transform-origin: 50% 70%;
 }
 
@@ -2113,6 +2113,54 @@ canvas {
 
 .book-host {
   width: 100%;
+}
+
+.book-pages {
+  position: relative;
+  z-index: 1;
+}
+
+/* the paper stack: page edges as fine lines, peeking out below and at the outer edge */
+.book-stack {
+  position: absolute;
+  top: calc(var(--stack) * 0.6);
+  bottom: calc(var(--stack) * -1);
+  width: 50%;
+  background:
+    linear-gradient(180deg, transparent calc(100% - var(--stack)), rgba(60, 35, 10, 0.25) 100%),
+    repeating-linear-gradient(0deg, #eadbb4 0 2px, #c9b386 2px 3px);
+  box-shadow: 0 10px 18px rgba(0, 0, 0, 0.45);
+  transition: bottom 0.4s, top 0.4s, left 0.4s, right 0.4s;
+}
+
+.book-stack.is-left {
+  left: calc(var(--stack) * -1);
+  right: 50%;
+  border-radius: 6px 0 0 6px;
+  background:
+    linear-gradient(180deg, transparent calc(100% - var(--stack)), rgba(60, 35, 10, 0.25) 100%),
+    repeating-linear-gradient(90deg, #eadbb4 0 2px, #c9b386 2px 3px);
+}
+
+.book-stack.is-right {
+  left: 50%;
+  right: calc(var(--stack) * -1);
+  border-radius: 0 6px 6px 0;
+  background:
+    linear-gradient(180deg, transparent calc(100% - var(--stack)), rgba(60, 35, 10, 0.25) 100%),
+    repeating-linear-gradient(90deg, #eadbb4 0 2px, #c9b386 2px 3px);
+}
+
+/* horizontal page lines along the bottom edge */
+.book-stack::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: var(--stack);
+  background: repeating-linear-gradient(0deg, #e4d3a9 0 2px, #b9a172 2px 3px);
+  border-radius: 0 0 4px 4px;
 }
 
 /* a page (StPageFlip positions and bends them) */
