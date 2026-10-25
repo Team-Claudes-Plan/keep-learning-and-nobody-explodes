@@ -18,6 +18,7 @@ use crate::{akasha::AkashaClient, config::Config, db::Database};
 use anyhow::{Context, Result};
 use axum::{Router, routing::get};
 use std::sync::Arc;
+use tower_http::cors::CorsLayer;
 use tower_http::trace::TraceLayer;
 use tracing_subscriber::EnvFilter;
 
@@ -68,7 +69,8 @@ async fn main() -> Result<()> {
             token: config.webhook_token,
         }))
         .merge(api::routes().with_state(state))
-        .layer(TraceLayer::new_for_http());
+        .layer(TraceLayer::new_for_http())
+        .layer(CorsLayer::permissive());
 
     let listener = tokio::net::TcpListener::bind(&config.listen_addr)
         .await
