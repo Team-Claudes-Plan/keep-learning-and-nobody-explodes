@@ -10,15 +10,12 @@ import UploadDialog, { UploadIcon } from '../components/islands/UploadDialog'
 import FriendsDialog, { FriendsIcon } from '../components/islands/FriendsDialog'
 import BannerDialog from '../components/islands/BannerDialog'
 import WelcomeDialog from '../components/islands/WelcomeDialog'
-import { reloadIslands, usePresence, useIslands } from '../api/useIslands'
-import { onAddedToIsland, onIslandUpdated } from '../api/invites'
-import type { Island, IslandsResponse } from '../api/types'
+import { contentIslandId, usePresence, useIslands } from '../api/useIslands'
+import { onIslandUpdated } from '../api/invites'
+import type { IslandsResponse } from '../api/types'
 import { bridgeBetween, islandCenter, resolveIsland } from '../data/islands'
 
 const MIN_ZOOM = 30
-
-/** The island that owns the documents and houses: the island itself, or the origin of a fork. */
-const contentIsland = (island: Island) => island.origin_id ?? island.id
 
 function IslandsView({ data }: { data: IslandsResponse }) {
   const navigate = useNavigate()
@@ -34,7 +31,7 @@ function IslandsView({ data }: { data: IslandsResponse }) {
   const resolved = useMemo(
     () =>
       islands.map((island) =>
-        resolveIsland(island, Math.max(island.building, uploadedTo.has(contentIsland(island)) ? 1 : 0)),
+        resolveIsland(island, Math.max(island.building, uploadedTo.has(contentIslandId(island)) ? 1 : 0)),
       ),
     [islands, uploadedTo],
   )
@@ -47,13 +44,19 @@ function IslandsView({ data }: { data: IslandsResponse }) {
   )
   const presence = usePresence(memberIds, me.id)
 
-  // An upload finished processing: reload the page so its new houses show up.
+  // An upload finished processing: from now on the backend's `building` count is accurate. The
+  // islands themselves are refetched by useIslands, so the new houses show up in place.
   useEffect(
     () =>
-      onIslandUpdated((rootId) => {
-        if (islands.some((island) => contentIsland(island) === rootId)) window.location.reload()
-      }),
-    [islands],
+      onIslandUpdated((rootId) =>
+        setUploadedTo((current) => {
+          if (!current.has(rootId)) return current
+          const next = new Set(current)
+          next.delete(rootId)
+          return next
+        }),
+      ),
+    [],
   )
 
   const open = useCallback((id: string) => navigate(`/islands/${id}`, { replace: true }), [navigate])
@@ -250,9 +253,6 @@ function IslandsView({ data }: { data: IslandsResponse }) {
 
 export default function IslandsPage() {
   const state = useIslands()
-
-  // A friend added me to an island: fetch the islands again so it shows up.
-  useEffect(() => onAddedToIsland(() => void reloadIslands().catch(() => undefined)), [])
 
   if (state.status === 'loading') return null
   if (state.status === 'signed-out') return <WelcomeDialog />

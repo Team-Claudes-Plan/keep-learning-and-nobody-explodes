@@ -26,7 +26,7 @@ game itself runs over the [session protocol](session-protocol.md).
 | `invite_answered` | `invite_id, accepted` | to the inviter |
 | `invite_cancelled` | `invite_id` | the invite is gone: taken back, answered in another tab, or the inviter or invitee went offline |
 | `added_to_island` | `island_id, by: { id, name }` | someone made you a member of an island: created it with you, added you, or forked one to learn with you. The two of you are partners from now on, so a `presence` for them follows if it is news |
-| `island_updated` | `island_id` | a document uploaded to this island (or the island it was forked from) finished processing, with or without new houses. Sent to every member of the root island and its forks; `island_id` is the root. Refetch `GET /api/islands` (its `building` count drops) |
+| `island_updated` | `island_id` | a document uploaded to this island (or the island it was forked from) finished processing, with or without new houses (OCR failed, Akasha could not be reached, or Akasha is done). Sent to every member of the root island and its forks; `island_id` is the root. Refetch `GET /api/islands` (its `building` count drops). The frontend also refetches after a reconnect, since pushes sent while offline are lost |
 | `error` | `request_id?, code, message` | answers one message; the connection stays open |
 
 Error codes: `bad_message`, `partner_offline` (no open channel),

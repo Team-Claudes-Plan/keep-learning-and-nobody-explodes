@@ -110,9 +110,16 @@ async fn process_ocr(
         return Err(std::io::Error::other("island row is missing").into());
     };
 
-    akasha
+    if let Err(error) = akasha
         .manifest_trials(document_id, island_id, &island_name, &text)
-        .await?;
+        .await
+    {
+        // Otherwise the document stays pending and its island under construction for good.
+        if let Err(db_error) = db.mark_trials_failed(document_id).await {
+            tracing::error!(error = %db_error, key = %job.key, "failed to record Akasha hand-off error");
+        }
+        return Err(error.into());
+    }
 
     tracing::info!(
         name: "ocr.completed",

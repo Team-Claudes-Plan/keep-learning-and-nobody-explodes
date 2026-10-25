@@ -420,6 +420,12 @@ export function onIslandUpdated(listener: (islandId: string) => void): () => voi
   return channel.onIslandUpdated(listener)
 }
 
+/** Calls `listener` whenever the channel's state changes, e.g. after a reconnect. */
+export function subscribeUserChannel(listener: () => void): () => void {
+  channel.start()
+  return channel.subscribe(listener)
+}
+
 export function cancelInvite(inviteId: string) {
   channel.cancel(inviteId)
 }

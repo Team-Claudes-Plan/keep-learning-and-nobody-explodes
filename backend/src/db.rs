@@ -1015,6 +1015,18 @@ impl Database {
         Ok(())
     }
 
+    /// Records that no houses come from `document_id` because it never
+    /// reached Akasha, so the island stops showing it as under construction.
+    pub async fn mark_trials_failed(&self, document_id: Uuid) -> Result<(), sqlx::Error> {
+        sqlx::query(
+            "UPDATE documents SET trials_status = 'failed', updated_at = now() WHERE id = $1",
+        )
+        .bind(document_id)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
     pub async fn mark_failed(
         &self,
         bucket: &str,

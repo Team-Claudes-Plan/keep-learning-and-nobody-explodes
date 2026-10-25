@@ -682,6 +682,45 @@ mod tests {
 
     #[tokio::test]
     #[ignore = "requires the dev stack (`nix run .#dev`) and its environment"]
+    async fn a_failed_hand_off_ends_the_construction() {
+        let (app, db) = app().await;
+        let alex = user(&db, "Alex").await;
+        let island = db
+            .create_island("Semester 1", alex, None)
+            .await
+            .expect("island");
+        let document: Uuid = sqlx::query_scalar(
+            "INSERT INTO documents (island_id, bucket, object_key, ocr_status)
+             VALUES ($1, 'test', $2, 'completed') RETURNING id",
+        )
+        .bind(island)
+        .bind(format!("uploads/{island}/{}/notes.pdf", Uuid::new_v4()))
+        .fetch_one(db.pool())
+        .await
+        .expect("document");
+        assert_eq!(db.pending_documents(island).await.expect("count"), 1);
+
+        let mut listener = sqlx::postgres::PgListener::connect_with(db.pool())
+            .await
+            .expect("listener");
+        listener.listen("island_documents").await.expect("listen");
+        db.mark_trials_failed(document).await.expect("mark failed");
+        let notification = listener.recv().await.expect("notification");
+        assert_eq!(notification.payload(), island.to_string());
+
+        let (_, body) = call(&app, Method::GET, "/api/islands", Some(alex), None).await;
+        let entry = body["islands"]
+            .as_array()
+            .expect("islands")
+            .iter()
+            .find(|candidate| candidate["id"] == island.to_string())
+            .expect("island is listed")
+            .clone();
+        assert_eq!(entry["building"], 0);
+    }
+
+    #[tokio::test]
+    #[ignore = "requires the dev stack (`nix run .#dev`) and its environment"]
     async fn requires_a_known_user() {
         let (app, _) = app().await;
 
