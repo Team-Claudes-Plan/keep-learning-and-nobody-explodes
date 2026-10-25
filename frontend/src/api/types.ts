@@ -218,41 +218,52 @@ export type SessionServerMessage =
   | { type: 'presence'; player_id: string; online: boolean }
   | { type: 'error'; code: SessionErrorCode; message: string }
 
-// Islands: one island per learning group, see the islands page.
+// Islands, as `GET /api/islands` returns them (backend/src/api/islands.rs).
+// An island holds the documents a user uploaded and belongs to one or two users. Akasha files the
+// questions it generates from the documents under topics; each topic is a house on the island.
 
 export type UserSummary = {
   id: string
   name: string
 }
 
-/** One user learning alone, or the user together with a friend. */
+/** The members of an island: its creator, then the partner if there is one. The id is the island's. */
 export type LearningGroup = {
   id: string
   members: [UserSummary] | [UserSummary, UserSummary]
 }
 
-/** A house design placed on an island's grid, built up to `level` storeys. */
+/** A topic of an island, shown as a house. */
 export type IslandHouse = {
-  /** Id of the house design, e.g. the Mathematics house. */
-  houseId: string
-  cell: { i: number; j: number }
+  topic_id: string
+  name: string
+  /** 0 to MAX_HOUSE_LEVEL: how far every member of the island has learned the topic. */
   level: number
+  /** Whether every member has learned some of it (`level > 0`). */
+  unlocked: boolean
 }
 
 export type Island = {
   id: string
   name: string
+  /** The island this one was forked from. A fork shares its origin's documents and houses. */
+  origin_id: string | null
   group: LearningGroup
   houses: IslandHouse[]
 }
 
-/**
- * The islands the current user may see: only those of groups they belong to.
- * The backend enforces this; the frontend just shows what it gets.
- */
+/** The islands the current user is a member of; the backend enforces this. */
 export type IslandsResponse = {
   me: UserSummary
   islands: Island[]
+}
+
+/** Response of `POST /upload?island_id=…`. */
+export type UploadResponse = {
+  /** The island that owns the files: the origin, if the upload went to a fork. */
+  island_id: string
+  objects: { key: string; filename: string; content_type: string; size: number }[]
+  failures: { filename?: string; message: string }[]
 }
 
 export type PresenceStatus = 'online' | 'offline'

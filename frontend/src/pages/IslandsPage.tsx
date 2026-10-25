@@ -5,9 +5,10 @@ import Hud from '../components/Hud'
 import Bridge from '../components/islands/Bridge'
 import IslandCamera from '../components/islands/IslandCamera'
 import IslandScene from '../components/islands/IslandScene'
+import { IslandPartner, NewIsland, SignIn, UploadDocuments, You } from '../components/islands/IslandActions'
 import { usePresence, useIslands } from '../api/useIslands'
 import type { IslandsResponse } from '../api/types'
-import { bridgeBetween, islandCenter, resolveIsland } from '../data/islands'
+import { MAX_HOUSE_LEVEL, bridgeBetween, islandCenter, resolveIsland } from '../data/islands'
 
 const MIN_ZOOM = 30
 
@@ -26,6 +27,8 @@ function IslandsView({ data }: { data: IslandsResponse }) {
     [islands],
   )
   const presence = usePresence(memberIds, me.id)
+
+  const open = useCallback((id: string) => navigate(`/islands/${id}`, { replace: true }), [navigate])
 
   const goTo = useCallback(
     (index: number) => {
@@ -47,7 +50,9 @@ function IslandsView({ data }: { data: IslandsResponse }) {
   if (!active) {
     return (
       <Hud title="No islands yet">
-        <div>You are not part of any learning group yet.</div>
+        <div>Create an island and upload your documents; their topics become its houses.</div>
+        <NewIsland onCreated={open} open />
+        <You me={me} />
       </Hud>
     )
   }
@@ -66,7 +71,7 @@ function IslandsView({ data }: { data: IslandsResponse }) {
             me={me}
             presence={presence}
             storeyDelta={storeyDelta}
-            onHouseClick={(houseId) => navigate(`/islands/${entry.island.id}/houses/${houseId}`)}
+            onHouseClick={(topicId) => navigate(`/islands/${entry.island.id}/houses/${topicId}`)}
           />
         ))}
 
@@ -85,6 +90,12 @@ function IslandsView({ data }: { data: IslandsResponse }) {
       </SceneCanvas>
 
       <Hud title={active.island.name}>
+        {active.island.origin_id && (
+          <div className="hud-note">
+            Shares its houses with{' '}
+            {islands.find((island) => island.id === active.island.origin_id)?.name ?? 'the island it was forked from'}
+          </div>
+        )}
         <ul className="hud-members">
           {active.island.group.members.map((member) => {
             const status = presence[member.id] ?? 'offline'
@@ -131,16 +142,30 @@ function IslandsView({ data }: { data: IslandsResponse }) {
           ))}
         </div>
 
+        <div className="hud-section">Houses</div>
+        {active.island.houses.length === 0 && <div>No houses yet: upload documents to build some.</div>}
         <ul className="hud-links">
           {active.houses.map((placed) => (
-            <li key={placed.house.id}>
-              <Link to={`/islands/${active.island.id}/houses/${placed.house.id}`}>{placed.house.name}</Link>
+            <li key={placed.topicId}>
+              <Link to={`/islands/${active.island.id}/houses/${placed.topicId}`}>{placed.name}</Link>
               <span className="hud-concept">
-                Level {placed.level}/{placed.maxLevel}
+                {placed.unlocked ? `Level ${placed.level}/${MAX_HOUSE_LEVEL}` : 'locked'}
               </span>
             </li>
           ))}
+          {active.unplaced.map((topic) => (
+            <li key={topic.topic_id}>
+              {topic.name}
+              <span className="hud-concept">no room on the island yet</span>
+            </li>
+          ))}
         </ul>
+
+        <div className="hud-section">Island</div>
+        <UploadDocuments island={active.island} />
+        <IslandPartner island={active.island} onForked={open} />
+        <NewIsland onCreated={open} />
+        <You me={me} />
       </Hud>
     </>
   )
@@ -150,6 +175,13 @@ export default function IslandsPage() {
   const state = useIslands()
 
   if (state.status === 'loading') return null
+  if (state.status === 'signed-out') {
+    return (
+      <Hud title="Welcome">
+        <SignIn />
+      </Hud>
+    )
+  }
   if (state.status === 'error') {
     return (
       <Hud title="Islands">
