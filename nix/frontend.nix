@@ -74,6 +74,7 @@ let
     outputHash =
       {
         x86_64-linux = "sha256-XOX5dV91YqPZBdbr7nkxQkKrgZ/kSj72U3fBpOH0KbI=";
+        aarch64-linux = "sha256-q3A5KmHZLQp3sds7bJ38b6VGgI9HzmBElpUVZmRmXBk=";
       }
       .${stdenvNoCC.hostPlatform.system} or lib.fakeHash;
   };
