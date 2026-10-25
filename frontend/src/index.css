@@ -2984,6 +2984,128 @@ canvas {
   }
 }
 
+/* Islands: welcome / sign-in dialog. Reuses the upload dialog shell above. */
+
+.welcome-backdrop {
+  background:
+    linear-gradient(160deg, rgba(255, 255, 255, 0.18) 0 30%, transparent 30%),
+    linear-gradient(110deg, #7cc4f2 0 45%, #5aaee8 45% 75%, #3f95d6 75%);
+}
+
+.upload-dialog.welcome-dialog {
+  width: min(400px, 100%);
+  filter: drop-shadow(0 7px 0 #1b1030) drop-shadow(0 14px 14px rgba(20, 0, 40, 0.35));
+}
+
+.welcome-banner {
+  --cut: 14px;
+  padding: 4px;
+  background: #1b1030;
+}
+
+.welcome-banner-face {
+  --cut: 11px;
+  padding: 20px 16px 18px;
+  text-align: center;
+  background:
+    linear-gradient(160deg, rgba(255, 255, 255, 0.5) 0 20%, transparent 20%),
+    linear-gradient(32deg, rgba(120, 40, 0, 0.22) 0 26%, transparent 26%),
+    linear-gradient(115deg, #ffd65e 0 44%, #ffb43b 44% 70%, #f39324 70%);
+}
+
+.welcome-banner-title {
+  font: 800 28px / 1.1 system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #ffffff;
+  text-shadow:
+    0 3px 0 #1b1030,
+    2px 0 0 #1b1030,
+    -2px 0 0 #1b1030,
+    0 -2px 0 #1b1030;
+}
+
+.welcome-banner-subtitle {
+  margin-top: 6px;
+  color: #1b1030;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.welcome-lead {
+  margin: 16px 0 10px;
+  font-weight: 600;
+}
+
+.welcome-form {
+  display: flex;
+  gap: 10px;
+  align-items: stretch;
+}
+
+.welcome-form input {
+  flex: 1;
+  min-width: 0;
+  padding: 7px 10px;
+  border: 3px solid #1b1030;
+  border-radius: 4px;
+  background: #ffffff;
+  color: #1b1030;
+  font: 600 14px / 1.2 system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  box-shadow: inset 0 3px 0 rgba(0, 0, 0, 0.08);
+}
+
+.welcome-form input:focus {
+  outline: 3px solid #ffd23f;
+  outline-offset: 2px;
+}
+
+.welcome-form .hud-error {
+  flex-basis: 100%;
+  padding: 6px 8px;
+  border: 3px solid currentColor;
+  background: #fde4e4;
+  color: #9b1c1f;
+  font-weight: 600;
+}
+
+.welcome-form:has(.hud-error) {
+  flex-wrap: wrap;
+}
+
+.welcome-details {
+  margin-top: 14px;
+}
+
+.welcome-details .hud-note {
+  margin-top: 6px;
+  color: #6b5f80;
+}
+
+.welcome-details .hud-id {
+  margin: 4px 0 8px;
+  padding: 6px 8px;
+  border: 2px dashed rgba(27, 16, 48, 0.3);
+  background: #ffffff;
+  font-size: 12px;
+}
+
+.welcome-details .hud-buttons {
+  gap: 10px;
+}
+
+.welcome-details summary {
+  cursor: pointer;
+  color: #2f6bd9;
+  font-weight: 700;
+}
+
+.welcome-details .welcome-form {
+  margin-top: 8px;
+}
+
 /* Koop over the game session (pages/SessionPages.tsx) */
 
 .session-panel {

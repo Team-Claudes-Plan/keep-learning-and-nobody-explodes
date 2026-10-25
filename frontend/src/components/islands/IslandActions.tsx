@@ -40,18 +40,19 @@ type FormProps = {
   submit: string
   onSubmit: () => void
   disabled?: boolean
+  className?: string
   children: ReactNode
 }
 
-function Form({ action, submit, onSubmit, disabled = false, children }: FormProps) {
+function Form({ action, submit, onSubmit, disabled = false, className = 'hud-form', children }: FormProps) {
   const handleSubmit = (event: FormEvent) => {
     event.preventDefault()
     if (!action.pending && !disabled) onSubmit()
   }
   return (
-    <form className="hud-form" onSubmit={handleSubmit}>
+    <form className={className} onSubmit={handleSubmit}>
       {children}
-      <button type="submit" disabled={action.pending || disabled}>
+      <button type="submit" className="is-primary" disabled={action.pending || disabled}>
         {action.pending ? '…' : submit}
       </button>
       {action.error && <div className="hud-error">⚠️ {action.error}</div>}
@@ -75,10 +76,10 @@ export function SignIn() {
 
   return (
     <>
-      <div>Who is learning? Pick a name to get your first island.</div>
       <Form
         action={action}
         submit="Start"
+        className="welcome-form"
         disabled={!name.trim()}
         onSubmit={() =>
           void action.run(async () => {
@@ -89,11 +90,12 @@ export function SignIn() {
       >
         <input value={name} onChange={(event) => setName(event.target.value)} placeholder="Your name" />
       </Form>
-      <details className="hud-details">
+      <details className="welcome-details">
         <summary>I already have a user id</summary>
         <Form
           action={action}
           submit="Continue"
+          className="welcome-form"
           disabled={!existing.trim()}
           onSubmit={() => void action.run(() => signIn(existing.trim()))}
         >
@@ -105,13 +107,13 @@ export function SignIn() {
 }
 
 /** Shows the current user's id, which others need to add them to an island. */
-export function You({ me }: { me: UserSummary }) {
+export function You({ me, className = 'hud-details' }: { me: UserSummary; className?: string }) {
   const [copied, setCopied] = useState(false)
   const copy = () => {
     void navigator.clipboard?.writeText(me.id).then(() => setCopied(true))
   }
   return (
-    <details className="hud-details">
+    <details className={className}>
       <summary>You: {me.name}</summary>
       <div className="hud-note">Share your user id so others can learn with you:</div>
       <code className="hud-id">{me.id}</code>
@@ -135,36 +137,46 @@ export function You({ me }: { me: UserSummary }) {
   )
 }
 
-/** Creates an island, alone or with a partner, and opens it. */
-export function NewIsland({ onCreated, open = false }: { onCreated: (islandId: string) => void; open?: boolean }) {
+/**
+ * Creates an island, alone or with a partner, and opens it.
+ * `inline` shows just the name field, without the collapsible HUD wrapper, for the no-islands dialog.
+ */
+export function NewIsland({ onCreated, inline = false }: { onCreated: (islandId: string) => void; inline?: boolean }) {
   const action = useAction()
   const [name, setName] = useState('')
   const [partner, setPartner] = useState('')
 
-  return (
-    <details className="hud-details" open={open}>
-      <summary>New island</summary>
-      <Form
-        action={action}
-        submit="Create island"
-        disabled={!name.trim()}
-        onSubmit={() =>
-          void action.run(async () => {
-            const id = await createIsland(name.trim(), partner.trim() || undefined)
-            await reloadIslands()
-            setName('')
-            setPartner('')
-            onCreated(id)
-          })
-        }
-      >
-        <input value={name} onChange={(event) => setName(event.target.value)} placeholder="e.g. Semester 1" />
+  const form = (
+    <Form
+      action={action}
+      submit="Create island"
+      className={inline ? 'welcome-form' : undefined}
+      disabled={!name.trim()}
+      onSubmit={() =>
+        void action.run(async () => {
+          const id = await createIsland(name.trim(), partner.trim() || undefined)
+          await reloadIslands()
+          setName('')
+          setPartner('')
+          onCreated(id)
+        })
+      }
+    >
+      <input value={name} onChange={(event) => setName(event.target.value)} placeholder="e.g. Semester 1" />
+      {!inline && (
         <input
           value={partner}
           onChange={(event) => setPartner(event.target.value)}
           placeholder={`Partner (optional): ${PARTNER_HINT}`}
         />
-      </Form>
+      )}
+    </Form>
+  )
+  if (inline) return form
+  return (
+    <details className="hud-details">
+      <summary>New island</summary>
+      {form}
     </details>
   )
 }

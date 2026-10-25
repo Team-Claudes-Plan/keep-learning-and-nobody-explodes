@@ -5,8 +5,10 @@ import Hud from '../components/Hud'
 import Bridge from '../components/islands/Bridge'
 import IslandCamera from '../components/islands/IslandCamera'
 import IslandScene from '../components/islands/IslandScene'
-import { IslandPartner, NewIsland, SignIn, You } from '../components/islands/IslandActions'
+import { IslandPartner, NewIsland, You } from '../components/islands/IslandActions'
 import UploadDialog, { UploadIcon } from '../components/islands/UploadDialog'
+import BannerDialog from '../components/islands/BannerDialog'
+import WelcomeDialog from '../components/islands/WelcomeDialog'
 import { usePresence, useIslands } from '../api/useIslands'
 import type { IslandsResponse } from '../api/types'
 import { bridgeBetween, islandCenter, resolveIsland } from '../data/islands'
@@ -53,11 +55,14 @@ function IslandsView({ data }: { data: IslandsResponse }) {
 
   if (!active) {
     return (
-      <Hud title="No islands yet">
-        <div>Create an island and upload your documents; their topics become its houses.</div>
-        <NewIsland onCreated={open} open />
-        <You me={me} />
-      </Hud>
+      <BannerDialog
+        title="No islands yet"
+        subtitle={`Hi ${me.name}!`}
+        lead="Create an island and upload your documents; their topics become its houses."
+      >
+        <NewIsland onCreated={open} inline />
+        <You me={me} className="welcome-details" />
+      </BannerDialog>
     )
   }
 
@@ -195,13 +200,7 @@ export default function IslandsPage() {
   const state = useIslands()
 
   if (state.status === 'loading') return null
-  if (state.status === 'signed-out') {
-    return (
-      <Hud title="Welcome">
-        <SignIn />
-      </Hud>
-    )
-  }
+  if (state.status === 'signed-out') return <WelcomeDialog />
   if (state.status === 'error') {
     return (
       <Hud title="Islands">
