@@ -16,6 +16,7 @@ import {
   type BombContentProps,
 } from '../../game/Bomb3D'
 import { isDrag } from '../interaction'
+import { roomZoom } from '../cameras'
 
 /** Width of the bomb lying on the table, and once picked up (it comes towards the camera). */
 const REST_WIDTH = 0.9
@@ -123,7 +124,8 @@ export default function RoomBomb({ rest, lifted, onLift, onPutDown, ...content }
     return { center, extent, width: Math.max(extent.x, extent.z) }
   }, [bomb])
 
-  const [baseZoom] = useState(() => camera.zoom)
+  // Follows the viewport, so small screens zoom out and keep the table in view.
+  const baseZoom = roomZoom(size)
   const [restX, restY, restZ] = rest
 
   const poses = useMemo(() => {

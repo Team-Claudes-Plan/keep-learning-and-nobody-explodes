@@ -1,8 +1,12 @@
 //! HTTP endpoint that stores uploaded course material in the object store.
 //!
-//! [`router`] exposes `POST /upload`, which accepts `multipart/form-data`.
-//! Every part carrying a filename is written to
-//! `uploads/<uuid>/<sanitized-filename>`; other form fields are ignored.
+//! [`router`] exposes `POST /upload?island_id=<uuid>`, which accepts
+//! `multipart/form-data`. Every upload belongs to an existing island (create one
+//! with `PUT /api/islands/create`). Every part carrying a filename is written to
+//! `uploads/<island_id>/<uuid>/<sanitized-filename>`; other form fields are
+//! ignored. The island is part of the key because that is all the object-created
+//! webhook reports back; see [`island_of_key`]. An upload to a fork is stored
+//! under the fork's origin, which owns the shared content.
 //!
 //! File bytes are spooled to a temporary file one chunk at a time and then
 //! streamed to the object store. A request therefore does not retain the whole
@@ -21,18 +25,24 @@ use std::path::{Path, PathBuf};
 
 use axum::{
     Json, Router,
-    extract::{DefaultBodyLimit, Multipart, State, multipart::Field},
+    extract::{DefaultBodyLimit, Multipart, Query, State, multipart::Field},
     routing::post,
 };
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use tokio::io::AsyncWriteExt;
 use uuid::Uuid;
+
+use crate::db::Database;
 
 pub use error::UploadError;
 pub use store::ObjectStore;
 
 /// Content type assumed when a part does not declare one.
 const FALLBACK_CONTENT_TYPE: &str = "application/octet-stream";
+
+/// Prefix of every uploaded object; the webhook and the dev stack's bucket
+/// notification only react to keys below it.
+pub const KEY_PREFIX: &str = "uploads/";
 
 /// Filename used when the client-supplied one sanitizes to nothing.
 const FALLBACK_FILENAME: &str = "file";
@@ -50,9 +60,18 @@ pub struct StoredObject {
     pub size: usize,
 }
 
+/// Query parameters of `POST /upload`.
+#[derive(Debug, Deserialize)]
+struct UploadQuery {
+    /// Island the uploaded files belong to.
+    island_id: Uuid,
+}
+
 /// Response body of `POST /upload`.
 #[derive(Debug, Serialize)]
 pub struct UploadResponse {
+    /// Island that owns the files: the requested one, or the origin of a fork.
+    pub island_id: Uuid,
     /// Files stored by the request, in request order.
     pub objects: Vec<StoredObject>,
     /// File parts that were not stored, in request order.
@@ -73,15 +92,49 @@ pub struct FailedUpload {
 }
 
 /// Builds the upload routes, rejecting bodies larger than `max_body_bytes`.
-pub fn router(store: ObjectStore, max_body_bytes: usize) -> Router {
+pub fn router<S>(store: S, max_body_bytes: usize) -> Router
+where
+    S: UploadStore + Clone + 'static,
+{
     Router::new()
-        .route("/upload", post(upload))
+        .route("/upload", post(upload::<S>))
         .layer(DefaultBodyLimit::max(max_body_bytes))
         .with_state(store)
 }
 
-/// Stores the objects produced by one upload request.
-trait UploadStore: Send + Sync {
+/// Builds the object key of an uploaded file.
+fn object_key(island_id: Uuid, filename: &str) -> String {
+    format!(
+        "{KEY_PREFIX}{island_id}/{}/{}",
+        Uuid::new_v4(),
+        sanitize_filename(filename)
+    )
+}
+
+/// Returns the island an object key was uploaded to.
+///
+/// Only keys of the form `uploads/<island_id>/<uuid>/<filename>` qualify. Keys
+/// from before islands existed (`uploads/<uuid>/<filename>`) and keys written
+/// outside the upload endpoint do not, so they cannot be attached to an island.
+#[must_use]
+pub fn island_of_key(key: &str) -> Option<Uuid> {
+    let mut segments = key.strip_prefix(KEY_PREFIX)?.split('/');
+    let island_id = segments.next()?.parse().ok()?;
+    let document = segments.next()?;
+    let filename = segments.next()?;
+    (segments.next().is_none() && document.parse::<Uuid>().is_ok() && !filename.is_empty())
+        .then_some(island_id)
+}
+
+/// What an upload needs: the object store and the islands to attach files to.
+pub trait UploadStore: Send + Sync {
+    /// The island that owns the content of `island_id` (itself, or the origin
+    /// of a fork), or `None` if the island does not exist.
+    fn content_island(
+        &self,
+        island_id: Uuid,
+    ) -> impl Future<Output = Result<Option<Uuid>, UploadError>> + Send;
+
     /// Streams the file at `path` to `key`.
     fn put(
         &self,
@@ -92,22 +145,70 @@ trait UploadStore: Send + Sync {
     ) -> impl Future<Output = Result<(), UploadError>> + Send;
 }
 
-async fn upload(
-    State(store): State<ObjectStore>,
+/// The production [`UploadStore`]: files go to S3, islands live in Postgres.
+#[derive(Debug, Clone)]
+pub struct Uploader {
+    objects: ObjectStore,
+    db: Database,
+}
+
+impl Uploader {
+    #[must_use]
+    pub fn new(objects: ObjectStore, db: Database) -> Self {
+        Self { objects, db }
+    }
+}
+
+impl UploadStore for Uploader {
+    fn content_island(
+        &self,
+        island_id: Uuid,
+    ) -> impl Future<Output = Result<Option<Uuid>, UploadError>> + Send {
+        let db = self.db.clone();
+        async move {
+            db.content_island(island_id)
+                .await
+                .map_err(UploadError::internal)
+        }
+    }
+
+    fn put(
+        &self,
+        key: &str,
+        content_type: &str,
+        path: &Path,
+        len: usize,
+    ) -> impl Future<Output = Result<(), UploadError>> + Send {
+        self.objects.put(key, content_type, path, len)
+    }
+}
+
+async fn upload<S: UploadStore>(
+    State(store): State<S>,
+    Query(query): Query<UploadQuery>,
     multipart: Multipart,
 ) -> Result<Json<UploadResponse>, UploadError> {
-    accept_upload(&store, multipart).await.map(Json)
+    accept_upload(&store, query.island_id, multipart)
+        .await
+        .map(Json)
 }
 
 async fn accept_upload(
     store: &impl UploadStore,
+    island_id: Uuid,
     multipart: Multipart,
 ) -> Result<UploadResponse, UploadError> {
-    store_parts(store, multipart).await
+    let Some(owner) = store.content_island(island_id).await? else {
+        return Err(UploadError::island_not_found(format!(
+            "island {island_id} does not exist"
+        )));
+    };
+    store_parts(store, owner, multipart).await
 }
 
 async fn store_parts(
     store: &impl UploadStore,
+    island_id: Uuid,
     mut multipart: Multipart,
 ) -> Result<UploadResponse, UploadError> {
     let mut objects = Vec::new();
@@ -123,7 +224,11 @@ async fn store_parts(
                     return Err(upload_err);
                 }
                 failures.push(failed_part(None, &upload_err));
-                return Ok(UploadResponse { objects, failures });
+                return Ok(UploadResponse {
+                    island_id,
+                    objects,
+                    failures,
+                });
             }
         };
         let Some(filename) = field.file_name().map(str::to_owned) else {
@@ -143,15 +248,15 @@ async fn store_parts(
                     return Err(err);
                 }
                 failures.push(failed_part(Some(filename), &err));
-                return Ok(UploadResponse { objects, failures });
+                return Ok(UploadResponse {
+                    island_id,
+                    objects,
+                    failures,
+                });
             }
         };
         let size = spooled.len;
-        let key = format!(
-            "uploads/{}/{}",
-            Uuid::new_v4(),
-            sanitize_filename(&filename)
-        );
+        let key = object_key(island_id, &filename);
         // The temporary file is removed when `spooled` drops, including when
         // the object store rejects this part. Earlier objects stay.
         if let Err(err) = store.put(&key, &content_type, &spooled.path, size).await {
@@ -184,7 +289,11 @@ async fn store_parts(
             "failed to store file",
         )));
     }
-    Ok(UploadResponse { objects, failures })
+    Ok(UploadResponse {
+        island_id,
+        objects,
+        failures,
+    })
 }
 
 fn failed_part(filename: Option<String>, err: &UploadError) -> FailedUpload {

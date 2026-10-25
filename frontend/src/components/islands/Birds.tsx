@@ -1,7 +1,20 @@
-import { useRef } from 'react'
+import { useMemo, useRef } from 'react'
 import { useFrame } from '@react-three/fiber'
 import type { Group, Mesh } from 'three'
-import { BIRDS, PERCHED_BIRDS, type BirdSpec, type PerchedBird } from '../../data/life'
+import type { GridBlock } from '../../data/islandGrid'
+import {
+  BIRDS,
+  birdPosition,
+  buildFlightProfile,
+  buildPerchedBirds,
+  sampleFlightProfile,
+  type BirdSpec,
+  type Obstacle,
+  type PerchedBird,
+} from '../../data/life'
+
+/** How quickly a bird settles on a new cruising height, e.g. after a house grew. */
+const ALTITUDE_RATE = 3
 
 function BirdBody({ color, scale = 1 }: { color: string; scale?: number }) {
   return (
@@ -26,7 +39,9 @@ function BirdBody({ color, scale = 1 }: { color: string; scale?: number }) {
   )
 }
 
-function FlyingBird({ bird }: { bird: BirdSpec }) {
+function FlyingBird({ bird, obstacles }: { bird: BirdSpec; obstacles: Obstacle[] }) {
+  const profile = useMemo(() => buildFlightProfile(bird, obstacles), [bird, obstacles])
+  const altitude = useRef<number | null>(null)
   const ref = useRef<Group>(null)
   const leftWing = useRef<Mesh>(null)
   const rightWing = useRef<Mesh>(null)
@@ -38,9 +53,13 @@ function FlyingBird({ bird }: { bird: BirdSpec }) {
     angle.current += bird.speed * delta
     const a = angle.current
 
-    const x = bird.center[0] + Math.cos(a) * bird.radiusX
-    const z = bird.center[1] + Math.sin(a) * bird.radiusZ
-    const y = bird.height + Math.sin(a * 3) * bird.bob
+    const [x, z] = birdPosition(bird, a)
+    const target = sampleFlightProfile(profile, a)
+    altitude.current =
+      altitude.current === null
+        ? target
+        : altitude.current + (target - altitude.current) * (1 - Math.exp(-ALTITUDE_RATE * delta))
+    const y = altitude.current + Math.sin(a * 3) * bird.bob
     const tx = -Math.sin(a) * bird.radiusX
     const tz = Math.cos(a) * bird.radiusZ
 
@@ -75,13 +94,20 @@ function Perched({ bird }: { bird: PerchedBird }) {
   )
 }
 
-export default function Birds() {
+type BirdsProps = {
+  fieldBlocks: GridBlock[]
+  /** Houses of the island; flying birds pass over them. */
+  obstacles: Obstacle[]
+}
+
+export default function Birds({ fieldBlocks, obstacles }: BirdsProps) {
+  const perched = useMemo(() => buildPerchedBirds(fieldBlocks), [fieldBlocks])
   return (
     <group>
       {BIRDS.map((bird) => (
-        <FlyingBird key={bird.id} bird={bird} />
+        <FlyingBird key={bird.id} bird={bird} obstacles={obstacles} />
       ))}
-      {PERCHED_BIRDS.map((bird) => (
+      {perched.map((bird) => (
         <Perched key={bird.id} bird={bird} />
       ))}
     </group>

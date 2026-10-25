@@ -1,10 +1,10 @@
 import {
   BLOCK_SIZE,
-  FIELD_BLOCKS,
   ROAD_LINES,
   SIDEWALK_HEIGHT,
   SIDEWALK_WIDTH,
-} from './city'
+  type GridBlock,
+} from './islandGrid'
 
 export const ROAD_SURFACE_Y = 0.012
 export const LANE_OFFSET = 0.26
@@ -126,12 +126,15 @@ function sidewalkLoop(center: Vec2): Vec2[] {
   ]
 }
 
-const fieldBlocksByDistance = [...FIELD_BLOCKS].sort(
-  (left, right) =>
-    Math.hypot(left.center[0], left.center[1]) - Math.hypot(right.center[0], right.center[1]),
-)
+function byDistance(fieldBlocks: GridBlock[]): GridBlock[] {
+  return [...fieldBlocks].sort(
+    (left, right) =>
+      Math.hypot(left.center[0], left.center[1]) - Math.hypot(right.center[0], right.center[1]),
+  )
+}
 
-function buildAnimals(): AnimalSpec[] {
+export function buildAnimals(fieldBlocks: GridBlock[]): AnimalSpec[] {
+  const fieldBlocksByDistance = byDistance(fieldBlocks)
   const random = mulberry32(7341)
   return fieldBlocksByDistance.slice(0, 4).map((block, index) => {
     const kind = index % 2 === 0 ? 'dog' : 'cat'
@@ -147,8 +150,6 @@ function buildAnimals(): AnimalSpec[] {
     }
   })
 }
-
-export const ANIMALS: AnimalSpec[] = buildAnimals()
 
 function buildBirds(): BirdSpec[] {
   const random = mulberry32(5510)
@@ -168,7 +169,8 @@ function buildBirds(): BirdSpec[] {
 
 export const BIRDS: BirdSpec[] = buildBirds()
 
-function buildPerchedBirds(): PerchedBird[] {
+export function buildPerchedBirds(fieldBlocks: GridBlock[]): PerchedBird[] {
+  const fieldBlocksByDistance = byDistance(fieldBlocks)
   const random = mulberry32(9182)
   const half = BLOCK_SIZE / 2 + SIDEWALK_WIDTH / 2
   return fieldBlocksByDistance.slice(-2).map((block, index) => {
@@ -185,4 +187,86 @@ function buildPerchedBirds(): PerchedBird[] {
   })
 }
 
-export const PERCHED_BIRDS: PerchedBird[] = buildPerchedBirds()
+export type SquirrelSpec = {
+  id: string
+  /** Base of the tree the squirrel circles. */
+  center: Vec2
+  radius: number
+  color: string
+  scale: number
+}
+
+/** One squirrel scampering around the first tree of the free cell nearest the island's middle. */
+export function buildSquirrel(fieldBlocks: GridBlock[], trees: { position: [number, number, number] }[]): SquirrelSpec | null {
+  const block = byDistance(fieldBlocks)[0]
+  if (!block) return null
+  const [cx, cz] = block.center
+  const tree = [...trees].sort(
+    (a, b) =>
+      Math.hypot(a.position[0] - cx, a.position[2] - cz) - Math.hypot(b.position[0] - cx, b.position[2] - cz),
+  )[0]
+  const center: Vec2 = tree ? [tree.position[0], tree.position[2]] : [cx, cz]
+  return { id: `squirrel-${block.i}-${block.j}`, center, radius: 0.45, color: '#b5652e', scale: 0.55 }
+}
+
+/** A building birds must fly over: its footprint on the ground and the height of its roof. */
+export type Obstacle = {
+  center: Vec2
+  size: Vec2
+  top: number
+}
+
+/** Room left for the roof crown and landmark above the top storey. */
+const CROWN_ALLOWANCE = 2
+/** Space birds keep from footprints and roofs. */
+const FLIGHT_MARGIN = 0.5
+const FLIGHT_CLEARANCE = 0.8
+/** Height birds gain per unit flown when climbing over (or sinking after) a building. */
+const CLIMB_SLOPE = 0.6
+const PROFILE_SAMPLES = 180
+
+export function birdPosition(bird: BirdSpec, angle: number): Vec2 {
+  return [bird.center[0] + Math.cos(angle) * bird.radiusX, bird.center[1] + Math.sin(angle) * bird.radiusZ]
+}
+
+/**
+ * Cruising height of a bird around its loop, sampled evenly over one turn. Above a building it
+ * flies clear of the roof, climbing early enough to get there and sinking back afterwards.
+ */
+export function buildFlightProfile(bird: BirdSpec, obstacles: Obstacle[]): number[] {
+  const step = (Math.PI * 2) / PROFILE_SAMPLES
+  const points = Array.from({ length: PROFILE_SAMPLES }, (_, index) => birdPosition(bird, index * step))
+  const needed = points.map(([x, z]) =>
+    obstacles.reduce((height, obstacle) => {
+      const inside =
+        Math.abs(x - obstacle.center[0]) < obstacle.size[0] / 2 + FLIGHT_MARGIN &&
+        Math.abs(z - obstacle.center[1]) < obstacle.size[1] / 2 + FLIGHT_MARGIN
+      return inside ? Math.max(height, obstacle.top + CROWN_ALLOWANCE + FLIGHT_CLEARANCE + bird.bob) : height
+    }, bird.height),
+  )
+
+  // Path length between neighbouring samples, then a ramp from every point that needs height.
+  const segment = points.map((point, index) => {
+    const next = points[(index + 1) % points.length]
+    return Math.hypot(next[0] - point[0], next[1] - point[1])
+  })
+  const total = segment.reduce((sum, length) => sum + length, 0)
+  const along = segment.reduce<number[]>((acc, length, index) => [...acc, acc[index] + length], [0])
+
+  return needed.map((_, i) =>
+    needed.reduce((height, need, j) => {
+      if (need <= height) return height
+      const gap = Math.abs(along[i] - along[j])
+      const distance = Math.min(gap, total - gap)
+      return Math.max(height, need - CLIMB_SLOPE * distance)
+    }, needed[i]),
+  )
+}
+
+export function sampleFlightProfile(profile: number[], angle: number): number {
+  const turn = Math.PI * 2
+  const position = ((((angle % turn) + turn) % turn) / turn) * profile.length
+  const index = Math.floor(position)
+  const t = position - index
+  return profile[index % profile.length] * (1 - t) + profile[(index + 1) % profile.length] * t
+}

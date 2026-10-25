@@ -3,18 +3,22 @@
 //! Accepts course material over HTTP, stores it in S3, and processes `RustFS`
 //! object-created webhooks through a Postgres-backed OCR worker.
 
+mod akasha;
 mod api;
 mod config;
 mod db;
+mod knowledge;
+mod presence;
 mod session;
 mod upload;
 mod webhook;
 mod worker;
 
-use crate::{config::Config, db::Database};
+use crate::{akasha::AkashaClient, config::Config, db::Database};
 use anyhow::{Context, Result};
 use axum::{Router, routing::get};
 use std::sync::Arc;
+use tower_http::cors::CorsLayer;
 use tower_http::trace::TraceLayer;
 use tracing_subscriber::EnvFilter;
 
@@ -25,6 +29,7 @@ static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 pub struct GlobalState {
     pub db: Database,
     pub sessions: session::Sessions,
+    pub presence: presence::Hub,
 }
 
 #[tokio::main]
@@ -42,16 +47,21 @@ async fn main() -> Result<()> {
     worker::setup(&db).await?;
     let backend = worker::backend(&db);
     let store = upload::ObjectStore::connect(&config.s3).await;
+    let akasha = AkashaClient::lazy(&config.akasha_grpc_url, config.akasha_language)?;
 
     let state = Arc::new(GlobalState {
         db: db.clone(),
         sessions: session::Sessions::new(db.clone()),
+        presence: presence::Hub::new(),
     });
 
     let app = Router::new()
         .route("/", get(health))
         .route("/health", get(health))
-        .merge(upload::router(store.clone(), config.max_upload_bytes))
+        .merge(upload::router(
+            upload::Uploader::new(store.clone(), db.clone()),
+            config.max_upload_bytes,
+        ))
         .merge(webhook::router(webhook::WebhookState {
             db: db.clone(),
             backend: backend.clone(),
@@ -59,7 +69,8 @@ async fn main() -> Result<()> {
             token: config.webhook_token,
         }))
         .merge(api::routes().with_state(state))
-        .layer(TraceLayer::new_for_http());
+        .layer(TraceLayer::new_for_http())
+        .layer(CorsLayer::permissive());
 
     let listener = tokio::net::TcpListener::bind(&config.listen_addr)
         .await
@@ -73,7 +84,7 @@ async fn main() -> Result<()> {
 
     tokio::try_join!(
         async { server.await.context("server failed") },
-        worker::run(db, store, backend),
+        worker::run(db, store, backend, akasha),
     )?;
     Ok(())
 }

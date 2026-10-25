@@ -144,6 +144,15 @@ function mulberry32(seed: number) {
   }
 }
 
+/**
+ * Islands line up along the screen's left-to-right axis. With the iso camera at (1, 1, 1)
+ * that is world (1, 0, -1); bridges leave each island in this direction and its opposite.
+ */
+export const SCREEN_RIGHT: Vec2 = [Math.SQRT1_2, -Math.SQRT1_2]
+export const BRIDGE_THETAS = [Math.atan2(SCREEN_RIGHT[1], SCREEN_RIGHT[0]), Math.atan2(-SCREEN_RIGHT[1], -SCREEN_RIGHT[0])]
+/** Half-width (in radians) of the shore kept free of boulders where a bridge lands. */
+const BRIDGE_CLEARANCE = 0.12
+
 export const RIVER_LEVEL = 0.05
 export const WATERFALL_BOTTOM = -11
 export const RIVER_EXIT_THETA = (72 * Math.PI) / 180
@@ -205,7 +214,10 @@ function buildBoulders(): Boulder[] {
     const delta = Math.atan2(Math.sin(theta - RIVER_EXIT_THETA), Math.cos(theta - RIVER_EXIT_THETA))
     const nearRiver = Math.abs(delta) < 0.3
     const nearLake = Math.hypot(x - LAKE_CENTER[0], z - LAKE_CENTER[1]) < 2.2
-    if (nearRiver || nearLake) continue
+    const nearBridge = BRIDGE_THETAS.some(
+      (bridge) => Math.abs(Math.atan2(Math.sin(theta - bridge), Math.cos(theta - bridge))) < BRIDGE_CLEARANCE,
+    )
+    if (nearRiver || nearLake || nearBridge) continue
 
     rocks.push({ position: [x, y, z], scale, rotation, color })
   }

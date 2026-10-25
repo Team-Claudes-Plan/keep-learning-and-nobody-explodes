@@ -1,4 +1,4 @@
-use apalis::prelude::{TaskBuilder, TaskSink};
+use apalis::prelude::{TaskBuilder, TaskSink, TaskSinkError};
 use axum::{
     Json, Router,
     extract::State,
@@ -9,7 +9,8 @@ use axum::{
 use serde::Deserialize;
 
 use crate::{
-    db::Database,
+    db::{self, Database},
+    upload::KEY_PREFIX,
     worker::{OcrBackend, OcrJob},
 };
 
@@ -53,31 +54,52 @@ async fn receive_event(
         }
 
         let key = decode_key(&record.s3.object.key)?;
-        if !key.starts_with("uploads/") {
+        if !key.starts_with(KEY_PREFIX) {
             continue;
         }
-
         let job = OcrJob {
             bucket: record.s3.bucket.name,
             key,
             etag: record.s3.object.etag,
         };
+        let Some(island_id) = job.island_id() else {
+            tracing::warn!(name: "ocr.skipped", key = %job.key, "object key does not name an island, ignoring");
+            continue;
+        };
+        // Register the document first: a job must never exist without its row.
+        // Both steps are idempotent, so a redelivered event is safe.
+        let document_id = match state
+            .db
+            .mark_queued(
+                island_id,
+                &job.bucket,
+                &job.key,
+                job.etag.as_deref(),
+                job.filename(),
+            )
+            .await
+        {
+            Ok(document_id) => document_id,
+            Err(error) if db::is_unknown_island(&error) => {
+                // Retrying cannot help, and a failing hook would make RustFS redeliver it.
+                tracing::warn!(name: "ocr.skipped", key = %job.key, island_id = %island_id, "island does not exist, ignoring");
+                continue;
+            }
+            Err(error) => return Err(WebhookError::internal(error)),
+        };
         let task = TaskBuilder::new(job.clone())
             .idempotency_key(job.idempotency_key())
             .build();
-        state
-            .backend
-            .clone()
-            .push_task(task)
-            .await
-            .map_err(WebhookError::internal)?;
-        state
-            .db
-            .mark_queued(&job.bucket, &job.key, job.etag.as_deref(), job.filename())
-            .await
-            .map_err(WebhookError::internal)?;
+        match state.backend.clone().push_task(task).await {
+            Ok(()) => {}
+            Err(error) if already_enqueued(&error) => {
+                tracing::info!(name: "ocr.duplicate", key = %job.key, "OCR job already enqueued");
+                continue;
+            }
+            Err(error) => return Err(WebhookError::internal(error)),
+        }
 
-        tracing::info!(name: "ocr.enqueued", key = %job.key, "enqueued OCR job");
+        tracing::info!(name: "ocr.enqueued", key = %job.key, document_id = %document_id, "enqueued OCR job");
         enqueued += 1;
     }
 
@@ -86,6 +108,17 @@ async fn receive_event(
     } else {
         Ok(StatusCode::OK)
     }
+}
+
+/// The queue rejects a job whose idempotency key it has seen. That means the
+/// event was delivered before; answering with an error would only make `RustFS`
+/// retry it forever.
+fn already_enqueued(error: &TaskSinkError<apalis_postgres::Error>) -> bool {
+    matches!(
+        error,
+        TaskSinkError::PushError(apalis_postgres::Error::Database(error))
+            if error.as_database_error().is_some_and(sqlx::error::DatabaseError::is_unique_violation)
+    )
 }
 
 fn decode_key(encoded: &str) -> Result<String, WebhookError> {
@@ -194,5 +227,124 @@ mod tests {
             decode_key("uploads%2Fabc%2Fmy%20notes.pdf").expect("key should decode"),
             "uploads/abc/my notes.pdf"
         );
+    }
+
+    /// Needs the dev database (`nix run .#dev`, then `cargo test -- --ignored`
+    /// inside `nix develop`).
+    mod database {
+        use axum::{
+            Router,
+            body::Body,
+            http::{Request, StatusCode, header},
+        };
+        use tower::ServiceExt;
+        use uuid::Uuid;
+
+        use super::super::{WebhookState, router};
+        use crate::{db::Database, worker};
+
+        const BUCKET: &str = "webhook-test";
+        const TOKEN: &str = "secret";
+
+        async fn app() -> (Router, Database) {
+            let url = std::env::var("DATABASE_URL").expect("dev environment should be set");
+            let db = Database::connect(&url, 2)
+                .await
+                .expect("database should connect");
+            db.migrate().await.expect("migrations should apply");
+            worker::setup(&db)
+                .await
+                .expect("job queue should be set up");
+            let state = WebhookState {
+                db: db.clone(),
+                backend: worker::OcrBackend::new(db.pool())
+                    .with_config(apalis_postgres::Config::default().queue("webhook-test")),
+                bucket: BUCKET.to_owned(),
+                token: TOKEN.to_owned(),
+            };
+            (router(state), db)
+        }
+
+        async fn deliver(app: &Router, token: &str, key: &str) -> StatusCode {
+            let payload = serde_json::json!({
+                "Records": [{
+                    "eventName": "s3:ObjectCreated:Put",
+                    "s3": {
+                        "bucket": { "name": BUCKET },
+                        "object": { "key": key, "eTag": "etag" }
+                    }
+                }]
+            });
+            let request = Request::post("/events/rustfs")
+                .header(header::AUTHORIZATION, format!("Bearer {token}"))
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from(payload.to_string()))
+                .expect("request should build");
+            app.clone()
+                .oneshot(request)
+                .await
+                .expect("router is infallible")
+                .status()
+        }
+
+        async fn document(db: &Database, key: &str) -> Option<(Uuid, String)> {
+            sqlx::query_as("SELECT island_id, ocr_status FROM documents WHERE object_key = $1")
+                .bind(key)
+                .fetch_optional(db.pool())
+                .await
+                .expect("query")
+        }
+
+        #[tokio::test]
+        #[ignore = "requires the dev stack (`nix run .#dev`) and its environment"]
+        async fn registers_the_document_in_the_island() {
+            let (app, db) = app().await;
+            let user = db.create_user("webhook test").await.expect("user");
+            let island = db
+                .create_island("webhook test", user, None)
+                .await
+                .expect("island");
+            let key = format!("uploads/{island}/{}/notes.txt", Uuid::new_v4());
+
+            assert_eq!(deliver(&app, TOKEN, &key).await, StatusCode::OK);
+            // a redelivered event is acknowledged without enqueueing again
+            assert_eq!(deliver(&app, TOKEN, &key).await, StatusCode::NO_CONTENT);
+
+            assert_eq!(
+                document(&db, &key).await,
+                Some((island, "queued".to_owned()))
+            );
+        }
+
+        #[tokio::test]
+        #[ignore = "requires the dev stack (`nix run .#dev`) and its environment"]
+        async fn ignores_keys_without_an_island() {
+            let (app, db) = app().await;
+            let key = format!("uploads/{}/notes.txt", Uuid::new_v4());
+
+            assert_eq!(deliver(&app, TOKEN, &key).await, StatusCode::NO_CONTENT);
+
+            assert_eq!(document(&db, &key).await, None);
+        }
+
+        #[tokio::test]
+        #[ignore = "requires the dev stack (`nix run .#dev`) and its environment"]
+        async fn ignores_unknown_islands() {
+            let (app, db) = app().await;
+            let key = format!("uploads/{}/{}/notes.txt", Uuid::new_v4(), Uuid::new_v4());
+
+            assert_eq!(deliver(&app, TOKEN, &key).await, StatusCode::NO_CONTENT);
+
+            assert_eq!(document(&db, &key).await, None);
+        }
+
+        #[tokio::test]
+        #[ignore = "requires the dev stack (`nix run .#dev`) and its environment"]
+        async fn rejects_a_wrong_token() {
+            let (app, _) = app().await;
+            let key = format!("uploads/{}/{}/notes.txt", Uuid::new_v4(), Uuid::new_v4());
+
+            assert_eq!(deliver(&app, "wrong", &key).await, StatusCode::UNAUTHORIZED);
+        }
     }
 }

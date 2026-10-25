@@ -21,22 +21,41 @@ bun run dev       # dev server with HMR
 bun run build     # type-check (tsc -b) + production build
 bun run lint      # oxlint
 bun run preview   # serve the production build
+bun run e2e       # two-player sessions against the real backend (needs Postgres)
 ```
 
 ## Routes
 
-- `/` → redirects to `/city`.
-- `/city` — isometric cityscape on a low-poly island floating in the sky:
-  rough rocky shorelines mark the edge of the world and panning is clamped to
-  the shoreline. A small lake feeds a river that flows to the edge and spills
-  off the island as a waterfall into the void. Skyscraper blocks stand in for
-  houses; clicking one navigates to the house.
-- `/houses/:houseId` — 2.5D slightly-angled front view of one house. Each
-  storey is a single room; the wall facing the camera is omitted so the storeys
-  are visible from outside. Clicking a storey opens that room.
-- `/houses/:houseId/storeys/:storeyId` — a single storey in the isometric
-  view. Room items are clickable and can be selected/highlighted.
-- `*` — not found page.
+- `/`, `/islands/:islandId?` — the user's islands; each topic stands as a house.
+- `/islands/:islandId/houses/:topicId` — one house: one storey per skill of the
+  topic's skill tree that is unlocked (the passed ones and the next). Clicking a
+  storey starts a session there with the island partner.
+- `/islands/:islandId/houses/:topicId/storeys/:storeyId` — practising a storey
+  alone; only without a backend (mock mode).
+- `/koop/spiel/:gameId` — a session game (`?rolle=expert` to join as expert,
+  `?insel=` to lead back to the house afterwards). `/koop` is the lobby for
+  games over whole topics.
+- `/minigames/…` — the bomb modules on their own.
+
+## Game sessions
+
+With a backend (`VITE_API_URL`) every game runs over the websockets:
+
+- the user channel (`src/api/invites.ts`, `schema/user-channel.md`) for the
+  partner's presence and the invite,
+- the session socket (`src/api/session.ts`, `schema/session-protocol.md`) for
+  the game itself; the server picks the questions of the storey's skill, runs
+  the clock and judges every answer.
+
+The bomb of storey *n* has `questionsForStorey(n)` modules (4 on the ground
+floor, one more per storey, at most 8; `src/game/sessionRules.ts`). Winning it
+passes the storey and unlocks the next one. Without `VITE_API_URL` the app runs
+on in-memory mocks (`src/api/mock*.ts`) and a fake user channel.
+
+## End-to-end tests
+
+`bun run e2e` plays full two-player sessions in Chromium against the real
+backend and Postgres; see [`e2e/README.md`](e2e/README.md).
 
 ## Data & structure
 

@@ -116,13 +116,37 @@ export type Role = 'defuser' | 'expert'
 /** A question without its prompt; the expert reads the prompt out. */
 export type DefuserTask = Question extends infer Q ? (Q extends Question ? Omit<Q, 'prompt'> : never) : never
 
+/**
+ * A question whose answers are shown as symbols: like DefuserTask, but the answer list is missing
+ * (`options` for choice questions, `items` for order and grouping, `right` for matching). The
+ * briefing's `glyphs` give the symbol per list entry.
+ */
+export type SymbolizedTask =
+  | Omit<SingleChoiceQuestion, 'prompt' | 'options'>
+  | Omit<MultipleChoiceQuestion, 'prompt' | 'options'>
+  | Omit<OrderQuestion, 'prompt' | 'items'>
+  | Omit<GroupingQuestion, 'items'>
+  | Omit<MatchingQuestion, 'right'>
+
 /** Like AnswerSubmission, but the turn identifies the question. */
 export type SessionAnswer = {
   [T in QuestionType]: { type: T; answer: AnswerMap[T] }
 }[QuestionType]
 
 export type SessionClientMessage =
-  | { type: 'create'; topics: string[]; question_count: number; role?: Role; time_limit_secs?: number }
+  | {
+      type: 'create'
+      /** Topics (houses) to draw from; ignored for a storey game. */
+      topics: string[]
+      question_count: number
+      role?: Role
+      time_limit_secs?: number
+      /** Plays one storey: its tasks only, and winning passes it. Needs `island_id`. */
+      skill_id?: string
+      island_id?: string
+      /** Only this user may join; the game is not listed in the lobby. */
+      invited?: string
+    }
   | { type: 'join'; game_id: string; role?: Role }
   | { type: 'resume'; game_id: string; token: string; last_sequence?: number }
   | { type: 'submit_answer'; turn: number; answer: SessionAnswer }
@@ -135,6 +159,9 @@ export type GameView = {
   game_id: string
   status: GameStatus
   topics: string[]
+  /** The storey (skill) the bomb is played on, if any. */
+  skill_id: string | null
+  invited: string | null
   players: { player_id: string; seat: 0 | 1; online: boolean }[]
   deadline: string | null
   turn: number | null
@@ -155,7 +182,9 @@ export type GameEvent =
       question_count: number
       time_limit_secs: number
       created_by: string
-      parts: { position: number; task_id: string; question_type: QuestionType }[]
+      parts: { position: number; task_id: string; question_type: QuestionType; glyphs?: number[] }[]
+      skill_id?: string
+      invited?: string
     }
   | { type: 'player_joined'; player_id: string; seat: 0 | 1; role: Role | null }
   | { type: 'game_started'; deadline: string; starting_defuser: string }
@@ -180,15 +209,23 @@ export type SessionErrorCode =
   | 'stale_turn'
   | 'invalid_state'
   | 'no_tasks'
+  | 'skill_locked'
+  | 'not_island_member'
+  | 'not_invited'
   | 'internal'
 
 export type SessionServerMessage =
   | { type: 'welcome'; game_id: string; player_id: string; token: string; seat: 0 | 1 }
   | { type: 'snapshot'; state: GameView }
   | { type: 'event'; sequence: number; at: string; event: GameEvent }
-  /** Defuser: the question without its prompt. */
-  | { type: 'briefing'; turn: number; role: 'defuser'; task: DefuserTask }
-  /** Expert: the prompt and the manual page. */
+  /** Defuser, answers as plain text: the question without its prompt. */
+  | { type: 'briefing'; turn: number; role: 'defuser'; task: DefuserTask; glyphs?: undefined }
+  /**
+   * Defuser, answers as symbols: the answer list is missing from `task`, entry i of it is shown as
+   * symbol `glyphs[i]` (see game/glyphs.ts). A symbol appears at most once per game.
+   */
+  | { type: 'briefing'; turn: number; role: 'defuser'; task: SymbolizedTask; glyphs: number[] }
+  /** Expert: the prompt, the manual page and what the defuser's symbols stand for. */
   | {
       type: 'briefing'
       turn: number
@@ -196,6 +233,90 @@ export type SessionServerMessage =
       question_type: QuestionType
       prompt: string | null
       instruction: Record<string, unknown>
+      symbols?: { glyph: number; text: string }[]
     }
   | { type: 'presence'; player_id: string; online: boolean }
   | { type: 'error'; code: SessionErrorCode; message: string }
+
+/** A waiting game, as `GET /api/sessions` lists them (games of the last hour, newest first). */
+export type Lobby = {
+  id: string
+  /** House (topic) ids the questions come from. */
+  topics: string[]
+  question_count: number
+  /** The role left for whoever joins, if the creator picked one. */
+  open_role: Role | null
+}
+
+// Islands, as `GET /api/islands` returns them (backend/src/api/islands.rs).
+// An island holds the documents a user uploaded and belongs to one or two users. Akasha files the
+// questions it generates from the documents under topics; each topic is a house on the island.
+
+export type UserSummary = {
+  id: string
+  name: string
+}
+
+/** The members of an island: its creator, then the partner if there is one. The id is the island's. */
+export type LearningGroup = {
+  id: string
+  members: [UserSummary] | [UserSummary, UserSummary]
+}
+
+/** A skill of a topic, shown as a storey of its house. */
+export type HouseSkill = {
+  skill_id: string
+  name: string
+  /** Place in the skill tree: 0 is the ground floor. */
+  position: number
+  /** Playable tasks of the skill. */
+  tasks: number
+  /** Every member of the island won a bomb on it. */
+  passed: boolean
+  /** Passed, or the next storey to play. */
+  unlocked: boolean
+}
+
+/** A topic of an island, shown as a house. */
+export type IslandHouse = {
+  topic_id: string
+  name: string
+  /** Number of storeys every member passed in a row from the ground floor. */
+  level: number
+  /** Whether the house has a storey to play. */
+  unlocked: boolean
+  /** The skill tree, ground floor first. */
+  skills: HouseSkill[]
+}
+
+export type Island = {
+  id: string
+  name: string
+  /** The island this one was forked from. A fork shares its origin's documents and houses. */
+  origin_id: string | null
+  group: LearningGroup
+  houses: IslandHouse[]
+}
+
+/** The islands the current user is a member of; the backend enforces this. */
+export type IslandsResponse = {
+  me: UserSummary
+  islands: Island[]
+}
+
+/** Response of `POST /upload?island_id=…`. */
+export type UploadResponse = {
+  /** The island that owns the files: the origin, if the upload went to a fork. */
+  island_id: string
+  objects: { key: string; filename: string; content_type: string; size: number }[]
+  failures: { filename?: string; message: string }[]
+}
+
+export type PresenceStatus = 'online' | 'offline'
+
+/** Live status of a user, pushed while the islands page is open. */
+export type Presence = {
+  userId: string
+  status: PresenceStatus
+}
+

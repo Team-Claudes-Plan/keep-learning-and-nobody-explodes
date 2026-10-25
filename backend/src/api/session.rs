@@ -24,10 +24,10 @@ use uuid::Uuid;
 
 use crate::{
     GlobalState,
-    api::error::ApiError,
+    api::{error::ApiError, user::CurrentUser},
     db::Lobby,
     session::{
-        Connection, CreateGame, Seat, SessionError,
+        Connection, CreateGame, Seat, SessionError, Storey,
         protocol::{ClientMessage, ErrorCode, ServerMessage},
     },
 };
@@ -49,12 +49,16 @@ pub async fn session_list(
         .map_err(|error| ApiError::InternalServerError(error.message))
 }
 
+/// Plays as the user named by `?user_id=` (browsers cannot set headers on
+/// websockets) or the `X-User-Id` header.
 pub async fn session_socket(
     State(state): State<Arc<GlobalState>>,
+    user: CurrentUser,
     ws: WebSocketUpgrade,
 ) -> impl IntoResponse {
-    ws.on_upgrade(|socket| async move {
-        if let Err(error) = run(&state, socket).await {
+    let user = user.id();
+    ws.on_upgrade(move |socket| async move {
+        if let Err(error) = run(&state, user, socket).await {
             error!(%error, "session connection failed");
         }
     })
@@ -96,10 +100,14 @@ async fn send_error(sink: &mut Sink, error: &SessionError) -> anyhow::Result<()>
     send(sink, &error.to_message()).await
 }
 
-async fn run(state: &GlobalState, socket: WebSocket) -> anyhow::Result<()> {
+async fn run(state: &GlobalState, user: Uuid, socket: WebSocket) -> anyhow::Result<()> {
     let (mut sink, mut stream) = socket.split();
 
-    let Ok(handshake) = timeout(HANDSHAKE_TIMEOUT, handshake(state, &mut sink, &mut stream)).await
+    let Ok(handshake) = timeout(
+        HANDSHAKE_TIMEOUT,
+        handshake(state, user, &mut sink, &mut stream),
+    )
+    .await
     else {
         let error = SessionError::new(ErrorCode::BadMessage, "no create, join or resume received");
         return send_error(&mut sink, &error).await;
@@ -118,6 +126,7 @@ async fn run(state: &GlobalState, socket: WebSocket) -> anyhow::Result<()> {
 /// Waits for create, join or resume and subscribes the player to the game.
 async fn handshake(
     state: &GlobalState,
+    user: Uuid,
     sink: &mut Sink,
     stream: &mut Stream,
 ) -> anyhow::Result<Option<(Uuid, Uuid, Connection)>> {
@@ -132,7 +141,7 @@ async fn handshake(
             Incoming::Closed => return Ok(None),
         };
 
-        let entered = match enter(state, message).await {
+        let entered = match enter(state, user, message).await {
             Ok(entered) => entered,
             Err(error) => {
                 send_error(sink, &error).await?;
@@ -160,7 +169,11 @@ struct Entered {
     last_sequence: Option<u32>,
 }
 
-async fn enter(state: &GlobalState, message: ClientMessage) -> Result<Entered, SessionError> {
+async fn enter(
+    state: &GlobalState,
+    user: Uuid,
+    message: ClientMessage,
+) -> Result<Entered, SessionError> {
     let sessions = &state.sessions;
     let seat = match message {
         ClientMessage::Create {
@@ -168,25 +181,51 @@ async fn enter(state: &GlobalState, message: ClientMessage) -> Result<Entered, S
             question_count,
             role,
             time_limit_secs,
+            skill_id,
+            island_id,
+            invited,
         } => {
+            let storey = match (skill_id, island_id) {
+                (Some(skill_id), Some(island_id)) => Some(Storey {
+                    skill_id,
+                    island_id,
+                }),
+                (None, None) => None,
+                _ => {
+                    return Err(SessionError::new(
+                        ErrorCode::BadMessage,
+                        "skill_id and island_id go together",
+                    ));
+                }
+            };
             sessions
                 .create(CreateGame {
+                    player: user,
                     topics,
+                    storey,
+                    invited,
                     question_count,
                     role,
                     time_limit_secs,
                 })
                 .await?
         }
-        ClientMessage::Join { game_id, role } => sessions.join(game_id, role).await?,
+        ClientMessage::Join { game_id, role } => sessions.join(game_id, user, role).await?,
         ClientMessage::Resume {
             game_id,
             token,
             last_sequence,
         } => {
+            let player = sessions.authenticate(game_id, token).await?;
+            if player != user {
+                return Err(SessionError::new(
+                    ErrorCode::InvalidToken,
+                    "the token belongs to another user",
+                ));
+            }
             return Ok(Entered {
                 game_id,
-                player: sessions.authenticate(game_id, token).await?,
+                player,
                 seat: None,
                 last_sequence,
             });

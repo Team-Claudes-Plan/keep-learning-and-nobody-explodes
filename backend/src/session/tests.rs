@@ -13,39 +13,98 @@ use tokio::{sync::broadcast, time::timeout};
 use uuid::Uuid;
 
 use super::{
-    Connection, CreateGame, Outgoing, Sessions,
+    Connection, CreateGame, Outgoing, Sessions, Storey,
     protocol::{Answer, Brief, EndReason, ErrorCode, GameEvent, Role, ServerMessage, Status},
 };
-use crate::db::Database;
+use crate::{db::Database, knowledge};
 
-async fn seed_topic(db: &Database, tasks: usize) -> Uuid {
-    let topic = db.create_topic("session test").await.expect("topic");
-    let document: Uuid = sqlx::query_scalar(
-        "INSERT INTO documents (bucket, object_key, topic_id) VALUES ('test', $1, $2) RETURNING id",
-    )
-    .bind(Uuid::new_v4().to_string())
-    .bind(topic)
-    .fetch_one(db.pool())
-    .await
-    .expect("document");
+/// A house with one skill of `tasks` tasks and the two users of its island.
+struct Seed {
+    island: Uuid,
+    topic: Uuid,
+    document: Uuid,
+    skill: Uuid,
+    players: [Uuid; 2],
+}
+
+impl CreateGame {
+    /// A lobby game over whole topics.
+    fn topics(player: Uuid, topics: Vec<Uuid>, question_count: u16) -> Self {
+        Self {
+            player,
+            topics,
+            storey: None,
+            invited: None,
+            question_count,
+            role: None,
+            time_limit_secs: None,
+        }
+    }
+}
+
+/// Adds a skill (the next storey) with `tasks` single choice tasks.
+async fn add_skill(db: &Database, topic: Uuid, document: Uuid, name: &str, tasks: usize) -> Uuid {
+    let skill: Uuid =
+        sqlx::query_scalar("INSERT INTO skills (topic_id, name) VALUES ($1, $2) RETURNING id")
+            .bind(topic)
+            .bind(name)
+            .fetch_one(db.pool())
+            .await
+            .expect("skill");
     for _ in 0..tasks {
         let task: Uuid = sqlx::query_scalar(
-            "INSERT INTO tasks (document_id, question_type, content, solution)
-             VALUES ($1, 'single_choice', $2, '1') RETURNING id",
+            "INSERT INTO tasks (document_id, skill_id, question_type, content, solution)
+             VALUES ($1, $2, 'single_choice', $3, $4) RETURNING id",
         )
         .bind(document)
+        .bind(skill)
         .bind(json!({ "prompt": "Wie viele Bits hat ein Byte?", "options": ["4", "8"] }))
+        .bind(json!({ "correct_answer": 1 }))
         .fetch_one(db.pool())
         .await
         .expect("task");
         sqlx::query("INSERT INTO instructions (task_id, instruction) VALUES ($1, $2)")
             .bind(task)
-            .bind(json!({ "text": "Die zweite Option ist richtig." }))
+            .bind(json!({ "options": ["4", "8"] }))
             .execute(db.pool())
             .await
             .expect("instruction");
     }
-    topic
+    skill
+}
+
+async fn seed_topic(db: &Database, tasks: usize) -> Seed {
+    let players = [
+        db.create_user("session test a").await.expect("user"),
+        db.create_user("session test b").await.expect("user"),
+    ];
+    let island = db
+        .create_island("session test", players[0], Some(players[1]))
+        .await
+        .expect("island");
+    let topic: Uuid = sqlx::query_scalar(
+        "INSERT INTO topics (island_id, name) VALUES ($1, 'Bytes') RETURNING id",
+    )
+    .bind(island)
+    .fetch_one(db.pool())
+    .await
+    .expect("topic");
+    let document: Uuid = sqlx::query_scalar(
+        "INSERT INTO documents (bucket, object_key, island_id) VALUES ('test', $1, $2) RETURNING id",
+    )
+    .bind(Uuid::new_v4().to_string())
+    .bind(island)
+    .fetch_one(db.pool())
+    .await
+    .expect("document");
+    let skill = add_skill(db, topic, document, "Bits", tasks).await;
+    Seed {
+        island,
+        topic,
+        document,
+        skill,
+        players,
+    }
 }
 
 /// Everything broadcast to `player` until nothing arrives for a moment.
@@ -82,25 +141,22 @@ async fn plays_a_game_and_restores_it() {
     let url = std::env::var("DATABASE_URL").expect("DATABASE_URL");
     let db = Database::connect(&url, 5).await.expect("database");
     db.migrate().await.expect("migrations");
-    let topic = seed_topic(&db, 3).await;
+    let Seed {
+        topic,
+        players: [alex, mia],
+        ..
+    } = seed_topic(&db, 3).await;
     let sessions = Sessions::new(db.clone());
 
     let too_many = sessions
-        .create(CreateGame {
-            topics: vec![topic],
-            question_count: 4,
-            role: None,
-            time_limit_secs: None,
-        })
+        .create(CreateGame::topics(alex, vec![topic], 4))
         .await;
     assert_eq!(too_many.expect_err("only 3 tasks").code, ErrorCode::NoTasks);
 
     let a = sessions
         .create(CreateGame {
-            topics: vec![topic],
-            question_count: 3,
             role: Some(Role::Defuser),
-            time_limit_secs: None,
+            ..CreateGame::topics(alex, vec![topic], 3)
         })
         .await
         .expect("create");
@@ -120,8 +176,14 @@ async fn plays_a_game_and_restores_it() {
         [ServerMessage::Snapshot { state }] if state.status == Status::Waiting
     ));
 
+    assert_eq!(a.player_id, alex, "players are users");
+    let own = sessions.join(a.game_id, alex, None).await;
+    assert_eq!(
+        own.expect_err("creator cannot join").code,
+        ErrorCode::InvalidState
+    );
     let b = sessions
-        .join(a.game_id, Some(Role::Defuser))
+        .join(a.game_id, mia, Some(Role::Defuser))
         .await
         .expect("join");
     let Connection {
@@ -178,7 +240,7 @@ async fn plays_a_game_and_restores_it() {
     assert!(b_seen.iter().any(|m| matches!(
         m,
         ServerMessage::Briefing { turn: 2, brief: Brief::Expert { instruction, .. } }
-            if instruction["text"] == "Die zweite Option ist richtig."
+            if instruction["options"] == json!(["4", "8"])
     )));
 
     // a fresh registry stands in for a server restart
@@ -244,6 +306,105 @@ async fn plays_a_game_and_restores_it() {
     assert_eq!(solved, 2);
 }
 
+/// Answers every turn of `game` correctly (option 1), whoever defuses it.
+async fn win(sessions: &Sessions, game: Uuid, players: [Uuid; 2], turns: u32) {
+    for turn in 0..turns {
+        let first = sessions.submit(game, players[0], turn, answer(1)).await;
+        if let Err(error) = first {
+            assert_eq!(error.code, ErrorCode::NotYourTurn, "turn {turn}");
+            sessions
+                .submit(game, players[1], turn, answer(1))
+                .await
+                .expect("the other player defuses");
+        }
+    }
+}
+
+#[tokio::test]
+#[ignore = "requires a database (`DATABASE_URL`)"]
+async fn climbs_the_storeys_of_a_house() {
+    let url = std::env::var("DATABASE_URL").expect("DATABASE_URL");
+    let db = Database::connect(&url, 5).await.expect("database");
+    db.migrate().await.expect("migrations");
+    let Seed {
+        island,
+        topic,
+        document,
+        skill: ground,
+        players: [alex, mia],
+    } = seed_topic(&db, 2).await;
+    let first = add_skill(&db, topic, document, "Bytes", 1).await;
+    let leo = db.create_user("session test c").await.expect("user");
+    let sessions = Sessions::new(db.clone());
+    let storey = |skill_id| CreateGame {
+        storey: Some(Storey {
+            skill_id,
+            island_id: island,
+        }),
+        invited: Some(mia),
+        ..CreateGame::topics(alex, Vec::new(), 5)
+    };
+
+    let locked = sessions.create(storey(first)).await;
+    assert_eq!(
+        locked.expect_err("ground floor first").code,
+        ErrorCode::SkillLocked
+    );
+    let stranger = sessions
+        .create(CreateGame {
+            invited: Some(leo),
+            ..storey(ground)
+        })
+        .await;
+    assert_eq!(
+        stranger.expect_err("leo is not on the island").code,
+        ErrorCode::NotIslandMember
+    );
+
+    // two tasks fill a bomb of five
+    let game = sessions.create(storey(ground)).await.expect("create");
+    let parts: Vec<Uuid> =
+        sqlx::query_scalar("SELECT task_id FROM game_parts WHERE game_id = $1 ORDER BY position")
+            .bind(game.game_id)
+            .fetch_all(db.pool())
+            .await
+            .expect("parts");
+    assert_eq!(parts.len(), 5);
+    assert_eq!(parts[0], parts[2], "the tasks repeat in order");
+    assert_ne!(parts[0], parts[1]);
+
+    let lobbies = sessions.lobbies().await.expect("lobbies");
+    assert!(
+        lobbies.iter().all(|lobby| lobby.id != game.game_id),
+        "private games are not listed"
+    );
+    let crasher = sessions.join(game.game_id, leo, None).await;
+    assert_eq!(
+        crasher.expect_err("not invited").code,
+        ErrorCode::NotInvited
+    );
+
+    sessions.join(game.game_id, mia, None).await.expect("join");
+    win(&sessions, game.game_id, [alex, mia], 5).await;
+
+    let topics = db.island_topics(island).await.expect("progress");
+    let house = topics.iter().find(|t| t.id == topic).expect("house");
+    assert_eq!(knowledge::passed_skills(house), [true, false]);
+    assert_eq!(knowledge::skill_unlocked(house, first), Some(true));
+
+    // a storey bomb only holds tasks of its own skill
+    let next = sessions.create(storey(first)).await.expect("next storey");
+    let skills: Vec<Uuid> = sqlx::query_scalar(
+        "SELECT t.skill_id FROM game_parts gp JOIN tasks t ON t.id = gp.task_id
+         WHERE gp.game_id = $1",
+    )
+    .bind(next.game_id)
+    .fetch_all(db.pool())
+    .await
+    .expect("parts");
+    assert!(skills.iter().all(|&skill| skill == first));
+}
+
 mod websocket {
     use std::sync::Arc;
 
@@ -283,14 +444,20 @@ mod websocket {
 
     #[tokio::test]
     #[ignore = "requires a database (`DATABASE_URL`)"]
+    #[expect(clippy::too_many_lines, reason = "one scenario, read top to bottom")]
     async fn speaks_the_protocol_over_websocket() {
         let url = std::env::var("DATABASE_URL").expect("DATABASE_URL");
         let db = Database::connect(&url, 5).await.expect("database");
         db.migrate().await.expect("migrations");
-        let topic = seed_topic(&db, 2).await;
+        let Seed {
+            topic,
+            players: [alex, mia],
+            ..
+        } = seed_topic(&db, 2).await;
 
         let state = Arc::new(GlobalState {
             sessions: Sessions::new(db.clone()),
+            presence: crate::presence::Hub::new(),
             db,
         });
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
@@ -298,9 +465,14 @@ mod websocket {
             .expect("bind");
         let addr = listener.local_addr().expect("addr");
         tokio::spawn(async move { axum::serve(listener, api::routes().with_state(state)).await });
-        let endpoint = format!("ws://{addr}/api/sessions/ws");
+        let endpoint = |user: Uuid| format!("ws://{addr}/api/sessions/ws?user_id={user}");
 
-        let (mut a, _) = connect_async(&endpoint).await.expect("connect a");
+        // the socket is only opened for known users
+        connect_async(endpoint(Uuid::new_v4()))
+            .await
+            .expect_err("unknown user is rejected");
+
+        let (mut a, _) = connect_async(endpoint(alex)).await.expect("connect a");
         send(&mut a, json!({ "type": "forfeit" })).await;
         assert_eq!(expect(&mut a, "error").await["code"], "invalid_state");
         send(&mut a, json!({ "type": "nonsense" })).await;
@@ -318,9 +490,10 @@ mod websocket {
             "waiting"
         );
 
-        let (mut b, _) = connect_async(&endpoint).await.expect("connect b");
+        let (mut b, _) = connect_async(endpoint(mia)).await.expect("connect b");
         send(&mut b, json!({ "type": "join", "game_id": game_id })).await;
         let b_id = expect(&mut b, "welcome").await["player_id"].clone();
+        assert_eq!(b_id, mia.to_string());
         expect(&mut b, "snapshot").await;
 
         let turn = loop {
@@ -336,7 +509,23 @@ mod websocket {
         };
         let briefing = expect(defuser, "briefing").await;
         assert_eq!(briefing["role"], "defuser");
-        assert_eq!(briefing["task"]["options"], json!(["4", "8"]));
+        // the answers only exist as symbols for the defuser ...
+        assert!(briefing["task"].get("options").is_none());
+        assert!(briefing["task"].get("prompt").is_none());
+        let glyphs = briefing["glyphs"].as_array().expect("glyphs");
+        assert_eq!(glyphs.len(), 2);
+        assert_ne!(glyphs[0], glyphs[1]);
+
+        // ... and the expert's symbols say which one is which
+        let expert_briefing = expect(other, "briefing").await;
+        assert_eq!(expert_briefing["role"], "expert");
+        assert_eq!(
+            expert_briefing["symbols"],
+            json!([
+                { "glyph": glyphs[0], "text": "4" },
+                { "glyph": glyphs[1], "text": "8" },
+            ])
+        );
 
         send(
             other,
@@ -367,7 +556,7 @@ mod websocket {
 
         // resume replays only what came after the given sequence
         let token = welcome["token"].clone();
-        let (mut again, _) = connect_async(&endpoint).await.expect("reconnect");
+        let (mut again, _) = connect_async(endpoint(alex)).await.expect("reconnect");
         let last = ended["sequence"].as_u64().expect("sequence") - 1;
         send(
             &mut again,

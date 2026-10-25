@@ -3,7 +3,7 @@
 # Outputs:
 #   packages.default   -> the Rust backend binary (built with crane)
 #   packages.dev       -> `nix run .#dev` starts a process-compose dashboard:
-#                         postgres (job queue), rustfs (S3), setup, backend
+#                         postgres (job queue), rustfs (S3), setup, backend, akasha
 #   devShells.default  -> toolchain + psql/s5cmd/rustfs CLI access
 #
 # Run `nix run .#dev` from this directory (paths are relative to it).
@@ -157,14 +157,37 @@
           backend-run = pkgs.writeShellApplication {
             name = "backend-run";
             # stdenv.cc provides the `cc` linker cargo needs outside the crane build.
-            runtimeInputs = [ toolchain pkgs.cargo-watch pkgs.stdenv.cc pkgs.cmake pkgs.pkg-config ];
+            runtimeInputs = [ toolchain pkgs.cargo-watch pkgs.stdenv.cc pkgs.cmake pkgs.pkg-config pkgs.protobuf ];
             text = ''
               export CARGO_BUILD_JOBS="1"
               export NUM_JOBS="1"
               exec cargo watch --watch-when-idle \
                 -w backend/src -w backend/migrations -w backend/Cargo.toml \
                 -w common/grpc -w Cargo.toml -w Cargo.lock \
-                -x run
+                -x 'run -p backend'
+            '';
+          };
+
+          akasha-run = pkgs.writeShellApplication {
+            name = "akasha-run";
+            runtimeInputs = [ toolchain pkgs.cargo-watch pkgs.stdenv.cc pkgs.cmake pkgs.pkg-config pkgs.protobuf ];
+            text = ''
+              # Load the local LLM configuration.
+              if [ -f .env ]; then
+                set -a
+                # shellcheck disable=SC1091
+                . ./.env
+                set +a
+              fi
+
+              export CARGO_BUILD_JOBS="1"
+              export NUM_JOBS="1"
+
+              exec cargo watch --watch-when-idle \
+                -w akasha/src -w akasha/Cargo.toml \
+                -w common/grpc -w common/config \
+                -w Cargo.toml -w Cargo.lock \
+                -x 'run -p akasha'
             '';
           };
 
@@ -269,6 +292,12 @@
                   period_seconds = 2;
                   timeout_seconds = 2;
                 };
+              };
+
+              akasha = {
+                description = "Akasha question extraction gRPC service (cargo watch)";
+                command = akasha-run;
+                depends_on.backend.condition = "process_healthy";
               };
 
               notifications = {

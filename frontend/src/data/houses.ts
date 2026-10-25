@@ -1,7 +1,6 @@
 import type { FacadeConfig } from './facadeTypes'
 import type { HouseParts } from './houseParts'
-import { houseBlockCenter } from './city'
-import type { HouseKitId } from './houseKits'
+import { KIT_MIDDLE_HEIGHT, type HouseKitId } from './houseKits'
 
 export type Room = {
   floorColor: string
@@ -15,8 +14,11 @@ export type Storey = {
   concept?: string
   parts?: Partial<HouseParts>
   room: Room
+  /** On an island: the skill this storey teaches, and whether every member passed it. */
+  skill?: { id: string; passed: boolean; tasks: number }
 }
 
+/** A house design (e.g. Mathematics). The same design can stand on several islands at different levels. */
 export type House = {
   id: string
   name: string
@@ -27,7 +29,7 @@ export type House = {
   kit?: HouseKitId
   parts?: Partial<HouseParts>
   footprint: [number, number]
-  position: [number, number]
+  /** The design's own storeys; on an island the house gets one storey per unlocked skill. */
   storeys: Storey[]
 }
 
@@ -39,7 +41,6 @@ export const HOUSES: House[] = [
     kit: 'geography',
     facade: { shape: 'tiered-setback', design: 'glass-grid', textures: 'house-a' },
     footprint: [2.4, 2.4],
-    position: houseBlockCenter('house-a'),
     storeys: [
       { id: 'ground', label: 'Ground floor', height: 1.6, concept: 'foundations', room: { floorColor: '#2b3550', wallColor: '#3d4a6b' } },
       { id: 'first', label: 'First floor', height: 1.4, concept: 'patterns', room: { floorColor: '#2b3550', wallColor: '#3d4a6b' } },
@@ -53,7 +54,6 @@ export const HOUSES: House[] = [
     kit: 'robotics',
     facade: { shape: 'spire', design: 'panel', textures: 'house-b' },
     footprint: [2.8, 2.2],
-    position: houseBlockCenter('house-b'),
     storeys: [
       { id: 'ground', label: 'Ground floor', height: 1.8, concept: 'foundations', room: { floorColor: '#3a2f24', wallColor: '#5a4a38' } },
       { id: 'first', label: 'First floor', height: 1.5, concept: 'networks', room: { floorColor: '#3a2f24', wallColor: '#5a4a38' } },
@@ -66,7 +66,6 @@ export const HOUSES: House[] = [
     kit: 'biology',
     facade: { shape: 'tree-tower', design: 'organic-bark', textures: 'house-c' },
     footprint: [2.2, 2.8],
-    position: houseBlockCenter('house-c'),
     storeys: [
       { id: 'ground', label: 'Ground floor', height: 1.7, concept: 'structures', room: { floorColor: '#24332a', wallColor: '#38604a' } },
       { id: 'first', label: 'First floor', height: 1.5, concept: 'analysis', room: { floorColor: '#24332a', wallColor: '#38604a' } },
@@ -81,7 +80,6 @@ export const HOUSES: House[] = [
     kit: 'math',
     facade: { shape: 'penthouse', design: 'house-math-tower', textures: 'house-math-tower', roofColor: '#263550' },
     footprint: [2.4, 2.4],
-    position: houseBlockCenter('house-math-tower'),
     storeys: [
       { id: 'ground', label: 'Ground floor', height: 1.8, concept: 'foundations', room: { floorColor: '#1f2d4a', wallColor: '#2d5e9f' } },
       { id: 'first', label: 'First floor', height: 1.6, concept: 'patterns', room: { floorColor: '#1f2d4a', wallColor: '#2d5e9f' } },
@@ -101,4 +99,19 @@ export function getStorey(houseId: string, storeyId: string): Storey | undefined
 
 export function houseHeight(house: House): number {
   return house.storeys.reduce((total, storey) => total + storey.height, 0)
+}
+
+/** A storey of the design for the storey at `index`; above its own storeys the design repeats its middle floor. */
+export function designStorey(house: House, index: number): Storey {
+  const own = house.storeys[index]
+  if (own) return own
+  const top = house.storeys[house.storeys.length - 1]
+  return { id: `extra-${index}`, label: `Floor ${index + 1}`, height: KIT_MIDDLE_HEIGHT, room: top.room, parts: top.parts }
+}
+
+/** Storey heights of a house, shown with this many more (or fewer) storeys than it has. */
+export function previewHeights(house: House, delta: number): number[] {
+  const heights = house.storeys.map((storey) => storey.height)
+  if (delta < 0) return heights.slice(0, Math.max(1, heights.length + delta))
+  return [...heights, ...Array.from({ length: delta }, () => KIT_MIDDLE_HEIGHT)]
 }

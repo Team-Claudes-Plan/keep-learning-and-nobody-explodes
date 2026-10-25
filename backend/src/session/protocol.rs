@@ -107,11 +107,20 @@ impl Answer {
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ClientMessage {
     /// Opens a lobby; the sender takes seat 0.
+    ///
+    /// With `skill_id` (and the `island_id` it is played on) the bomb is a
+    /// storey of a house: its tasks come from that skill only, `topics` is
+    /// ignored and winning passes the storey. With `invited` only that user
+    /// may join and the game is not listed in the lobby.
     Create {
+        #[serde(default)]
         topics: Vec<Uuid>,
         question_count: u16,
         role: Option<Role>,
         time_limit_secs: Option<u32>,
+        skill_id: Option<Uuid>,
+        island_id: Option<Uuid>,
+        invited: Option<Uuid>,
     },
     /// Takes seat 1 of a waiting game, which starts it.
     Join {
@@ -143,6 +152,12 @@ pub enum GameEvent {
         time_limit_secs: u32,
         created_by: Uuid,
         parts: Vec<PartInfo>,
+        /// The storey (skill) the bomb is played on.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        skill_id: Option<Uuid>,
+        /// The only user who may join.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        invited: Option<Uuid>,
     },
     PlayerJoined {
         player_id: Uuid,
@@ -203,6 +218,10 @@ pub struct PartInfo {
     pub position: u32,
     pub task_id: Uuid,
     pub question_type: String,
+    /// Symbols for the answers of this part, in list order, none shared with
+    /// another part of the game. Empty if the part is shown as text.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub glyphs: Vec<u8>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -242,13 +261,30 @@ pub enum ServerMessage {
 #[serde(tag = "role", rename_all = "snake_case")]
 pub enum Brief {
     /// The question as in `questions.schema.json`, without its prompt.
-    Defuser { task: Value },
-    /// The prompt and the manual page for the defuser's module.
+    ///
+    /// With `glyphs`, the list that `glyphs::symbol_field` names is missing
+    /// from `task`; entry `i` of it is shown as symbol `glyphs[i]` instead.
+    Defuser {
+        task: Value,
+        #[serde(skip_serializing_if = "Vec::is_empty")]
+        glyphs: Vec<u8>,
+    },
+    /// The prompt and the manual page for the defuser's module, and what the
+    /// defuser's symbols stand for.
     Expert {
         question_type: String,
         prompt: Option<Value>,
         instruction: Value,
+        #[serde(skip_serializing_if = "Vec::is_empty")]
+        symbols: Vec<Symbol>,
     },
+}
+
+/// One symbol on the defuser's module and the answer it stands for.
+#[derive(Clone, Debug, PartialEq, Serialize)]
+pub struct Symbol {
+    pub glyph: u8,
+    pub text: Value,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -256,6 +292,8 @@ pub struct GameView {
     pub game_id: Uuid,
     pub status: Status,
     pub topics: Vec<Uuid>,
+    pub skill_id: Option<Uuid>,
+    pub invited: Option<Uuid>,
     pub players: Vec<PlayerView>,
     pub deadline: Option<DateTime<Utc>>,
     pub turn: Option<u32>,
@@ -313,5 +351,11 @@ pub enum ErrorCode {
     StaleTurn,
     InvalidState,
     NoTasks,
+    /// The storey is not unlocked for the island yet.
+    SkillLocked,
+    /// The creator is not a member of the island, or the skill is not on it.
+    NotIslandMember,
+    /// The game is private to another user.
+    NotInvited,
     Internal,
 }

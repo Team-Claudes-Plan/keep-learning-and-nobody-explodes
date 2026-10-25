@@ -9,13 +9,15 @@ export default defineConfig(({ mode }) => {
   return {
     plugins: [react()],
     server: {
-      // Dev only: forward /api/* to the backend so the browser never needs CORS.
+      // Dev only: forward /backend/* to the backend (/backend/api/islands -> /api/islands,
+      // /backend/upload -> /upload) so the browser never needs CORS. Set VITE_API_URL=/backend.
       proxy: proxyTarget
         ? {
-            '/api': {
+            '/backend': {
               target: proxyTarget,
               changeOrigin: true,
-              rewrite: (path) => path.replace(/^\/api/, ''),
+              ws: true,
+              rewrite: (path) => path.replace(/^\/backend/, ''),
             },
           }
         : undefined,

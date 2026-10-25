@@ -1,0 +1,25 @@
+[package]
+name = "akasha"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+apalis-core.workspace = true
+apalis.workspace = true
+async-openai.workspace = true
+config.workspace = true
+grpc.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sqlx = { workspace = true, features = ["uuid", "json"] }
+thiserror.workspace = true
+tokio.workspace = true
+tonic.workspace = true
+tracing-subscriber.workspace = true
+tracing.workspace = true
+url.workspace = true
+uuid = { version = "1", features = ["v4"] }
+
+[lints]
+workspace = true

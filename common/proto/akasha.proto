@@ -1,0 +1,30 @@
+syntax = "proto3";
+
+package akasha;
+
+service AkashaService {
+  rpc ManifestTrials(ManifestTrialsRequest) returns (ManifestTrialsResponse);
+}
+
+message ManifestTrialsRequest {
+    Chronicle chronicle = 1;
+}
+
+message ManifestTrialsResponse {}
+
+message Chronicle {
+    // Document the text was extracted from.
+    string id = 1;
+    // Name of the island the document was uploaded to.
+    string island_name = 2;
+    Language language = 3;
+    string text = 4;
+    // Island that owns the document; generated topics are created on it.
+    string island_id = 5;
+}
+
+enum Language {
+    LANGUAGE_UNSPECIFIED = 0;
+    LANGUAGE_ENGLISH = 1;
+    LANGUAGE_GERMAN = 2;
+}

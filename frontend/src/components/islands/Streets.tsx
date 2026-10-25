@@ -1,11 +1,13 @@
+import { useMemo } from 'react'
 import {
-  CITY_BLOCKS,
-  CITY_EXTENT,
-  FIELD_PROPS,
+  GRID_BLOCKS,
+  GRID_EXTENT,
   ROAD_LINES,
   ROAD_WIDTH,
+  buildFieldProps,
   type FieldProp,
-} from '../../data/city'
+  type GridBlock,
+} from '../../data/islandGrid'
 import GrassBlock from './GrassBlock'
 
 const ROAD_COLOR = '#262b33'
@@ -21,7 +23,7 @@ function buildDashes(): Dash[] {
     ROAD_LINES.some((line) => Math.abs(line - value) < ROAD_WIDTH * 0.75)
 
   for (const line of ROAD_LINES) {
-    for (let t = -CITY_EXTENT + DASH_LENGTH; t <= CITY_EXTENT - DASH_LENGTH; t += DASH_LENGTH + DASH_GAP) {
+    for (let t = -GRID_EXTENT + DASH_LENGTH; t <= GRID_EXTENT - DASH_LENGTH; t += DASH_LENGTH + DASH_GAP) {
       if (!isIntersection(t)) {
         dashes.push({ x: t, z: line, axis: 'x' })
         dashes.push({ x: line, z: t, axis: 'z' })
@@ -34,7 +36,7 @@ function buildDashes(): Dash[] {
 const DASHES = buildDashes()
 
 function Road({ axis, offset }: { axis: 'x' | 'z'; offset: number }) {
-  const length = CITY_EXTENT * 2
+  const length = GRID_EXTENT * 2
   const size: [number, number] = axis === 'x' ? [length, ROAD_WIDTH] : [ROAD_WIDTH, length]
   const position: [number, number, number] = axis === 'x' ? [0, 0.012, offset] : [offset, 0.012, 0]
   return (
@@ -85,10 +87,12 @@ function Prop({ prop }: { prop: FieldProp }) {
   )
 }
 
-export default function Streets() {
+/** Roads, sidewalks and the island grid; free cells get trees, bushes and lamps. */
+export default function Streets({ fieldBlocks }: { fieldBlocks: GridBlock[] }) {
+  const fieldProps = useMemo(() => buildFieldProps(fieldBlocks), [fieldBlocks])
   return (
     <group>
-      {CITY_BLOCKS.map((block) => (
+      {GRID_BLOCKS.map((block) => (
         <GrassBlock key={`${block.i}-${block.j}`} center={block.center} color={block.color} />
       ))}
 
@@ -111,7 +115,7 @@ export default function Streets() {
         </mesh>
       ))}
 
-      {FIELD_PROPS.map((prop) => (
+      {fieldProps.map((prop) => (
         <Prop key={prop.id} prop={prop} />
       ))}
     </group>

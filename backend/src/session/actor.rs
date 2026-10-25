@@ -26,6 +26,7 @@ const BROADCAST_CAPACITY: usize = 64;
 #[derive(Debug)]
 pub enum Request {
     Join {
+        player: Uuid,
         role: Option<Role>,
         reply: oneshot::Sender<Result<Seat, SessionError>>,
     },
@@ -133,8 +134,12 @@ impl Actor {
     async fn handle(&mut self, request: Request) {
         // A failed reply means the connection went away; nothing to do then.
         match request {
-            Request::Join { role, reply } => {
-                let _ = reply.send(self.join(role).await);
+            Request::Join {
+                player,
+                role,
+                reply,
+            } => {
+                let _ = reply.send(self.join(player, role).await);
             }
             Request::Connect {
                 player,
@@ -196,10 +201,10 @@ impl Actor {
         }
     }
 
-    async fn join(&mut self, role: Option<Role>) -> Result<Seat, SessionError> {
+    async fn join(&mut self, player: Uuid, role: Option<Role>) -> Result<Seat, SessionError> {
         let seat = Seat {
             game_id: self.state.id,
-            player_id: Uuid::new_v4(),
+            player_id: player,
             token: Uuid::new_v4(),
             index: 1,
         };

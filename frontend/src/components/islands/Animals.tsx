@@ -1,8 +1,8 @@
-import { useMemo, useRef } from 'react'
+import { useMemo, useRef, type Ref } from 'react'
 import { useFrame } from '@react-three/fiber'
 import type { Group } from 'three'
-import { SIDEWALK_HEIGHT } from '../../data/city'
-import { ANIMALS, type AnimalSpec } from '../../data/life'
+import { SIDEWALK_HEIGHT, buildFieldProps, type GridBlock } from '../../data/islandGrid'
+import { buildAnimals, buildSquirrel, type AnimalSpec, type SquirrelSpec } from '../../data/life'
 import { buildPath, samplePath } from './motion'
 
 function Leg({ x, z, width, height }: { x: number; z: number; width: number; height: number }) {
@@ -80,6 +80,88 @@ function Cat({ color }: { color: string }) {
   )
 }
 
+function SquirrelBody({ color, tail }: { color: string; tail: Ref<Group> }) {
+  return (
+    <group>
+      <mesh position={[0, 0.11, 0]} rotation-z={0.35} raycast={() => null}>
+        <boxGeometry args={[0.16, 0.1, 0.09]} />
+        <meshStandardMaterial color={color} roughness={0.9} flatShading />
+      </mesh>
+      <mesh position={[0.02, 0.1, 0]} rotation-z={0.35} raycast={() => null}>
+        <boxGeometry args={[0.12, 0.08, 0.095]} />
+        <meshStandardMaterial color="#e8cfa6" roughness={1} flatShading />
+      </mesh>
+      <mesh position={[0.1, 0.19, 0]} raycast={() => null}>
+        <boxGeometry args={[0.09, 0.08, 0.08]} />
+        <meshStandardMaterial color={color} roughness={0.9} flatShading />
+      </mesh>
+      <mesh position={[0.15, 0.18, 0]} raycast={() => null}>
+        <boxGeometry args={[0.03, 0.03, 0.04]} />
+        <meshStandardMaterial color="#2f2620" roughness={1} flatShading />
+      </mesh>
+      {[-0.025, 0.025].map((z) => (
+        <mesh key={z} position={[0.08, 0.25, z]} raycast={() => null}>
+          <coneGeometry args={[0.018, 0.045, 4]} />
+          <meshStandardMaterial color={color} roughness={1} flatShading />
+        </mesh>
+      ))}
+      <group ref={tail} position={[-0.08, 0.08, 0]}>
+        <mesh position={[-0.05, 0.08, 0]} rotation-z={-0.35} raycast={() => null}>
+          <boxGeometry args={[0.08, 0.18, 0.08]} />
+          <meshStandardMaterial color={color} roughness={0.9} flatShading />
+        </mesh>
+        <mesh position={[-0.01, 0.2, 0]} rotation-z={0.6} raycast={() => null}>
+          <boxGeometry args={[0.1, 0.08, 0.08]} />
+          <meshStandardMaterial color={color} roughness={0.9} flatShading />
+        </mesh>
+      </group>
+      <Leg x={0.05} z={-0.03} width={0.025} height={0.06} />
+      <Leg x={0.05} z={0.03} width={0.025} height={0.06} />
+      <Leg x={-0.05} z={-0.035} width={0.03} height={0.07} />
+      <Leg x={-0.05} z={0.035} width={0.03} height={0.07} />
+    </group>
+  )
+}
+
+const SQUIRREL_RUN = 2.2
+const SQUIRREL_REST = 1.6
+
+/** Scampers around a tree in short hopping bursts, then sits and flicks its tail. */
+function Squirrel({ squirrel }: { squirrel: SquirrelSpec }) {
+  const ref = useRef<Group>(null)
+  const inner = useRef<Group>(null)
+  const tail = useRef<Group>(null)
+  const angle = useRef(0)
+  const elapsed = useRef(0)
+
+  useFrame((_, delta) => {
+    const group = ref.current
+    if (!group) return
+    elapsed.current += delta
+    const cycle = elapsed.current % (SQUIRREL_RUN + SQUIRREL_REST)
+    const running = cycle < SQUIRREL_RUN
+    if (running) angle.current += (1.6 / squirrel.radius) * 0.35 * delta
+
+    const a = angle.current
+    const [cx, cz] = squirrel.center
+    group.position.set(cx + Math.cos(a) * squirrel.radius, SIDEWALK_HEIGHT, cz + Math.sin(a) * squirrel.radius)
+    group.rotation.y = Math.atan2(-Math.cos(a), -Math.sin(a))
+
+    const innerGroup = inner.current
+    if (innerGroup) innerGroup.position.y = running ? Math.abs(Math.sin(elapsed.current * 14)) * 0.05 : 0
+    const tailGroup = tail.current
+    if (tailGroup) tailGroup.rotation.z = running ? 0.15 : Math.sin(elapsed.current * 18) * 0.12
+  })
+
+  return (
+    <group ref={ref} scale={squirrel.scale}>
+      <group ref={inner}>
+        <SquirrelBody color={squirrel.color} tail={tail} />
+      </group>
+    </group>
+  )
+}
+
 function Walker({ animal }: { animal: AnimalSpec }) {
   const ref = useRef<Group>(null)
   const inner = useRef<Group>(null)
@@ -113,10 +195,16 @@ function Walker({ animal }: { animal: AnimalSpec }) {
   )
 }
 
-export default function Animals() {
+export default function Animals({ fieldBlocks }: { fieldBlocks: GridBlock[] }) {
+  const animals = useMemo(() => buildAnimals(fieldBlocks), [fieldBlocks])
+  const squirrel = useMemo(
+    () => buildSquirrel(fieldBlocks, buildFieldProps(fieldBlocks).filter((prop) => prop.kind === 'tree')),
+    [fieldBlocks],
+  )
   return (
     <group>
-      {ANIMALS.map((animal) => (
+      {squirrel && <Squirrel squirrel={squirrel} />}
+      {animals.map((animal) => (
         <Walker key={animal.id} animal={animal} />
       ))}
     </group>
