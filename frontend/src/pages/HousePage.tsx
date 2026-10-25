@@ -22,7 +22,6 @@ import {
   type HouseParts,
 } from '../data/houseParts'
 import { resolveDesign } from '../data/baseDesigns'
-import { resolveConcept } from '../data/storeyConcepts'
 import type { InteriorDesign } from '../data/interiorTypes'
 import { isDrag } from '../components/interaction'
 import KitFacade, { useKitCrownHeight } from '../components/facade/KitFacade'
@@ -40,7 +39,6 @@ const SHELL_GAP = 0.04
 type StoreyRoomProps = {
   house: House
   storey: Storey
-  index: number
   offset: number
   size: [number, number]
   outerSurface: SurfaceSpec
@@ -56,7 +54,6 @@ type StoreyRoomProps = {
 function StoreyRoom({
   house,
   storey,
-  index,
   offset,
   size,
   outerSurface,
@@ -69,7 +66,6 @@ function StoreyRoom({
   onClick,
 }: StoreyRoomProps) {
   const [hovered, setHovered] = useState(false)
-  const concept = resolveConcept(house.id, storey.id, index, storey.concept)
   const floorDesign = useMemo<InteriorDesign>(
     () => ({ motif: 'tiles', floor: house.storeys[0].room.floorColor, accent: house.facadeColor }),
     [house],
@@ -132,7 +128,7 @@ function StoreyRoom({
           height={h}
           parts={parts}
           decor={decor}
-          label={concept.label}
+          label={storey.label}
           glow={hovered || selected ? 1 : 0}
         />
       </group>
@@ -290,7 +286,6 @@ function HouseView({ island, placed }: { island: ResolvedIsland; placed: PlacedH
               key={storey.id}
               house={house}
               storey={storey}
-              index={index}
               offset={offsets[index]}
               size={[w, d / 2]}
               outerSurface={outerSurface}
