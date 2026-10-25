@@ -37,5 +37,5 @@ On NixOS, Playwright's downloaded browsers do not start; use a system Chromium:
 E2E_CHROMIUM=$(readlink -f "$(which chromium)") bun run e2e
 ```
 
-Elsewhere, `bunx playwright install chromium` once. CI runs the same tests in
-`.github/workflows/test.yml` (job `e2e`) with a Postgres service.
+Elsewhere, `bunx playwright install chromium` once. CI does not run these tests;
+run them locally before changing the session flow.

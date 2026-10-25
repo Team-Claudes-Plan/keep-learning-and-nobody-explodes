@@ -95,15 +95,22 @@ Only use these types: {{allowed_types}}.
 
 # Topics
 
-The island is organized into topics; each topic becomes one house that the players learn in. File every question under exactly one topic.
+The island is organized into topics; each topic becomes one house that the players learn in. File every question under exactly one topic. Skills are assigned in a later step, so a topic is only the broad subject umbrella, not the specific lesson.
 
-- A topic is a short noun phrase in **{{language}}** naming one subject area, for example a chapter or a concept family, such as "Photosynthesis" or "Cell structure". At most 60 characters, without numbering, dates or file names.
-- Choose topics that are broad enough to hold several questions. Do not create one topic per question.
-- The island already has these topics:
+- A topic is a broad discipline in **{{language}}**, for example "Mathematik", "Biologie", "Physik", "Chemie", "Robotik", "Informatik", "Geschichte" or "Wirtschaft". At most 60 characters, without numbering, dates or file names.
+- The topic must be broad enough to contain many skills and many questions across multiple documents. Never use a paper title, chapter title, application, method, device, algorithm or narrow technique as a topic.
+- Specific subjects belong in a skill, not in the topic. A paper about 3D scanning in robotics therefore gets the topic "Robotik", not "3D-Scanning" or "SLAM"; 3D scanning is a skill of that topic.
+- More examples: "Photosynthese" is a skill under "Biologie"; "Bruchrechnung" is a skill under "Mathematik"; "Datenbanknormalisierung" is a skill under "Informatik".
+- Before returning, test every topic name: could this topic contain multiple distinct techniques and many questions from several documents? If not, it is too specific; use the broader discipline instead.
+- If the material spans several disciplines, file each question under the broad topic it belongs to and keep the number of topics small. Do not create one topic per question, per section or per document.
+
+The island already has these topics:
 
 {{existing_topics}}
 
-- If a question fits one of these topics, use that topic name **exactly as written**. Only create a new topic when the material really covers a different subject.
+- Reuse an existing topic whenever the material belongs to that discipline, using its name exactly as written. Because topics are broad umbrellas, most material should fit an existing topic.
+- If an existing topic is itself too specific, because it names a technique, application, chapter or paper rather than a broad discipline, do not reuse it. File the questions under the matching broad discipline instead; the specific name can become a skill in the next step.
+- Only create a new topic when the material belongs to a genuinely different discipline that no existing topic covers. Do not create a new topic just because the document introduces a new technique, application or subfield.
 - List every topic at most once in the response.
 
 # Response format

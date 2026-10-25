@@ -6,6 +6,7 @@
 
 use std::collections::HashMap;
 use std::fmt;
+use std::time::Instant;
 
 use serde_json::Value;
 
@@ -169,14 +170,34 @@ impl<S: PipelineStep> Pipeline<S> {
     /// A step failure is counted against the step that produced it. If that
     /// count exceeds `max_step_errors`, the pipeline aborts and reports the
     /// step in [`PipelineError::StepErrorLimit`].
+    #[allow(
+        clippy::too_many_lines,
+        reason = "the runner is one small state machine; splitting it would obscure the control flow"
+    )]
     pub async fn run(&self, input: PipelineInput) -> Result<Vec<TopicSkills>, PipelineError> {
         let mut context = PipelineContext::new(input);
         let mut failures: HashMap<StepId, usize> = HashMap::new();
         let mut index = 0usize;
         let mut transitions = 0usize;
+        let pipeline_started = Instant::now();
+
+        tracing::info!(
+            chronicle = %context.input.id,
+            island = %context.input.island_name,
+            language = %context.input.language,
+            characters = context.input.text.len(),
+            existing_topics = context.input.existing_topics.len(),
+            max_transitions = self.max_transitions,
+            "pipeline started"
+        );
 
         loop {
             if transitions >= self.max_transitions {
+                tracing::error!(
+                    limit = self.max_transitions,
+                    transitions,
+                    "pipeline aborted: transition limit exceeded"
+                );
                 return Err(PipelineError::TransitionLimitExceeded {
                     limit: self.max_transitions,
                 });
@@ -185,24 +206,77 @@ impl<S: PipelineStep> Pipeline<S> {
 
             let step = &self.steps[index];
             let id = step.id();
+            let attempt = failures.get(&id).map_or(1, |count| count + 1);
+            let step_started = Instant::now();
 
-            tracing::debug!(step = %id, transition = transitions, "running pipeline step");
+            tracing::debug!(
+                step = %id,
+                transition = transitions,
+                attempt,
+                "pipeline step starting"
+            );
 
             match step.run(&mut context).await {
-                Ok(StepOutcome::Next) => {
-                    context.last_feedback = None;
+                Ok(outcome) => {
+                    tracing::info!(
+                        step = %id,
+                        transition = transitions,
+                        attempt,
+                        elapsed_ms = step_started.elapsed().as_millis(),
+                        outcome = ?outcome,
+                        "pipeline step completed"
+                    );
 
-                    if index + 1 == self.steps.len() {
-                        return context.skills.ok_or(PipelineError::MissingOutput);
+                    match outcome {
+                        StepOutcome::Next => {
+                            context.last_feedback = None;
+
+                            if index + 1 == self.steps.len() {
+                                let topics = context.skills.ok_or_else(|| {
+                                    tracing::error!(
+                                        transitions,
+                                        "pipeline finished without skill-grouped questions"
+                                    );
+                                    PipelineError::MissingOutput
+                                })?;
+                                tracing::info!(
+                                    transitions,
+                                    elapsed_ms = pipeline_started.elapsed().as_millis(),
+                                    topics = topics.len(),
+                                    skills = topics
+                                        .iter()
+                                        .map(|topic| topic.skills.len())
+                                        .sum::<usize>(),
+                                    questions = topics
+                                        .iter()
+                                        .flat_map(|topic| &topic.skills)
+                                        .map(|skill| skill.questions.len())
+                                        .sum::<usize>(),
+                                    "pipeline finished"
+                                );
+                                return Ok(topics);
+                            }
+
+                            index += 1;
+                            tracing::debug!(
+                                transition = transitions,
+                                next_step = %self.steps[index].id(),
+                                "pipeline advancing"
+                            );
+                        }
+                        StepOutcome::Goto(target) => {
+                            context.last_feedback = None;
+                            tracing::debug!(
+                                step = %id,
+                                target = %target,
+                                "pipeline jumping"
+                            );
+                            index = self.resolve(id, target)?;
+                        }
                     }
-
-                    index += 1;
-                }
-                Ok(StepOutcome::Goto(target)) => {
-                    context.last_feedback = None;
-                    index = self.resolve(id, target)?;
                 }
                 Err(failure) => {
+                    let elapsed_ms = step_started.elapsed().as_millis();
                     let count = {
                         let count = failures.entry(id).or_insert(0);
                         *count += 1;
@@ -211,12 +285,21 @@ impl<S: PipelineStep> Pipeline<S> {
 
                     tracing::warn!(
                         step = %id,
+                        transition = transitions,
                         attempt = count,
+                        elapsed_ms = elapsed_ms,
+                        retry = %failure.retry,
                         error = %failure.error,
                         "pipeline step failed"
                     );
 
                     if count > self.max_step_errors {
+                        tracing::error!(
+                            step = %id,
+                            error_limit = self.max_step_errors,
+                            attempts = count,
+                            "pipeline aborted: step error limit exceeded"
+                        );
                         return Err(PipelineError::StepErrorLimit {
                             step: id,
                             limit: self.max_step_errors,
@@ -226,16 +309,26 @@ impl<S: PipelineStep> Pipeline<S> {
 
                     context.last_feedback = Some(failure.error.to_string());
                     index = self.resolve(id, failure.retry)?;
+                    tracing::info!(
+                        step = %id,
+                        retry = %failure.retry,
+                        attempt = count,
+                        "retrying pipeline step"
+                    );
                 }
             }
         }
     }
 
     fn resolve(&self, from: StepId, target: StepId) -> Result<usize, PipelineError> {
-        self.indexes
-            .get(&target)
-            .copied()
-            .ok_or(PipelineError::UnknownStep { from, target })
+        self.indexes.get(&target).copied().ok_or_else(|| {
+            tracing::error!(
+                from = %from,
+                target = %target,
+                "pipeline jump target does not exist"
+            );
+            PipelineError::UnknownStep { from, target }
+        })
     }
 }
 

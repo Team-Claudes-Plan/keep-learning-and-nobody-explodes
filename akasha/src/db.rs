@@ -8,6 +8,7 @@
 
 use serde_json::{Value, json};
 use sqlx::{PgConnection, PgPool, postgres::PgPoolOptions, types::Json};
+use std::time::Instant;
 use uuid::Uuid;
 
 use crate::pipeline::{ExistingTopic, Question, TopicSkills};
@@ -25,6 +26,8 @@ impl Database {
             .await?;
 
         sqlx::query("SELECT 1").execute(&pool).await?;
+
+        tracing::info!(max_connections, "database connection pool ready");
 
         Ok(Self { pool })
     }
@@ -59,6 +62,13 @@ impl Database {
             }
         }
 
+        tracing::debug!(
+            island_id = %island_id,
+            topics = topics.len(),
+            skills = topics.iter().map(|topic| topic.skills.len()).sum::<usize>(),
+            "loaded island topic catalog"
+        );
+
         Ok(topics)
     }
 
@@ -74,6 +84,31 @@ impl Database {
         island_id: Uuid,
         topics: &[TopicSkills],
     ) -> Result<(), sqlx::Error> {
+        let started = Instant::now();
+        let topic_count = topics
+            .iter()
+            .filter(|topic| topic.skills.iter().any(|skill| !skill.questions.is_empty()))
+            .count();
+        let skill_count = topics
+            .iter()
+            .flat_map(|topic| &topic.skills)
+            .filter(|skill| !skill.questions.is_empty())
+            .count();
+        let question_count = topics
+            .iter()
+            .flat_map(|topic| &topic.skills)
+            .map(|skill| skill.questions.len())
+            .sum::<usize>();
+
+        tracing::info!(
+            document_id = %document_id,
+            island_id = %island_id,
+            topics = topic_count,
+            skills = skill_count,
+            questions = question_count,
+            "storing generated questions"
+        );
+
         let mut transaction = self.pool.begin().await?;
 
         for topic in topics
@@ -91,6 +126,13 @@ impl Database {
             .fetch_one(&mut *transaction)
             .await?;
 
+            tracing::debug!(
+                document_id = %document_id,
+                topic = %topic.topic,
+                topic_id = %topic_id,
+                "upserted topic"
+            );
+
             for skill in topic
                 .skills
                 .iter()
@@ -106,6 +148,15 @@ impl Database {
                 .fetch_one(&mut *transaction)
                 .await?;
 
+                tracing::debug!(
+                    document_id = %document_id,
+                    topic = %topic.topic,
+                    skill = %skill.skill,
+                    skill_id = %skill_id,
+                    questions = skill.questions.len(),
+                    "upserted skill"
+                );
+
                 for question in &skill.questions {
                     store_question(&mut transaction, document_id, skill_id, question).await?;
                 }
@@ -113,6 +164,16 @@ impl Database {
         }
 
         transaction.commit().await?;
+
+        tracing::info!(
+            document_id = %document_id,
+            island_id = %island_id,
+            topics = topic_count,
+            skills = skill_count,
+            questions = question_count,
+            elapsed_ms = started.elapsed().as_millis(),
+            "stored generated questions"
+        );
 
         Ok(())
     }
@@ -144,6 +205,14 @@ async fn store_question(
         .bind(task_id)
         .execute(&mut *connection)
         .await?;
+
+    tracing::trace!(
+        document_id = %document_id,
+        skill_id = %skill_id,
+        task_id = %task_id,
+        question_type = fields.question_type,
+        "stored task and instruction"
+    );
 
     Ok(())
 }

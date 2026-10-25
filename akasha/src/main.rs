@@ -56,6 +56,17 @@ async fn init() -> anyhow::Result<()> {
 
     let config = AkashaConfig::init()?;
 
+    info!(
+        address = %config.address,
+        concurrency = config.concurrency,
+        llm_base_url = %config.llm_base_url,
+        llm_model = %config.llm_model,
+        max_questions = config.pipeline_max_questions,
+        max_step_errors = config.pipeline_max_step_errors,
+        max_transitions = config.pipeline_max_transitions,
+        "Akasha configuration loaded"
+    );
+
     let database = Database::connect(&config.database_url, 5).await?;
     let client = Client::new(&config.llm_base_url, &config.llm_api_key, &config.llm_model);
 
@@ -73,6 +84,11 @@ async fn init() -> anyhow::Result<()> {
         config.pipeline_max_transitions,
     )?;
 
+    info!(
+        pipeline = "extract -> schema -> review -> skill",
+        "Akasha pipeline configured"
+    );
+
     let concurrency = config.concurrency;
 
     let storage = VecDequeBackend::new();
@@ -88,7 +104,10 @@ async fn init() -> anyhow::Result<()> {
     });
 
     tokio::spawn(async move {
-        info!("Running Monitor");
+        info!(
+            worker = "akasha-llm-worker",
+            concurrency, "starting worker monitor"
+        );
 
         if let Err(e) = monitor.run().await {
             error!("Failed to run monitor: {e}");
@@ -99,5 +118,6 @@ async fn init() -> anyhow::Result<()> {
 
     let server = Server::builder().add_service(AkashaServiceServer::new(service));
 
+    info!(address = %config.address, "Akasha gRPC server listening");
     Ok(server.serve(config.address).await?)
 }
