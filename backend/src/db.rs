@@ -26,12 +26,12 @@ pub struct IslandSummary {
     pub members: Vec<UserSummary>,
 }
 
-/// How much of a skill one member of an island has learned.
+/// How far one member of an island got with a skill.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct MemberProgress {
     pub user_id: Uuid,
-    /// Distinct tasks of the skill the member solved in any game.
-    pub solved: u32,
+    /// Bombs on the skill the member won, in any game.
+    pub wins: u32,
 }
 
 /// A skill (storey) of a topic and what its members know of it.
@@ -39,12 +39,14 @@ pub struct MemberProgress {
 pub struct SkillProgress {
     pub id: Uuid,
     pub name: String,
+    /// Place in the topic's skill tree, ground floor first.
+    pub position: u32,
     /// Tasks the skill has in total.
     pub tasks: u32,
     pub members: Vec<MemberProgress>,
 }
 
-/// A topic (house) of an island with its skills (storeys).
+/// A topic (house) of an island with its skills (storeys) in skill tree order.
 #[derive(Debug)]
 pub struct TopicProgress {
     pub id: Uuid,
@@ -66,12 +68,23 @@ pub enum AddMember {
 pub const MAX_ISLAND_MEMBERS: usize = 2;
 
 /// A task drawn for a new game, with one of its instructions.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct PickedTask {
     pub task_id: Uuid,
     pub instruction_id: Uuid,
     pub question_type: String,
     pub content: Value,
+}
+
+/// A playable task of a skill and when the players last answered it, see
+/// [`Database::skill_task_candidates`].
+#[derive(Debug, Clone)]
+pub struct TaskCandidate {
+    pub task: PickedTask,
+    /// Last time one of the players solved the task, if ever.
+    pub last_solved: Option<DateTime<Utc>>,
+    /// Last time one of the players failed the task, if ever.
+    pub last_failed: Option<DateTime<Utc>>,
 }
 
 /// Everything about a game part the server needs during play; never sent as a whole.
@@ -94,6 +107,10 @@ pub struct StoredEvent {
 pub struct NewGame<'a> {
     pub id: Uuid,
     pub topics: &'a [Uuid],
+    /// The storey the bomb is played on.
+    pub skill_id: Option<Uuid>,
+    /// The only user who may join.
+    pub invited: Option<Uuid>,
     pub question_count: u16,
     pub time_limit_secs: u32,
     pub tasks: &'a [PickedTask],
@@ -489,35 +506,44 @@ impl Database {
     }
 
     /// The topics of an island (shared with its origin, if it is a fork) with
-    /// their skills and how many tasks of each skill every member has solved.
-    /// Topics without skills are returned with an empty skill list.
+    /// their skills in skill tree order and how many bombs on each skill
+    /// every member has won. Topics without skills are returned with an empty
+    /// skill list.
     pub async fn island_topics(&self, island_id: Uuid) -> Result<Vec<TopicProgress>, sqlx::Error> {
-        type Row = (Uuid, String, Option<Uuid>, Option<String>, i64, Uuid, i64);
+        type Row = (
+            Uuid,
+            String,
+            Option<Uuid>,
+            Option<String>,
+            Option<i32>,
+            i64,
+            Uuid,
+            i64,
+        );
 
         let rows: Vec<Row> = sqlx::query_as(
-            "SELECT t.id, t.name, s.id, s.name,
+            "SELECT t.id, t.name, s.id, s.name, s.position,
                     COALESCE((SELECT count(*) FROM tasks k WHERE k.skill_id = s.id), 0),
                     m.user_id,
-                    COALESCE((SELECT count(DISTINCT gp.task_id)
-                     FROM game_parts gp
-                     JOIN game_players p ON p.game_id = gp.game_id
-                     JOIN tasks k ON k.id = gp.task_id
+                    COALESCE((SELECT count(*)
+                     FROM games g
+                     JOIN game_players p ON p.game_id = g.id
                      WHERE p.player_id = m.user_id
-                       AND k.skill_id = s.id
-                       AND gp.solved_at IS NOT NULL), 0)
+                       AND g.skill_id = s.id
+                       AND g.status = 'won'), 0)
              FROM islands i
              JOIN topics t ON t.island_id = COALESCE(i.origin_id, i.id)
              LEFT JOIN skills s ON s.topic_id = t.id
              JOIN island_members m ON m.island_id = i.id
              WHERE i.id = $1
-             ORDER BY t.created_at, t.id, s.created_at, s.id, m.user_id",
+             ORDER BY t.created_at, t.id, s.position, s.created_at, s.id, m.user_id",
         )
         .bind(island_id)
         .fetch_all(&self.pool)
         .await?;
 
         let mut topics: Vec<TopicProgress> = Vec::new();
-        for (topic_id, topic_name, skill_id, skill_name, tasks, user_id, solved) in rows {
+        for (topic_id, topic_name, skill_id, skill_name, position, tasks, user_id, wins) in rows {
             let topic = match topics.last_mut() {
                 Some(topic) if topic.id == topic_id => topic,
                 _ => {
@@ -530,25 +556,123 @@ impl Database {
                 }
             };
 
-            let (Some(skill_id), Some(skill_name)) = (skill_id, skill_name) else {
+            let (Some(skill_id), Some(skill_name), Some(position)) =
+                (skill_id, skill_name, position)
+            else {
                 continue;
             };
 
             let member = MemberProgress {
                 user_id,
-                solved: u32::try_from(solved).map_err(decode_error)?,
+                wins: u32::try_from(wins).map_err(decode_error)?,
             };
             match topic.skills.last_mut() {
                 Some(skill) if skill.id == skill_id => skill.members.push(member),
                 _ => topic.skills.push(SkillProgress {
                     id: skill_id,
                     name: skill_name,
+                    position: u32::try_from(position).map_err(decode_error)?,
                     tasks: u32::try_from(tasks).map_err(decode_error)?,
                     members: vec![member],
                 }),
             }
         }
         Ok(topics)
+    }
+
+    /// Every task of `skill_id` that has an instruction (one picked at random
+    /// per task), with when any of `players` last solved or failed it.
+    pub async fn skill_task_candidates(
+        &self,
+        skill_id: Uuid,
+        players: &[Uuid],
+    ) -> Result<Vec<TaskCandidate>, sqlx::Error> {
+        type Row = (
+            Uuid,
+            Uuid,
+            String,
+            Json<Value>,
+            Option<DateTime<Utc>>,
+            Option<DateTime<Utc>>,
+        );
+
+        let rows: Vec<Row> = sqlx::query_as(
+            "SELECT DISTINCT ON (t.id) t.id, i.id, t.question_type, t.content,
+                    (SELECT max(gp.solved_at) FROM game_parts gp
+                     JOIN game_players p ON p.game_id = gp.game_id
+                     WHERE gp.task_id = t.id AND p.player_id = ANY($2)),
+                    (SELECT max(gp.failed_at) FROM game_parts gp
+                     JOIN game_players p ON p.game_id = gp.game_id
+                     WHERE gp.task_id = t.id AND p.player_id = ANY($2))
+             FROM tasks t
+             JOIN instructions i ON i.task_id = t.id
+             WHERE t.skill_id = $1
+             ORDER BY t.id, random()",
+        )
+        .bind(skill_id)
+        .bind(players)
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(rows
+            .into_iter()
+            .map(
+                |(
+                    task_id,
+                    instruction_id,
+                    question_type,
+                    Json(content),
+                    last_solved,
+                    last_failed,
+                )| {
+                    TaskCandidate {
+                        task: PickedTask {
+                            task_id,
+                            instruction_id,
+                            question_type,
+                            content,
+                        },
+                        last_solved,
+                        last_failed,
+                    }
+                },
+            )
+            .collect())
+    }
+
+    /// Whether `game_id` is still waiting for its second player, was created
+    /// by `creator`, and may be joined by `invitee`.
+    pub async fn is_open_game_of(
+        &self,
+        game_id: Uuid,
+        creator: Uuid,
+        invitee: Uuid,
+    ) -> Result<bool, sqlx::Error> {
+        sqlx::query_scalar(
+            "SELECT EXISTS (
+                 SELECT 1 FROM games g
+                 JOIN game_players p ON p.game_id = g.id AND p.seat = 0
+                 WHERE g.id = $1 AND p.player_id = $2 AND g.status = 'waiting'
+                   AND (g.invited_id IS NULL OR g.invited_id = $3)
+             )",
+        )
+        .bind(game_id)
+        .bind(creator)
+        .bind(invitee)
+        .fetch_one(&self.pool)
+        .await
+    }
+
+    /// The users who share an island with `user_id`.
+    pub async fn island_partners(&self, user_id: Uuid) -> Result<Vec<Uuid>, sqlx::Error> {
+        sqlx::query_scalar(
+            "SELECT DISTINCT other.user_id
+             FROM island_members own
+             JOIN island_members other ON other.island_id = own.island_id
+             WHERE own.user_id = $1 AND other.user_id <> $1",
+        )
+        .bind(user_id)
+        .fetch_all(&self.pool)
+        .await
     }
 
     /// Draws `count` random tasks (each with an instruction) from the topics
@@ -570,7 +694,7 @@ impl Database {
                  WHERE s.topic_id = ANY($1)
                  ORDER BY t.id, random()
              ), ranked AS (
-                 SELECT task_id, instruction_id, question_type, content,
+                 SELECT task_id, instruction_id, question_type, content, task_random,
                         row_number() OVER (PARTITION BY skill_id ORDER BY task_random)
                             AS skill_rank
                  FROM candidates
@@ -608,13 +732,15 @@ impl Database {
         let mut tx = self.pool.begin().await?;
 
         sqlx::query(
-            "INSERT INTO games (id, question_count, time_limit_secs, created_at)
-             VALUES ($1, $2, $3, $4)",
+            "INSERT INTO games (id, question_count, time_limit_secs, created_at, skill_id, invited_id)
+             VALUES ($1, $2, $3, $4, $5, $6)",
         )
         .bind(game.id)
         .bind(i16::try_from(game.question_count).map_err(encode_error)?)
         .bind(i32::try_from(game.time_limit_secs).map_err(encode_error)?)
         .bind(at)
+        .bind(game.skill_id)
+        .bind(game.invited)
         .execute(&mut *tx)
         .await?;
 
@@ -729,7 +855,8 @@ impl Database {
         .await
     }
 
-    /// Games from the last hour that are still waiting for a second player.
+    /// Public games from the last hour that are still waiting for a second
+    /// player; games with an invited player are left out.
     pub async fn list_lobbies(&self) -> Result<Vec<Lobby>, sqlx::Error> {
         let rows: Vec<(Uuid, i16, Vec<Uuid>, Option<String>)> = sqlx::query_as(
             "SELECT g.id, g.question_count,
@@ -738,7 +865,8 @@ impl Database {
              FROM games g
              JOIN game_players p ON p.game_id = g.id AND p.seat = 0
              LEFT JOIN game_topics gt ON gt.game_id = g.id
-             WHERE g.status = 'waiting' AND g.created_at > now() - interval '1 hour'
+             WHERE g.status = 'waiting' AND g.invited_id IS NULL
+               AND g.created_at > now() - interval '1 hour'
              GROUP BY g.id, p.preferred_role
              ORDER BY g.created_at DESC
              LIMIT 50",
@@ -948,16 +1076,5 @@ mod tests {
             3,
             "one task from each skill is picked before a skill repeats"
         );
-
-        sqlx::query("DELETE FROM islands WHERE id = $1")
-            .bind(island)
-            .execute(pool)
-            .await
-            .expect("cleanup island");
-        sqlx::query("DELETE FROM users WHERE id = $1")
-            .bind(user)
-            .execute(pool)
-            .await
-            .expect("cleanup user");
     }
 }

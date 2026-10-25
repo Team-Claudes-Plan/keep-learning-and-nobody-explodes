@@ -8,8 +8,8 @@ use grpc::akasha::Language;
 /// Default request body limit: 256 MiB, enough for large scanned course PDFs.
 const DEFAULT_MAX_UPLOAD_BYTES: usize = 256 * 1024 * 1024;
 
-/// Default bind address; loopback only so the dev service is not exposed.
-const DEFAULT_LISTEN_ADDR: &str = "127.0.0.1:8081";
+/// Default bind address.
+const DEFAULT_LISTEN_ADDR: &str = "0.0.0.0:8081";
 
 /// Default address of the Akasha gRPC service.
 const DEFAULT_AKASHA_GRPC_URL: &str = "http://127.0.0.1:50051";

@@ -1,7 +1,7 @@
-import type { Island, IslandHouse } from '../api/types'
+import type { HouseSkill, Island, IslandHouse } from '../api/types'
 import { ISLAND_TERRACES, SCREEN_RIGHT, cliffReach, type Vec2 } from './island'
 import { GRID_BLOCKS, blockCenter, freeBlocks, type GridBlock, type GridCell } from './islandGrid'
-import { HOUSES, houseAtLevel, maxLevel, type House } from './houses'
+import { HOUSES, designStorey, type House, type Storey } from './houses'
 
 /** Open water a bridge crosses between two islands. */
 const BRIDGE_SPAN = 14
@@ -54,18 +54,18 @@ export function bridgeBetween(leftIndex: number): BridgeSpan {
   }
 }
 
-/** Highest house level the backend reports (`knowledge::MAX_LEVEL`). */
-export const MAX_HOUSE_LEVEL = 4
-
 /** A topic of the island, standing as a house on one cell of its grid. */
 export type PlacedHouse = {
   topicId: string
   /** The topic's name. */
   name: string
-  /** 0 to MAX_HOUSE_LEVEL, the number of skills every member has learned. */
+  /** Storeys every member passed in a row from the ground floor. */
   level: number
+  /** Whether there is a storey to play. */
   unlocked: boolean
-  /** The design the topic is drawn with, named after the topic and cut down to its level. */
+  /** Storeys in the topic's skill tree, built or not. */
+  totalStoreys: number
+  /** The design the topic is drawn with, named after the topic, one storey per unlocked skill. */
   house: House
   cell: GridCell
   position: Vec2
@@ -107,9 +107,19 @@ function pickDesign(topicId: string, used: Set<string>): House {
   return HOUSES[start]
 }
 
-/** Storeys a design shows at a level: the share of its storeys, but always the ground floor to play in. */
-export function storeysAtLevel(design: House, level: number): number {
-  return Math.max(1, Math.ceil((Math.min(level, MAX_HOUSE_LEVEL) / MAX_HOUSE_LEVEL) * maxLevel(design)))
+/**
+ * The storeys a house shows: every passed skill and the next one, labelled with the skill and
+ * keyed by its id. A topic without skills still shows its ground floor, with nothing to play.
+ */
+export function skillStoreys(design: House, skills: HouseSkill[]): Storey[] {
+  const unlocked = [...skills].sort((a, b) => a.position - b.position).filter((skill) => skill.unlocked)
+  if (unlocked.length === 0) return [designStorey(design, 0)]
+  return unlocked.map((skill, index) => ({
+    ...designStorey(design, index),
+    id: skill.skill_id,
+    label: skill.name,
+    skill: { id: skill.skill_id, passed: skill.passed, tasks: skill.tasks },
+  }))
 }
 
 /** Places an island's topics as houses on its grid, in the order the backend lists them. */
@@ -124,7 +134,8 @@ export function resolveIsland(island: Island): ResolvedIsland {
       name: topic.name,
       level: topic.level,
       unlocked: topic.unlocked,
-      house: { ...houseAtLevel(design, storeysAtLevel(design, topic.level)), name: topic.name },
+      totalStoreys: topic.skills.length,
+      house: { ...design, storeys: skillStoreys(design, topic.skills), name: topic.name },
       cell,
       position: blockCenter(cell.i, cell.j),
     }

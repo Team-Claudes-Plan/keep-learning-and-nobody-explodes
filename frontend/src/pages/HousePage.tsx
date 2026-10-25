@@ -12,7 +12,7 @@ import { useWallTextures } from '../components/facade/useHouseTextures'
 import { useInteriorTextures } from '../components/interior/useInteriorTextures'
 import type { SurfaceSpec } from '../components/surfaces'
 import { houseHeight, type House, type Storey } from '../data/houses'
-import { MAX_HOUSE_LEVEL, type PlacedHouse, type ResolvedIsland } from '../data/islands'
+import type { PlacedHouse, ResolvedIsland } from '../data/islands'
 import { useIslandHouse } from '../data/useIslandHouse'
 import {
   DEFAULT_WALL_ATLAS,
@@ -27,9 +27,11 @@ import type { InteriorDesign } from '../data/interiorTypes'
 import { isDrag } from '../components/interaction'
 import KitFacade, { useKitCrownHeight } from '../components/facade/KitFacade'
 import { HOUSE_KITS, type HouseKitId } from '../data/houseKits'
+import { USES_BACKEND } from '../api/client'
 import { useIslands } from '../api/useIslands'
 import SessionStart from '../components/session/SessionStart'
 import { useInviteFlow } from '../game/useInviteFlow'
+import { questionsForStorey } from '../game/sessionRules'
 
 const WALL_THICKNESS = 0.08
 /** Gap between a room's outer wall and the kit shell around it. */
@@ -182,6 +184,12 @@ function KitShell({ kit, room, depth, storeyHeights, onRoofHeight }: KitShellPro
   )
 }
 
+/** What a storey of the house stands for in the skill tree. */
+function storeyStatus(storey: Storey): string {
+  if (!storey.skill || storey.skill.tasks === 0) return 'no questions yet'
+  return storey.skill.passed ? '✓ passed' : '▶ up next'
+}
+
 function HouseView({ island, placed }: { island: ResolvedIsland; placed: PlacedHouse }) {
   const { house } = placed
   const base = `/islands/${island.island.id}/houses/${placed.topicId}`
@@ -194,10 +202,18 @@ function HouseView({ island, placed }: { island: ResolvedIsland; placed: PlacedH
   const meId = islands.status === 'ready' ? islands.data.me.id : undefined
   const partner = island.island.group.members.find((member) => member.id !== meId) ?? null
   const target = useMemo(
-    () => (selectedId ? { islandId: island.island.id, topicId: placed.topicId, storeyId: selectedId } : null),
-    [island.island.id, placed.topicId, selectedId],
+    () =>
+      selected?.skill
+        ? { islandId: island.island.id, topicId: placed.topicId, storeyId: selected.skill.id, storeyIndex: selectedIndex }
+        : null,
+    [island.island.id, placed.topicId, selected, selectedIndex],
   )
   const invite = useInviteFlow(partner, target)
+  /** Only storeys with a skill that has questions can be played. */
+  const pick = (storey: Storey) => {
+    if (invite.flow.step === 'waiting' || !storey.skill || storey.skill.tasks === 0) return
+    setSelectedId(storey.id)
+  }
   const close = () => {
     invite.cancel()
     setSelectedId(null)
@@ -282,7 +298,7 @@ function HouseView({ island, placed }: { island: ResolvedIsland; placed: PlacedH
               decor={decor}
               ceiling={index === house.storeys.length - 1}
               selected={storey.id === selectedId}
-              onClick={() => invite.flow.step !== 'waiting' && setSelectedId(storey.id)}
+              onClick={() => pick(storey)}
             />
           )
         })}
@@ -293,48 +309,49 @@ function HouseView({ island, placed }: { island: ResolvedIsland; placed: PlacedH
           <Link to={`/islands/${island.island.id}`}>{island.island.name}</Link> / <span>{house.name}</span>
         </div>
         <div>
-          Level {placed.level} of {MAX_HOUSE_LEVEL}
+          {placed.totalStoreys > 0
+            ? `${placed.level} of ${placed.totalStoreys} storeys passed`
+            : 'No questions in this house yet: upload documents to build it.'}
         </div>
-        {!placed.unlocked && (
-          <div>
-            {island.island.group.members.length > 1
-              ? 'Not everyone on this island has learned this topic yet. Play its questions together to build it up.'
-              : 'You have not learned this topic yet. Play its questions to build it up.'}
-          </div>
-        )}
-        <div>Scroll or drag to move between storeys &middot; click a floor to start a session there</div>
-        <ul className="hud-links">
-          {house.storeys.map((storey, index) => {
-            const concept = resolveConcept(house.id, storey.id, index, storey.concept)
-            return (
+        <div>Scroll or drag to move between storeys &middot; click a floor to defuse its bomb together</div>
+        <ul className="hud-links" aria-label="Storeys">
+          {house.storeys.map((storey) =>
+            storey.skill ? (
               <li key={storey.id}>
                 <Link
                   to={`${base}/storeys/${storey.id}`}
+                  data-storey={storey.skill.passed ? 'passed' : 'next'}
                   onClick={(event) => {
                     event.preventDefault()
-                    if (invite.flow.step !== 'waiting') setSelectedId(storey.id)
+                    pick(storey)
                   }}
                 >
                   {storey.label}
-                  <span className="hud-concept">{concept.label}</span>
+                  <span className="hud-concept">{storeyStatus(storey)}</span>
                 </Link>
               </li>
-            )
-          })}
+            ) : null,
+          )}
+          {placed.totalStoreys > house.storeys.length && (
+            <li className="hud-locked">
+              🔒 {placed.totalStoreys - house.storeys.length} more{' '}
+              {placed.totalStoreys - house.storeys.length === 1 ? 'storey' : 'storeys'} above
+            </li>
+          )}
         </ul>
       </Hud>
 
       {selected && (
         <SessionStart
           storeyLabel={selected.label}
-          conceptLabel={resolveConcept(house.id, selected.id, selectedIndex, selected.concept).label}
+          conceptLabel={`${selected.skill?.passed ? '✓ geschafft' : '▶ als Nächstes'} · ${questionsForStorey(selectedIndex)} Fragen`}
           partner={partner}
           partnerOnline={invite.partnerOnline}
           flow={invite.flow}
           onStart={invite.start}
           onCancel={invite.cancel}
           onClose={close}
-          soloPath={`${base}/storeys/${selected.id}`}
+          soloPath={USES_BACKEND ? undefined : `${base}/storeys/${selected.id}`}
         />
       )}
     </>

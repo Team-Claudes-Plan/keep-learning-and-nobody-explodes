@@ -12,8 +12,8 @@ type SessionStartProps = {
   onStart: () => void
   onCancel: () => void
   onClose: () => void
-  /** The room's bomb to practise alone. */
-  soloPath: string
+  /** The room's bomb to practise alone; only without a backend, where nothing is recorded. */
+  soloPath?: string
 }
 
 /** The panel after clicking a room: start a session with the island partner and wait for them. */
@@ -75,7 +75,10 @@ export default function SessionStart({
                 <span>.</span>
               </span>
             </p>
-            <small>Sobald {flow.partner.name} annimmt, geht es los: du bekommst die Bombe, {flow.partner.name} das Handbuch.</small>
+            <small>
+              Sobald {flow.partner.name} annimmt, geht es los: du fängst mit der Bombe an, {flow.partner.name} mit dem
+              Handbuch. Danach wechselt ihr euch jede Runde ab.
+            </small>
             <button className="session-chunky is-grey" onClick={onCancel}>
               Abbrechen
             </button>
@@ -98,7 +101,7 @@ export default function SessionStart({
           </>
         )}
 
-        {flow.step !== 'waiting' && (
+        {flow.step !== 'waiting' && soloPath && (
           <Link className="session-solo" to={soloPath}>
             Allein üben →
           </Link>

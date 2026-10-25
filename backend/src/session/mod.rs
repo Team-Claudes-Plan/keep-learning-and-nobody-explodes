@@ -7,6 +7,7 @@
 mod actor;
 mod glyphs;
 mod judge;
+mod pick;
 pub mod protocol;
 mod state;
 mod task;
@@ -17,7 +18,10 @@ use chrono::Utc;
 use tokio::sync::{Mutex, broadcast, mpsc, oneshot};
 use uuid::Uuid;
 
-use crate::db::{Database, Lobby, NewGame, NewPlayer};
+use crate::{
+    db::{Database, Lobby, NewGame, NewPlayer, PickedTask},
+    knowledge,
+};
 use actor::{Actor, Request};
 use protocol::{Answer, ErrorCode, GameEvent, PartInfo, Role, ServerMessage};
 use state::GameState;
@@ -107,11 +111,22 @@ pub struct Connection {
 pub struct CreateGame {
     /// The user creating the game.
     pub player: Uuid,
-    /// Topics (houses) to draw the tasks from.
+    /// Topics (houses) to draw the tasks from, unless a storey is played.
     pub topics: Vec<Uuid>,
+    /// The storey to play: tasks come from this skill only.
+    pub storey: Option<Storey>,
+    /// The only user who may join.
+    pub invited: Option<Uuid>,
     pub question_count: u16,
     pub role: Option<Role>,
     pub time_limit_secs: Option<u32>,
+}
+
+/// A storey (skill) of a house on an island.
+#[derive(Debug, Clone, Copy)]
+pub struct Storey {
+    pub skill_id: Uuid,
+    pub island_id: Uuid,
 }
 
 type Games = Arc<Mutex<HashMap<Uuid, mpsc::Sender<Request>>>>;
@@ -140,10 +155,16 @@ impl Sessions {
 
     pub async fn create(&self, request: CreateGame) -> Result<Seat, SessionError> {
         let time_limit_secs = request.time_limit_secs.unwrap_or(DEFAULT_TIME_LIMIT_SECS);
-        if request.topics.is_empty() {
+        if request.storey.is_none() && request.topics.is_empty() {
             return Err(SessionError::new(
                 ErrorCode::BadMessage,
-                "pick at least one topic",
+                "pick at least one topic or a storey",
+            ));
+        }
+        if request.invited == Some(request.player) {
+            return Err(SessionError::new(
+                ErrorCode::BadMessage,
+                "invite someone else",
             ));
         }
         if !(1..=MAX_PARTS).contains(&request.question_count) {
@@ -163,17 +184,8 @@ impl Sessions {
             ));
         }
 
-        let tasks = self
-            .db
-            .pick_tasks(&request.topics, request.question_count)
-            .await
-            .map_err(|e| SessionError::db(&e))?;
-        if tasks.len() < usize::from(request.question_count) {
-            return Err(SessionError::new(
-                ErrorCode::NoTasks,
-                format!("the topics only have {} playable tasks", tasks.len()),
-            ));
-        }
+        let (topics, tasks) = self.game_tasks(&request).await?;
+        let skill_id = request.storey.map(|storey| storey.skill_id);
 
         // every symbol is used at most once per game
         let demands: Vec<usize> = tasks
@@ -190,7 +202,7 @@ impl Sessions {
         };
         let events = vec![
             GameEvent::GameCreated {
-                topics: request.topics.clone(),
+                topics: topics.clone(),
                 question_count: request.question_count,
                 time_limit_secs,
                 created_by: seat.player_id,
@@ -204,6 +216,8 @@ impl Sessions {
                         glyphs,
                     })
                     .collect(),
+                skill_id,
+                invited: request.invited,
             },
             GameEvent::PlayerJoined {
                 player_id: seat.player_id,
@@ -213,7 +227,9 @@ impl Sessions {
         ];
         let game = NewGame {
             id: seat.game_id,
-            topics: &request.topics,
+            topics: &topics,
+            skill_id,
+            invited: request.invited,
             question_count: request.question_count,
             time_limit_secs,
             tasks: &tasks,
@@ -233,6 +249,90 @@ impl Sessions {
         let handle = self.spawn(seat.game_id).await?;
         games.insert(seat.game_id, handle);
         Ok(seat)
+    }
+
+    /// The topics of the game and its tasks: from one storey (skill), or
+    /// spread over whole topics for a lobby game.
+    async fn game_tasks(
+        &self,
+        request: &CreateGame,
+    ) -> Result<(Vec<Uuid>, Vec<PickedTask>), SessionError> {
+        if let Some(storey) = request.storey {
+            let (topic, tasks) = self.storey_tasks(request, storey).await?;
+            return Ok((vec![topic], tasks));
+        }
+        let tasks = self
+            .db
+            .pick_tasks(&request.topics, request.question_count)
+            .await
+            .map_err(|e| SessionError::db(&e))?;
+        if tasks.len() < usize::from(request.question_count) {
+            return Err(SessionError::new(
+                ErrorCode::NoTasks,
+                format!("the topics only have {} playable tasks", tasks.len()),
+            ));
+        }
+        Ok((request.topics.clone(), tasks))
+    }
+
+    /// Checks that the storey can be played on the island and picks its
+    /// tasks (see [`pick`]). Returns the topic of the storey with the tasks.
+    async fn storey_tasks(
+        &self,
+        request: &CreateGame,
+        storey: Storey,
+    ) -> Result<(Uuid, Vec<PickedTask>), SessionError> {
+        let db = |e: sqlx::Error| SessionError::db(&e);
+        let mut players = vec![request.player];
+        players.extend(request.invited);
+        for &player in &players {
+            if !self
+                .db
+                .is_island_member(storey.island_id, player)
+                .await
+                .map_err(db)?
+            {
+                return Err(SessionError::new(
+                    ErrorCode::NotIslandMember,
+                    "both players must be members of the island",
+                ));
+            }
+        }
+
+        let topics = self.db.island_topics(storey.island_id).await.map_err(db)?;
+        let Some((topic, unlocked)) = topics.iter().find_map(|topic| {
+            knowledge::skill_unlocked(topic, storey.skill_id).map(|unlocked| (topic.id, unlocked))
+        }) else {
+            return Err(SessionError::new(
+                ErrorCode::NotIslandMember,
+                "the storey is not on this island",
+            ));
+        };
+        if !unlocked {
+            return Err(SessionError::new(
+                ErrorCode::SkillLocked,
+                "pass the storeys below first",
+            ));
+        }
+
+        let candidates = self
+            .db
+            .skill_task_candidates(storey.skill_id, &players)
+            .await
+            .map_err(db)?;
+        let tasks = pick::pick(
+            candidates,
+            usize::from(request.question_count),
+            Utc::now(),
+            glyphs::random_below,
+        );
+        if tasks.is_empty() {
+            return Err(SessionError::new(
+                ErrorCode::NoTasks,
+                "the storey has no playable tasks",
+            ));
+        }
+        Ok((topic, tasks))
     }
 
     pub async fn join(

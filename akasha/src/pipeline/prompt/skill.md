@@ -32,6 +32,13 @@ The user message lists every topic of this batch with the island's existing skil
 - Create a new skill only when no existing skill of that topic fits.
 - The same skill name may exist under different topics; skills are scoped to their topic.
 
+# Skill tree order
+
+The skills of a topic form a skill tree: players climb the house storey by storey, so each skill must build on the skills before it.
+
+- The existing skills are listed in their order, from the ground floor up. Never reorder them.
+- Order your assignments so that **new** skills appear from foundational to advanced: the first new skill you mention becomes the next storey, the next one the storey above it, and so on.
+
 # Response format
 
 Return only one valid JSON array with one object per question:

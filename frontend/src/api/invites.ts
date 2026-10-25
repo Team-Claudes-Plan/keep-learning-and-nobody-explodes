@@ -4,10 +4,10 @@ import { mockIsOnline, mockUser } from './mockIslands'
 import type { Presence, PresenceStatus, UserSummary } from './types'
 
 // The user channel: one websocket per signed-in user while the app is open. It tells who of the
-// island partners is online and carries game invites. The backend does not have it yet; the
-// protocol is proposed in BACKEND_MODIFICATIONS.md. Without a backend a fake server plays Mia.
+// island partners is online and carries game invites (schema/user-channel.md). Without a backend a
+// fake server plays Mia.
 
-// ---- Wire format (BACKEND_MODIFICATIONS.md) ----
+// ---- Wire format (schema/user-channel.md, backend/src/presence/protocol.rs) ----
 
 type ClientMessage =
   | { type: 'invite'; request_id: string; to: string; island_id: string; topic_id: string; storey_id: string; game_id: string }

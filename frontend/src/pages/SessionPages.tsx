@@ -13,11 +13,12 @@ import {
   type SessionState,
 } from '../api/session'
 import type { EndReason, IslandsResponse, Lobby, Role } from '../api/types'
-import { useIslands } from '../api/useIslands'
+import { reloadIslands, useIslands } from '../api/useIslands'
 import Bomb3D from '../game/Bomb3D'
 import Celebration from '../game/Celebration'
 import GlyphIcon from '../game/GlyphIcon'
 import { QUESTION_TYPE_LABELS } from '../game/questionTypes'
+import { sessionErrorText } from '../game/sessionErrors'
 import { useSessionBomb, useTimeLeft } from '../game/useSessionBomb'
 import { CopyLink } from './KoopPages'
 
@@ -256,11 +257,15 @@ export function SessionLobbyPage() {
   )
 }
 
-/** /koop/spiel/:gameId — joins the game (or resumes it with the stored token) and plays it. */
+/**
+ * /koop/spiel/:gameId — joins the game (or resumes it with the stored token) and plays it.
+ * `?rolle=` is the role to join as, `?insel=` the island of a storey game, to lead back to its house.
+ */
 export function SessionGamePage() {
   const { gameId = '' } = useParams()
   const [params] = useSearchParams()
   const role = params.get('rolle')
+  const islandId = params.get('insel')
   const [client, setClient] = useState<SessionClient | null>(null)
 
   useEffect(() => {
@@ -270,7 +275,7 @@ export function SessionGamePage() {
   }, [gameId, role])
 
   if (!client) return null
-  return <SessionGame key={gameId} client={client} />
+  return <SessionGame key={gameId} client={client} islandId={islandId} />
 }
 
 const REASONS: Record<EndReason, string> = {
@@ -297,7 +302,15 @@ function useAnswerToast(session: SessionState) {
   return toast
 }
 
-function SessionGame({ client }: { client: SessionClient }) {
+/** Where to go after the game: the storey's house, or the lobby. */
+function resultTarget(game: { skill_id: string | null; topics: string[] }, islandId: string | null) {
+  if (game.skill_id && islandId && game.topics[0]) {
+    return { to: `/islands/${islandId}/houses/${game.topics[0]}`, label: 'Zurück zum Haus' }
+  }
+  return { to: '/koop', label: 'Zurück zur Lobby' }
+}
+
+function SessionGame({ client, islandId }: { client: SessionClient; islandId: string | null }) {
   const session = useSession(client)
   const bomb = useSessionBomb(client, session)
   const names = useNames()
@@ -306,12 +319,18 @@ function SessionGame({ client }: { client: SessionClient }) {
   const myRole: Role | null = !game || !me ? null : game.defuser === me ? 'defuser' : game.expert === me ? 'expert' : null
   const timeLeft = useTimeLeft(game?.deadline ?? null, game?.status === 'active', 0)
   const toast = useAnswerToast(session)
+  const ended = isOver(game)
+
+  // A won storey unlocks the next one: show the houses as they are now.
+  useEffect(() => {
+    if (ended) void reloadIslands().catch(() => undefined)
+  }, [ended])
 
   if (connection === 'failed') {
     return (
       <div className="mg-page">
         <h1>🤝 Koop</h1>
-        <p className="bomb-error">⚠️ {session.error?.message ?? 'Keine Verbindung.'}</p>
+        <p className="bomb-error">⚠️ {session.error ? sessionErrorText(session.error) : 'Keine Verbindung.'}</p>
         <Link className="mg-button" to="/koop">
           Zurück
         </Link>
@@ -351,10 +370,11 @@ function SessionGame({ client }: { client: SessionClient }) {
     )
   }
 
-  const over = isOver(game)
+  const over = ended
+  const result = resultTarget(game, islandId)
 
   return (
-    <div className="bomb-screen">
+    <div className="bomb-screen" data-role={myRole ?? undefined} data-status={game.status} data-turn={game.turn ?? undefined}>
       {myRole === 'defuser' ? (
         <Bomb3D
           bare
@@ -412,10 +432,11 @@ function SessionGame({ client }: { client: SessionClient }) {
 
       {game.status === 'won' && <Celebration />}
       {over && (
-        <Link to="/koop" className={`bomb-screen-result ${game.status === 'won' ? 'is-good' : 'is-bad'}`}>
+        <Link to={result.to} className={`bomb-screen-result ${game.status === 'won' ? 'is-good' : 'is-bad'}`}>
           {game.status === 'won' ? '✅ Entschärft' : game.status === 'lost' ? '💥 BOOM' : '🏳️ Abgebrochen'}
           {game.reason && <small>{REASONS[game.reason]}</small>}
-          <small>Zurück zur Lobby</small>
+          {game.status === 'won' && game.skill_id && <small>Stockwerk geschafft: das nächste ist frei!</small>}
+          <small>{result.label}</small>
         </Link>
       )}
     </div>
@@ -424,7 +445,8 @@ function SessionGame({ client }: { client: SessionClient }) {
 
 function ConnectionNote({ session }: { session: SessionState }) {
   if (session.connection === 'reconnecting') return <div className="session-note">Verbindung verloren – verbinde neu…</div>
-  if (session.connection === 'open' && session.error) return <div className="session-note">⚠️ {session.error.message}</div>
+  if (session.connection === 'open' && session.error)
+    return <div className="session-note">⚠️ {sessionErrorText(session.error)}</div>
   return null
 }
 
@@ -484,7 +506,7 @@ function ExpertManual({ briefing, over }: { briefing: Extract<Briefing, { role: 
               <h3>Bedeutung der Symbole</h3>
               <ul className="book-glyphs">
                 {symbols.map(({ glyph, text }) => (
-                  <li key={glyph}>
+                  <li key={glyph} data-glyph={glyph}>
                     <GlyphIcon index={glyph} size={34} stroke={5} />
                     <span>{asText(text)}</span>
                   </li>

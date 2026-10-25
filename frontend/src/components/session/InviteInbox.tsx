@@ -20,7 +20,7 @@ function InviteCard({ invite, more }: { invite: Invite; more: number }) {
 
   function accept() {
     answerInvite(invite.id, true)
-    navigate(gamePath(invite.gameId, 'expert'))
+    navigate(gamePath(invite.gameId, 'expert', invite.islandId))
   }
 
   return (
@@ -29,8 +29,8 @@ function InviteCard({ invite, more }: { invite: Invite; more: number }) {
       <div className="invite-card-body">
         <strong id={`invite-${invite.id}`}>📨 Einladung von {invite.from.name}</strong>
         <p>
-          {invite.from.name} will mit dir eine Bombe entschärfen{where ? <> in <b>{where}</b></> : null}. Du bekommst das
-          Handbuch.
+          {invite.from.name} will mit dir eine Bombe entschärfen{where ? <> in <b>{where}</b></> : null}. Du fängst mit dem
+          Handbuch an.
         </p>
         <div className="invite-card-buttons">
           <button className="session-chunky is-go" onClick={accept}>
