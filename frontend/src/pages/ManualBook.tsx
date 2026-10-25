@@ -21,9 +21,8 @@ function shuffled<T>(items: T[], random: Random): T[] {
   return copy
 }
 
-/** Height of the paper stack under the open pages, per leaf and at most. */
-const STACK_PER_LEAF = 2.5
-const STACK_MAX = 18
+/** Thickness of the paper stack peeking out under the open pages (px). */
+const STACK = 10
 
 /** Pages of the spread, each the size of an A5-ish sheet (StPageFlip stretches them to the space). */
 const PAGE_WIDTH = 520
@@ -126,19 +125,14 @@ export default function ManualBook({ seed, typeLabel, plan }: Props) {
 
   const last = count - 1
   // paper stack under the open pages: thicker on the side where more pages lie
-  // Leaves (sheets, two pages each) turned to the left; the visible page on each side lies on top,
-  // only the leaves underneath show as a stack. At the first spread nothing lies under the left
-  // page but the cover, at the last nothing under the right one.
   // While a page turns, the book already slides to where the spread it goes to lies (centred when
   // it closes), instead of jumping there once the page has landed.
   const shownPage = turning ? (page === 0 ? 1 : page >= last ? last - 1 : Math.max(0, Math.min(last, page + 2 * heading))) : page
-  const leaves = count / 2
-  const turned = Math.floor((page + 1) / 2)
-  const open = page > 0 && page < last
-  const stackFor = (under: number) => (under <= 0 ? 0 : Math.min(STACK_MAX, 3 + under * STACK_PER_LEAF))
-  // hidden while a page is moving: the stack only fits the spread that is lying still
-  const leftStack = open && !turning ? stackFor(turned - 1) : 0
-  const rightStack = open && !turning ? stackFor(leaves - turned - 1) : 0
+  // A fixed paper stack, the same height throughout: it lies under the pages on each side and stays
+  // put while pages turn. Only where nothing but a cover board lies (left of the first spread, right
+  // of the last) there is none; closed, the slightly larger cover lies over it.
+  const leftStack = (page > 1 && page < last) || (page === last && turning)
+  const rightStack = (page > 0 && page < last - 1) || (page === 0 && turning)
   const label =
     page === 0 ? 'Cover' : page >= last ? 'Rückseite' : page <= 2 ? 'Anleitung · Seite 2' : `Seite ${page} – ${page + 1}`
 
@@ -163,8 +157,8 @@ export default function ManualBook({ seed, typeLabel, plan }: Props) {
             }}
           >
             {/* edges of the pages lying underneath, peeking out below and at the outer sides */}
-            {leftStack > 0 && <div className="book-stack is-left" style={{ ['--stack' as string]: `${leftStack}px` }} />}
-            {rightStack > 0 && <div className="book-stack is-right" style={{ ['--stack' as string]: `${rightStack}px` }} />}
+            {leftStack && <div className="book-stack is-left" style={{ ['--stack' as string]: `${STACK}px` }} />}
+            {rightStack && <div className="book-stack is-right" style={{ ['--stack' as string]: `${STACK}px` }} />}
             <div ref={host} className="book-pages" />
           </div>
         </div>

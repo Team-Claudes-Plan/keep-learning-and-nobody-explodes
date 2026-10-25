@@ -2130,7 +2130,6 @@ canvas {
     linear-gradient(180deg, transparent calc(100% - var(--stack)), rgba(60, 35, 10, 0.25) 100%),
     repeating-linear-gradient(0deg, #eadbb4 0 2px, #c9b386 2px 3px);
   box-shadow: 0 10px 18px rgba(0, 0, 0, 0.45);
-  transition: bottom 0.4s, top 0.4s, left 0.4s, right 0.4s;
 }
 
 .book-stack.is-left {
@@ -2168,6 +2167,21 @@ canvas {
   overflow: hidden;
   container-type: size;
   cursor: grab;
+}
+
+/* the cover boards are a little larger than the pages, so closing the book covers the paper stack */
+.book-face.is-cover {
+  overflow: visible;
+}
+
+.book-face.is-cover .book-cover {
+  position: relative;
+  height: calc(100% + 22px);
+  margin: -8px -14px -14px -2px;
+}
+
+.book-face.is-cover.--left .book-cover {
+  margin: -8px -2px -14px -14px;
 }
 
 /* the library's highlight stripes make paper look like sheet metal: soft shadow only */
