@@ -21,6 +21,7 @@ import type { Manual } from '../game/briefing'
 import { sessionErrorText } from '../game/sessionErrors'
 import { useSessionBomb, useTimeLeft } from '../game/useSessionBomb'
 import ReadyButton3D from '../components/session/ReadyButton3D'
+import SessionEnd, { useEndScreen, type SessionOutcome } from '../components/session/SessionEnd'
 import { CopyLink } from './KoopPages'
 import ManualBook from './ManualBook'
 
@@ -305,12 +306,13 @@ function useAnswerToast(session: SessionState) {
   return toast
 }
 
-/** Where to go after the game: the storey's house, or the lobby. */
-function resultTarget(game: { skill_id: string | null; topics: string[] }, islandId: string | null) {
+/** Where to go after the game: the storey's house, or the lobby; and the islands as the second way out. */
+function resultTargets(game: { skill_id: string | null; topics: string[] }, islandId: string | null) {
+  const islands = { to: islandId ? `/islands/${islandId}` : '/islands', label: 'Zur Insel' }
   if (game.skill_id && islandId && game.topics[0]) {
-    return { to: `/islands/${islandId}/houses/${game.topics[0]}`, label: 'Zurück zum Haus' }
+    return { primary: { to: `/islands/${islandId}/houses/${game.topics[0]}`, label: 'Zurück zum Haus' }, secondary: islands }
   }
-  return { to: '/koop', label: 'Zurück zur Lobby' }
+  return { primary: { to: '/koop', label: 'Zurück zur Lobby' }, secondary: islands }
 }
 
 function SessionGame({ client, islandId }: { client: SessionClient; islandId: string | null }) {
@@ -326,6 +328,8 @@ function SessionGame({ client, islandId }: { client: SessionClient; islandId: st
   /** The expert's side of the explosion went off (shakes the book). */
   const [blasted, setBlasted] = useState(false)
   const onBlast = useCallback(() => setBlasted(true), [])
+  const outcome: SessionOutcome | null = !game || !ended ? null : game.status === 'won' ? 'won' : game.status === 'lost' ? 'lost' : 'abandoned'
+  const endShown = useEndScreen(outcome, blasted)
 
   // A won storey unlocks the next one: show the houses as they are now.
   useEffect(() => {
@@ -377,7 +381,7 @@ function SessionGame({ client, islandId }: { client: SessionClient; islandId: st
   }
 
   const over = ended
-  const result = resultTarget(game, islandId)
+  const result = resultTargets(game, islandId)
   /** Both seats taken, the clock starts once both players are ready. */
   const starting = game.status === 'ready'
   const meReady = game.players.find((player) => player.player_id === me)?.ready ?? false
@@ -392,6 +396,8 @@ function SessionGame({ client, islandId }: { client: SessionClient; islandId: st
           islandId={islandId}
           bomb={bomb}
           timeLeft={timeLeft}
+          onBlast={onBlast}
+          blasted={blasted}
           ready={starting ? <ReadyButton client={client} meReady={meReady} partnerName={partnerName} /> : null}
         />
       ) : (
@@ -444,13 +450,14 @@ function SessionGame({ client, islandId }: { client: SessionClient; islandId: st
       )}
 
       {game.status === 'won' && <Celebration />}
-      {over && (
-        <Link to={result.to} className={`bomb-screen-result ${game.status === 'won' ? 'is-good' : 'is-bad'}`}>
-          {game.status === 'won' ? '✅ Entschärft' : game.status === 'lost' ? '💥 BOOM' : '🏳️ Abgebrochen'}
-          {game.reason && <small>{REASONS[game.reason]}</small>}
-          {game.status === 'won' && game.skill_id && <small>Stockwerk geschafft: das nächste ist frei!</small>}
-          <small>{result.label}</small>
-        </Link>
+      {outcome && endShown && (
+        <SessionEnd
+          outcome={outcome}
+          reason={game.reason ? REASONS[game.reason] : undefined}
+          note={outcome === 'won' && game.skill_id ? 'Stockwerk geschafft: das nächste ist frei!' : undefined}
+          primary={result.primary}
+          secondary={result.secondary}
+        />
       )}
     </div>
   )
@@ -475,12 +482,15 @@ type DefuserRoomProps = {
   islandId: string | null
   bomb: ReturnType<typeof useSessionBomb>
   timeLeft: number
+  /** The bomb blew up (called once it has, after `game.status` turned 'lost'). */
+  onBlast: () => void
+  blasted: boolean
   /** The ready button, shown until the game starts. */
   ready: ReactNode
 }
 
 /** The defuser's side: the storey's room, the bomb lying on the workbench until it is picked up. */
-function DefuserRoom({ game, islandId, bomb, timeLeft, ready }: DefuserRoomProps) {
+function DefuserRoom({ game, islandId, bomb, timeLeft, onBlast, blasted, ready }: DefuserRoomProps) {
   const [lifted, setLifted] = useState(false)
   const { focused, back } = bomb
   const lift = useCallback(() => setLifted(true), [])
@@ -517,6 +527,7 @@ function DefuserRoom({ game, islandId, bomb, timeLeft, ready }: DefuserRoomProps
     timeLeft,
     strikes: game.strikes,
     exploded: game.status === 'lost',
+    onBlast,
   }
 
   return (
@@ -535,6 +546,8 @@ function DefuserRoom({ game, islandId, bomb, timeLeft, ready }: DefuserRoomProps
           </div>
         )}
         {ready && <div className="session-ready">{ready}</div>}
+        {/* blinding flash over the whole room when it goes off */}
+        {blasted && <div className="bomb-flash" aria-hidden />}
       </div>
     </>
   )

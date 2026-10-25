@@ -3764,3 +3764,68 @@ canvas {
 .ready-check small {
   color: #6b7280;
 }
+
+/* Koop: end of a game. Same low-poly dialog as the islands' dialogs, over a faceted backdrop. */
+
+.session-end-backdrop {
+  z-index: 20;
+  animation: session-end-in 0.35s ease-out both;
+}
+
+.session-end-backdrop.is-lost {
+  background:
+    linear-gradient(160deg, rgba(255, 255, 255, 0.14) 0 30%, transparent 30%),
+    linear-gradient(32deg, rgba(60, 0, 0, 0.28) 0 22%, transparent 22%),
+    linear-gradient(110deg, #f0524a 0 45%, #d93a35 45% 75%, #b8282a 75%);
+}
+
+.session-end-backdrop.is-won {
+  background:
+    linear-gradient(160deg, rgba(255, 255, 255, 0.14) 0 30%, transparent 30%),
+    linear-gradient(110deg, rgba(110, 214, 120, 0.85) 0 45%, rgba(72, 184, 92, 0.85) 45% 75%, rgba(48, 150, 72, 0.85) 75%);
+}
+
+.session-end-backdrop.is-abandoned {
+  background:
+    linear-gradient(160deg, rgba(255, 255, 255, 0.14) 0 30%, transparent 30%),
+    linear-gradient(110deg, #8a93a8 0 45%, #737c93 45% 75%, #5d657b 75%);
+}
+
+.session-end .welcome-banner-title {
+  font-size: 34px;
+}
+
+.session-end-backdrop.is-lost .session-end-banner {
+  background:
+    linear-gradient(160deg, rgba(255, 255, 255, 0.45) 0 20%, transparent 20%),
+    linear-gradient(32deg, rgba(90, 0, 0, 0.25) 0 26%, transparent 26%),
+    linear-gradient(115deg, #ff8a5c 0 44%, #f2563a 44% 70%, #d63a2a 70%);
+}
+
+.session-end-backdrop.is-lost .session-end-banner .welcome-banner-subtitle {
+  color: #ffffff;
+  text-shadow: 0 2px 0 #1b1030;
+}
+
+.session-end-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 10px;
+  margin-top: 18px;
+}
+
+.session-end-actions button {
+  flex: 1 1 140px;
+  padding: 10px 16px;
+  font-size: 15px;
+}
+
+@keyframes session-end-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .session-end-backdrop { animation: none; }
+}
