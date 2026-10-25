@@ -44,6 +44,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "akasha"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "apalis",
+ "apalis-core",
+ "async-openai",
+ "config",
+ "grpc",
+ "tokio",
+ "tonic",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "aligned"
 version = "0.4.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -242,6 +258,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "04d4bb5df351abb6758a04240b0193794ddaf34a7c0b9452fab3c25dcce39e88"
 dependencies = [
  "memchr",
+]
+
+[[package]]
+name = "async-openai"
+version = "0.42.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "174e979f1e2ffe94b88d584740c11fd071f6d829c29120b1ba88bcaeb3374063"
+dependencies = [
+ "getrandom 0.3.4",
+ "reqwest",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -869,6 +897,7 @@ dependencies = [
  "thiserror",
  "tokio",
  "tokio-tungstenite",
+ "tonic",
  "tower",
  "tower-http",
  "tracing",
@@ -1235,6 +1264,16 @@ dependencies = [
  "rustc-hash",
  "smallvec",
  "typed-arena",
+]
+
+[[package]]
+name = "config"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "envy",
+ "serde",
+ "serde-inline-default",
 ]
 
 [[package]]
@@ -1608,9 +1647,9 @@ dependencies = [
 
 [[package]]
 name = "elliptic-curve"
-version = "0.14.1"
+version = "0.14.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9d65aa39b3a5c1c9c1b745c9a019234bb7a21b77abcb4f4d266d706e2d577d65"
+checksum = "0ad4496221fcfc21015fd8c0e26fcfab00504832dc0604f52acdd7bad2a8dc81"
 dependencies = [
  "base16ct",
  "crypto-bigint 0.7.7",
@@ -1646,6 +1685,14 @@ name = "entities"
 version = "1.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b5320ae4c3782150d900b79807611a59a99fc9a1d61d686faafc24b93fc8d7ca"
+
+[[package]]
+name = "envy"
+version = "0.4.2"
+source = "git+https://github.com/softprops/envy?rev=8eb504f83b002c7df24b9f7f106fc32a2a501a06#8eb504f83b002c7df24b9f7f106fc32a2a501a06"
+dependencies = [
+ "serde",
+]
 
 [[package]]
 name = "equator"
@@ -4136,6 +4183,7 @@ dependencies = [
  "hyper-util",
  "js-sys",
  "log",
+ "mime_guess",
  "native-tls",
  "percent-encoding",
  "pin-project-lite",
@@ -4143,16 +4191,21 @@ dependencies = [
  "rustls 0.23.46",
  "rustls-pki-types",
  "rustls-platform-verifier",
+ "serde",
+ "serde_json",
+ "serde_urlencoded",
  "sync_wrapper",
  "tokio",
  "tokio-native-tls",
  "tokio-rustls 0.26.6",
+ "tokio-util",
  "tower",
  "tower-http",
  "tower-service",
  "url",
  "wasm-bindgen",
  "wasm-bindgen-futures",
+ "wasm-streams",
  "web-sys",
 ]
 
@@ -4435,6 +4488,17 @@ checksum = "4148590afebada386688f18773da617792bf2ef03ffc1e4cbd2b1d45b023e0ba"
 dependencies = [
  "serde_core",
  "serde_derive",
+]
+
+[[package]]
+name = "serde-inline-default"
+version = "1.0.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8189189bb726d2735dbd8a872dfb6c5e6c67c07dc2ece1facb452ff995a270a0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 3.0.9",
 ]
 
 [[package]]
@@ -5843,6 +5907,19 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "23f0c9c52aa7cd7d77769a4cfe2a9adb1b331f489a41d912ce14513d5ab995c6"
 dependencies = [
  "unicode-ident",
+]
+
+[[package]]
+name = "wasm-streams"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9d1ec4f6517c9e11ae630e200b2b65d193279042e28edd4a2cda233e46670bbb"
+dependencies = [
+ "futures-util",
+ "js-sys",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
+ "web-sys",
 ]
 
 [[package]]

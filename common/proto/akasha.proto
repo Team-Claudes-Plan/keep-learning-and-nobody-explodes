@@ -1,0 +1,26 @@
+syntax = "proto3";
+
+package akasha;
+
+service AkashaService {
+  rpc ManifestTrials(ManifestTrialsRequest) returns (ManifestTrialsResponse);
+}
+
+message ManifestTrialsRequest {
+    Chronicle chronicle = 1;
+}
+
+message ManifestTrialsResponse {}
+
+message Chronicle {
+    string id = 1;
+    string topic = 2;
+    Language language = 3;
+    string text = 4;
+}
+
+enum Language {
+    LANGUAGE_UNSPECIFIED = 0;
+    LANGUAGE_ENGLISH = 1;
+    LANGUAGE_GERMAN = 2;
+}

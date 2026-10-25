@@ -5,6 +5,7 @@ use uuid::Uuid;
 use xberg::{ExtractInput, ExtractionConfig, extract};
 
 use crate::{
+    akasha::AkashaClient,
     db::Database,
     upload::{self, ObjectStore},
 };
@@ -54,13 +55,19 @@ pub async fn setup(db: &Database) -> Result<(), apalis_postgres::Error> {
     PostgresStorage::setup(db.pool()).await
 }
 
-pub async fn run(db: Database, store: ObjectStore, backend: OcrBackend) -> anyhow::Result<()> {
+pub async fn run(
+    db: Database,
+    store: ObjectStore,
+    backend: OcrBackend,
+    akasha: AkashaClient,
+) -> anyhow::Result<()> {
     Monitor::new()
         .register(move |_| {
             WorkerBuilder::new("ocr-worker")
                 .backend(backend.clone())
                 .data(db.clone())
                 .data(store.clone())
+                .data(akasha.clone())
                 .build(process_ocr)
         })
         .run_with_signal(tokio::signal::ctrl_c())
@@ -73,6 +80,7 @@ async fn process_ocr(
     job: OcrJob,
     Data(db): Data<Database>,
     Data(store): Data<ObjectStore>,
+    Data(akasha): Data<AkashaClient>,
 ) -> Result<(), BoxDynError> {
     let Some(topic_id) = job.topic_id() else {
         // Queued before topics existed; retrying cannot give it a topic.
@@ -82,17 +90,37 @@ async fn process_ocr(
     db.mark_processing(topic_id, &job.bucket, &job.key, job.etag.as_deref())
         .await?;
 
-    if let Err(error) = extract_and_save(&job, &db, &store).await {
-        if let Err(db_error) = db
-            .mark_failed(&job.bucket, &job.key, &error.to_string())
-            .await
-        {
-            tracing::error!(error = %db_error, key = %job.key, "failed to record OCR error");
+    let text = match extract_and_save(&job, &db, &store).await {
+        Ok(text) => text,
+        Err(error) => {
+            if let Err(db_error) = db
+                .mark_failed(&job.bucket, &job.key, &error.to_string())
+                .await
+            {
+                tracing::error!(error = %db_error, key = %job.key, "failed to record OCR error");
+            }
+            return Err(error);
         }
-        return Err(error);
-    }
+    };
 
-    tracing::info!(name: "ocr.completed", key = %job.key, "completed OCR job");
+    let Some(document_id) = db.document_id(&job.bucket, &job.key).await? else {
+        return Err(std::io::Error::other("document row is missing").into());
+    };
+    let Some(topic) = db.topic_name(topic_id).await? else {
+        return Err(std::io::Error::other("topic row is missing").into());
+    };
+
+    akasha
+        .manifest_trials(&document_id.to_string(), &topic, &text)
+        .await?;
+
+    tracing::info!(
+        name: "ocr.completed",
+        key = %job.key,
+        topic = %topic,
+        document_id = %document_id,
+        "completed OCR job and sent chronicle to Akasha"
+    );
     Ok(())
 }
 
@@ -100,7 +128,7 @@ async fn extract_and_save(
     job: &OcrJob,
     db: &Database,
     store: &ObjectStore,
-) -> Result<(), BoxDynError> {
+) -> Result<String, BoxDynError> {
     let object = store.get(&job.key).await?;
     let content_type = object
         .content_type
@@ -130,5 +158,5 @@ async fn extract_and_save(
         .join("\n\n");
     db.mark_completed(&job.bucket, &job.key, job.filename(), &content_type, &text)
         .await?;
-    Ok(())
+    Ok(text)
 }

@@ -68,7 +68,7 @@ async fn receive_event(
         };
         // Register the document first: a job must never exist without its row.
         // Both steps are idempotent, so a redelivered event is safe.
-        if let Err(error) = state
+        let document_id = match state
             .db
             .mark_queued(
                 topic_id,
@@ -79,13 +79,14 @@ async fn receive_event(
             )
             .await
         {
-            if db::is_unknown_topic(&error) {
+            Ok(document_id) => document_id,
+            Err(error) if db::is_unknown_topic(&error) => {
                 // Retrying cannot help, and a failing hook would make RustFS redeliver it.
                 tracing::warn!(name: "ocr.skipped", key = %job.key, topic_id = %topic_id, "topic does not exist, ignoring");
                 continue;
             }
-            return Err(WebhookError::internal(error));
-        }
+            Err(error) => return Err(WebhookError::internal(error)),
+        };
         let task = TaskBuilder::new(job.clone())
             .idempotency_key(job.idempotency_key())
             .build();
@@ -98,7 +99,7 @@ async fn receive_event(
             Err(error) => return Err(WebhookError::internal(error)),
         }
 
-        tracing::info!(name: "ocr.enqueued", key = %job.key, "enqueued OCR job");
+        tracing::info!(name: "ocr.enqueued", key = %job.key, document_id = %document_id, "enqueued OCR job");
         enqueued += 1;
     }
 
