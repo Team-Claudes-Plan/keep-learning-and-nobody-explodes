@@ -4,14 +4,16 @@ import { Link, useNavigate, useParams } from 'react-router'
 import SceneCanvas from '../components/SceneCanvas'
 import Room from '../components/Room'
 import StoreyWallDressing from '../components/storey/StoreyWallDressing'
-import Streets from '../components/city/Streets'
-import Island from '../components/city/Island'
+import Streets from '../components/islands/Streets'
+import Island from '../components/islands/Island'
 import { NO_FRONT } from '../components/roomWalls'
 import Hud from '../components/Hud'
 import { useWallTextures } from '../components/facade/useHouseTextures'
 import { useInteriorTextures } from '../components/interior/useInteriorTextures'
 import type { SurfaceSpec } from '../components/surfaces'
-import { getHouse, houseHeight, type House, type Storey } from '../data/houses'
+import { houseHeight, type House, type Storey } from '../data/houses'
+import type { PlacedHouse, ResolvedIsland } from '../data/islands'
+import { useIslandHouse } from '../data/useIslandHouse'
 import {
   DEFAULT_WALL_ATLAS,
   decorForHouse,
@@ -175,8 +177,10 @@ function KitShell({ kit, room, depth, storeyHeights, onRoofHeight }: KitShellPro
   )
 }
 
-function HouseView({ house }: { house: House }) {
+function HouseView({ island, placed }: { island: ResolvedIsland; placed: PlacedHouse }) {
   const navigate = useNavigate()
+  const { house } = placed
+  const base = `/islands/${island.island.id}/houses/${house.id}`
   const design = resolveDesign(house.facade.design)
   const atlas = house.facade.atlas ?? DEFAULT_WALL_ATLAS
   const wall = useWallTextures(house.facade.textures, design, atlas)
@@ -185,7 +189,7 @@ function HouseView({ house }: { house: House }) {
   // Lets the view scroll up far enough to show the whole roof.
   const [roofHeight, setRoofHeight] = useState(0)
   const [w, d] = house.footprint
-  const [blockX, blockZ] = house.position
+  const [blockX, blockZ] = placed.position
   const offsets = house.storeys.map((_, index) =>
     house.storeys.slice(0, index).reduce((sum, storey) => sum + storey.height, 0),
   )
@@ -226,7 +230,7 @@ function HouseView({ house }: { house: House }) {
       >
         <group position={[-blockX, -0.12, -blockZ]}>
           <Island />
-          <Streets />
+          <Streets fieldBlocks={island.fieldBlocks} />
         </group>
 
         {house.kit && (
@@ -256,7 +260,7 @@ function HouseView({ house }: { house: House }) {
               edgeColor={house.kit ? HOUSE_KITS[house.kit].trim : parts.edge}
               decor={decor}
               ceiling={index === house.storeys.length - 1}
-              onClick={() => navigate(`/houses/${house.id}/storeys/${storey.id}`)}
+              onClick={() => navigate(`${base}/storeys/${storey.id}`)}
             />
           )
         })}
@@ -264,7 +268,10 @@ function HouseView({ house }: { house: House }) {
 
       <Hud title={house.name}>
         <div className="hud-breadcrumb">
-          <Link to="/city">City</Link> / <span>{house.name}</span>
+          <Link to={`/islands/${island.island.id}`}>{island.island.name}</Link> / <span>{house.name}</span>
+        </div>
+        <div>
+          Level {placed.level} of {placed.maxLevel}
         </div>
         <div>Scroll or drag to move between storeys &middot; click a floor to open its room</div>
         <ul className="hud-links">
@@ -272,7 +279,7 @@ function HouseView({ house }: { house: House }) {
             const concept = resolveConcept(house.id, storey.id, index, storey.concept)
             return (
               <li key={storey.id}>
-                <Link to={`/houses/${house.id}/storeys/${storey.id}`}>
+                <Link to={`${base}/storeys/${storey.id}`}>
                   {storey.label}
                   <span className="hud-concept">{concept.label}</span>
                 </Link>
@@ -286,17 +293,24 @@ function HouseView({ house }: { house: House }) {
 }
 
 export default function HousePage() {
-  const { houseId = '' } = useParams()
-  const house = getHouse(houseId)
+  const { islandId = '', houseId = '' } = useParams()
+  const state = useIslandHouse(islandId, houseId)
 
-  if (!house) {
+  if (state.status === 'loading') return null
+  if (state.status !== 'ready') {
     return (
       <Hud title="House not found">
         <div>
-          No house with id <strong>{houseId}</strong>.
+          {state.status === 'error' ? (
+            <>⚠️ {state.message}</>
+          ) : (
+            <>
+              No house <strong>{houseId}</strong> on island <strong>{islandId}</strong>.
+            </>
+          )}
         </div>
         <div className="hud-links">
-          <Link to="/city">Back to city</Link>
+          <Link to="/islands">Back to the islands</Link>
         </div>
       </Hud>
     )
@@ -304,7 +318,7 @@ export default function HousePage() {
 
   return (
     <Suspense fallback={null}>
-      <HouseView house={house} />
+      <HouseView island={state.island} placed={state.placed} />
     </Suspense>
   )
 }

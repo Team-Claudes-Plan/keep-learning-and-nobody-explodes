@@ -1,8 +1,8 @@
 import { useMemo, useRef } from 'react'
 import { useFrame } from '@react-three/fiber'
 import type { Group } from 'three'
-import { SIDEWALK_HEIGHT } from '../../data/city'
-import { ANIMALS, type AnimalSpec } from '../../data/life'
+import { SIDEWALK_HEIGHT, type GridBlock } from '../../data/islandGrid'
+import { buildAnimals, type AnimalSpec } from '../../data/life'
 import { buildPath, samplePath } from './motion'
 
 function Leg({ x, z, width, height }: { x: number; z: number; width: number; height: number }) {
@@ -113,10 +113,11 @@ function Walker({ animal }: { animal: AnimalSpec }) {
   )
 }
 
-export default function Animals() {
+export default function Animals({ fieldBlocks }: { fieldBlocks: GridBlock[] }) {
+  const animals = useMemo(() => buildAnimals(fieldBlocks), [fieldBlocks])
   return (
     <group>
-      {ANIMALS.map((animal) => (
+      {animals.map((animal) => (
         <Walker key={animal.id} animal={animal} />
       ))}
     </group>

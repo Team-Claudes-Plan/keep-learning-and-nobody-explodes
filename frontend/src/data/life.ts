@@ -1,10 +1,10 @@
 import {
   BLOCK_SIZE,
-  FIELD_BLOCKS,
   ROAD_LINES,
   SIDEWALK_HEIGHT,
   SIDEWALK_WIDTH,
-} from './city'
+  type GridBlock,
+} from './islandGrid'
 
 export const ROAD_SURFACE_Y = 0.012
 export const LANE_OFFSET = 0.26
@@ -126,12 +126,15 @@ function sidewalkLoop(center: Vec2): Vec2[] {
   ]
 }
 
-const fieldBlocksByDistance = [...FIELD_BLOCKS].sort(
-  (left, right) =>
-    Math.hypot(left.center[0], left.center[1]) - Math.hypot(right.center[0], right.center[1]),
-)
+function byDistance(fieldBlocks: GridBlock[]): GridBlock[] {
+  return [...fieldBlocks].sort(
+    (left, right) =>
+      Math.hypot(left.center[0], left.center[1]) - Math.hypot(right.center[0], right.center[1]),
+  )
+}
 
-function buildAnimals(): AnimalSpec[] {
+export function buildAnimals(fieldBlocks: GridBlock[]): AnimalSpec[] {
+  const fieldBlocksByDistance = byDistance(fieldBlocks)
   const random = mulberry32(7341)
   return fieldBlocksByDistance.slice(0, 4).map((block, index) => {
     const kind = index % 2 === 0 ? 'dog' : 'cat'
@@ -147,8 +150,6 @@ function buildAnimals(): AnimalSpec[] {
     }
   })
 }
-
-export const ANIMALS: AnimalSpec[] = buildAnimals()
 
 function buildBirds(): BirdSpec[] {
   const random = mulberry32(5510)
@@ -168,7 +169,8 @@ function buildBirds(): BirdSpec[] {
 
 export const BIRDS: BirdSpec[] = buildBirds()
 
-function buildPerchedBirds(): PerchedBird[] {
+export function buildPerchedBirds(fieldBlocks: GridBlock[]): PerchedBird[] {
+  const fieldBlocksByDistance = byDistance(fieldBlocks)
   const random = mulberry32(9182)
   const half = BLOCK_SIZE / 2 + SIDEWALK_WIDTH / 2
   return fieldBlocksByDistance.slice(-2).map((block, index) => {
@@ -184,5 +186,3 @@ function buildPerchedBirds(): PerchedBird[] {
     }
   })
 }
-
-export const PERCHED_BIRDS: PerchedBird[] = buildPerchedBirds()

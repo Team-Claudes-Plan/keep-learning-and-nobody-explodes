@@ -12,7 +12,7 @@ import {
   grassColorAt,
   lakeRadiusAt,
 } from '../../data/island'
-import { CITY_EXTENT } from '../../data/city'
+import { GRID_EXTENT } from '../../data/islandGrid'
 
 const TAU = Math.PI * 2
 
@@ -26,8 +26,8 @@ const SHORE = new THREE.Color('#c6b184')
 const SHORE_WIDTH = 0.34
 /** The lake shore stops this far before the cliff edge. */
 const SHORE_EDGE_MARGIN = 0.08
-/** The lake shore stops this far before the city's sidewalks and roads. */
-const CITY_EDGE_MARGIN = 0.1
+/** The lake shore stops this far before the grid's sidewalks and roads. */
+const GRID_EDGE_MARGIN = 0.1
 /** Narrowest sand strip kept where the lake is squeezed. */
 const MIN_SHORE = 0.32
 const MIN_LAKE_RADIUS = 0.5
@@ -46,9 +46,9 @@ const FALL_SPREAD = 0.15
 /** Outward drift of the free fall below the island. */
 const VOID_DRIFT = 0.3
 
-/** Distance from (ox, oz) along (dx, dz) to the city's square footprint. */
-function cityReach(ox: number, oz: number, dx: number, dz: number): number {
-  const e = CITY_EXTENT
+/** Distance from (ox, oz) along (dx, dz) to the grid's square footprint. */
+function gridReach(ox: number, oz: number, dx: number, dz: number): number {
+  const e = GRID_EXTENT
   let near = -Infinity
   let far = Infinity
   for (const [o, d] of [
@@ -107,10 +107,10 @@ function buildLakeGeometry(): THREE.BufferGeometry {
       const lakeRadius = lakeRadiusAt(angle)
       const shoreWidth = outerExtra * widthScale
 
-      // Fit water + shore inside the room left by the cliff and the city.
+      // Fit water + shore inside the room left by the cliff and the grid.
       const room = Math.min(
         cliffReach(cx, cz, dx, dz, 0) - SHORE_EDGE_MARGIN,
-        cityReach(cx, cz, dx, dz) - CITY_EDGE_MARGIN,
+        gridReach(cx, cz, dx, dz) - GRID_EDGE_MARGIN,
       )
       const fitted = lakeRadius + shoreWidth > room
       const waterEdge = fitted ? Math.max(MIN_LAKE_RADIUS, Math.min(lakeRadius, room - MIN_SHORE)) : lakeRadius

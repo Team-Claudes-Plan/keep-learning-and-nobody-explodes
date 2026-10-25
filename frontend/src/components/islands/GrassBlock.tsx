@@ -1,4 +1,4 @@
-import { BLOCK_SIZE, SIDEWALK_HEIGHT, SIDEWALK_WIDTH } from '../../data/city'
+import { BLOCK_SIZE, SIDEWALK_HEIGHT, SIDEWALK_WIDTH } from '../../data/islandGrid'
 
 const SIDEWALK_COLOR = '#5b6270'
 
