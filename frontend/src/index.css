@@ -1804,6 +1804,83 @@ canvas {
   100% { background: rgba(255, 80, 20, 0); }
 }
 
+/* Defused: confetti, a warm glow and a big banner over the bomb */
+.celebration {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.celebration-glow {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(ellipse at 50% 45%, rgba(61, 255, 110, 0.35), transparent 60%);
+  animation: celebration-glow 1.6s ease-out forwards;
+}
+
+@keyframes celebration-glow {
+  0% { opacity: 0; }
+  15% { opacity: 1; }
+  100% { opacity: 0.35; }
+}
+
+.celebration-confetti {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.celebration-banner {
+  position: absolute;
+  top: 34%;
+  left: 50%;
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+  transform: translate(-50%, -50%);
+  animation: celebration-pop 0.9s cubic-bezier(0.2, 1.6, 0.4, 1) both, celebration-fade 1s ease-in 4.2s forwards;
+}
+
+.celebration-title {
+  font-size: clamp(44px, 11vw, 120px);
+  font-weight: 900;
+  letter-spacing: 0.04em;
+  color: #fff;
+  -webkit-text-stroke: 3px #14532d;
+  text-shadow: 0 6px 0 #14532d, 0 0 40px rgba(61, 255, 110, 0.9);
+  animation: celebration-wobble 1.2s ease-in-out 0.9s 3;
+}
+
+.celebration-sub {
+  padding: 6px 16px;
+  border-radius: 999px;
+  background: rgba(13, 15, 19, 0.75);
+  color: #fff;
+  font-size: clamp(14px, 2.6vw, 22px);
+  font-weight: 700;
+}
+
+@keyframes celebration-pop {
+  from { transform: translate(-50%, -50%) scale(0.2) rotate(-12deg); opacity: 0; }
+  to { transform: translate(-50%, -50%) scale(1) rotate(0); opacity: 1; }
+}
+
+@keyframes celebration-wobble {
+  0%, 100% { transform: rotate(0) scale(1); }
+  25% { transform: rotate(-3deg) scale(1.06); }
+  75% { transform: rotate(3deg) scale(1.06); }
+}
+
+@keyframes celebration-fade {
+  to { opacity: 0; transform: translate(-50%, -60%) scale(0.9); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .celebration-banner, .celebration-title { animation: none; }
+}
+
 /* Koop: code and practice type over the bomb, to check both players have the same bomb */
 .bomb-badge {
   position: absolute;

@@ -1,5 +1,6 @@
 import type { Question, QuestionType } from '../api/types'
 import Bomb3D from './Bomb3D'
+import Celebration from './Celebration'
 import type { ModuleDef } from './modules/types'
 import type { PlannedModule } from './plan'
 import { QUESTION_TYPE_LABELS, QUESTION_TYPES } from './questionTypes'
@@ -77,6 +78,7 @@ export default function Bomb({
         />
       )}
       {game.shown === 0 && <p className="bomb-screen-message">Keine passenden Aufgaben für diese Module.</p>}
+      {game.outcome === 'defused' && <Celebration />}
       {game.outcome && (
         <button className={`bomb-screen-result ${game.outcome === 'boom' ? 'is-bad' : 'is-good'}`} onClick={game.restart}>
           {game.outcome === 'boom' ? '💥 BOOM' : game.outcome === 'defused' ? '✅ Entschärft' : '🧪 Test fertig'}
