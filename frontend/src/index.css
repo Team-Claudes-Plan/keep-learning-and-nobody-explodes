@@ -268,6 +268,42 @@ canvas {
   background: rgba(255, 255, 255, 0.6);
 }
 
+.avatar-zzz {
+  position: relative;
+  width: 0;
+  height: 0;
+}
+
+.avatar-zzz span {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  color: #1e3a8a;
+  font-weight: 800;
+  font-style: italic;
+  -webkit-text-stroke: 3px #fff;
+  paint-order: stroke fill;
+  opacity: 0;
+  animation: avatar-zzz 2.7s ease-out infinite;
+}
+
+.avatar-zzz span:nth-child(1) { font-size: 12px; }
+.avatar-zzz span:nth-child(2) { font-size: 16px; animation-delay: 0.9s; }
+.avatar-zzz span:nth-child(3) { font-size: 20px; animation-delay: 1.8s; }
+
+@keyframes avatar-zzz {
+  0% { transform: translate(0, 0) rotate(-10deg); opacity: 0; }
+  20% { opacity: 1; }
+  100% { transform: translate(14px, -44px) rotate(12deg); opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .avatar-zzz span { animation: none; opacity: 1; }
+  .avatar-zzz span:nth-child(1) { transform: translate(0, 0); }
+  .avatar-zzz span:nth-child(2) { transform: translate(5px, -14px); }
+  .avatar-zzz span:nth-child(3) { transform: translate(10px, -32px); }
+}
+
 .island-sign {
   font-size: 12px;
   padding: 3px 10px;
