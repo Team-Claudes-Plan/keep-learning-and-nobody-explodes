@@ -36,25 +36,35 @@ bun run preview   # serve the production build
   are visible from outside. Clicking a storey opens that room.
 - `/houses/:houseId/storeys/:storeyId` — a single storey in the isometric
   view. Room items are clickable and can be selected/highlighted.
-- `/ar-demo` — the bomb with all learning levels as an AR object, placed in the
-  room with 8th Wall (see below).
+- `/ar-demo` — the playable bomb as an AR object: place it in the room with 8th
+  Wall and tap its modules to solve the 2D tasks (see below).
 - `*` — not found page.
 
 ## AR demo (`/ar-demo`)
 
-A small 8th Wall demo that turns the bomb into a room-scale AR object:
+A small 8th Wall demo that turns the bomb into a playable room-scale AR object:
 
-- Pick one of the six learning levels (Foundations … Analysis) or the bomb with all
-  eleven module types. Every level fills all eleven module slots.
+- Pick one of the six learning levels (Foundations … Analysis) or the
+  all-module-types level. The level is the **module pool**; a round plans five
+  modules from it onto the bomb.
 - The 3D turntable preview runs anywhere, including the desktop; drag to turn the
-  bomb, scroll/pinch to zoom.
+  bomb, scroll/pinch to zoom, and tap a module to try its task.
 - "AR starten" loads the free/open-source 8th Wall engine from jsDelivr
   (`@8thwall/engine-binary`, world-tracking `slam` chunk), opens the camera, shows
-  a reticle and places the bomb on the first surface tap. After placement, drag to
-  turn it, pinch or use the buttons to scale it, and switch levels live.
+  a reticle and places the bomb on the first surface tap. Drag to turn it, pinch
+  or use the buttons to scale it.
+- Tap a module plate: the bomb pulls that module in front of the camera and its
+  **2D minigame** opens in a card over the AR view. The five-minute timer starts
+  after placement; three mistakes end the round. The bomb's timer display, module
+  LEDs and strike lights update live.
+- Levels can be switched while the bomb is placed. A new plan rebuilds the bomb
+  without losing its spot on the floor.
 
-The level presets live in `src/ar/levels.ts`, the three.js scene and 8th Wall
-integration in `src/ar/ArBombExperience.ts`, and the UI in
+This AR mode is single-player: the question is shown on the module card. The
+two-player manual is not part of this demo.
+
+The level presets live in `src/ar/levels.ts`, the three.js scene, focus animation
+and 8th Wall integration in `src/ar/ArBombExperience.ts`, and the UI in
 `src/pages/ArDemoPage.tsx`.
 
 ### HTTPS for testing on a phone

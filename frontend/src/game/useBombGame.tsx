@@ -47,6 +47,13 @@ type BombGameOptions = {
   testBar?: boolean
   /** Practice round (e.g. koop with a question type): no timer, no explosion. */
   practice?: boolean
+  /** How many modules to plan. Defaults to a normal bomb. */
+  size?: number
+  /**
+   * '2d': host without the 3D module controls (e.g. the AR bomb). The focused module then always
+   * gets its 2D controls in the card, and no `content3d` is produced.
+   */
+  flatControls?: boolean
 }
 
 /** Game state of one bomb: questions, modules on it, timer, strikes and the module that is zoomed in on. */
@@ -57,6 +64,8 @@ export function useBombGame({
   paused = false,
   testBar = false,
   practice = false,
+  size = BOMB_SIZE,
+  flatControls = false,
 }: BombGameOptions) {
   const [round, setRound] = useState(0)
   const [load, setLoad] = useState<Load>({ status: 'loading' })
@@ -76,7 +85,7 @@ export function useBombGame({
         const full = fixedPlan
           ? fixedPlan(questions)
           : mode === 'random'
-            ? planBomb(questions, modules, BOMB_SIZE)
+            ? planBomb(questions, modules, size)
             : planForType(questions, MODULES, mode) // testing a type: every module that can play it
         setPlannedCount(full.length)
         const plan = full.slice(0, BOMB_SLOTS)
@@ -95,7 +104,7 @@ export function useBombGame({
         if (!controller.signal.aborted) setLoad({ status: 'error', message: errorMessage(err) })
       })
     return () => controller.abort()
-  }, [modules, round, fixedPlan, mode])
+  }, [modules, round, fixedPlan, mode, size])
 
   /** Testing one question type: no timer and no explosion, so every module can be tried. */
   const testing = practice || (testBar && mode !== 'random')
@@ -229,9 +238,10 @@ export function useBombGame({
 
   // When it goes off, leave the module so the whole explosion is in view.
   const focused = load.status === 'ready' && !exploded ? expanded : null
-  const focusedOnBomb = focused !== null && slots[focused]?.module.component3d !== undefined
+  const focusedOnBomb = !flatControls && focused !== null && slots[focused]?.module.component3d !== undefined
   const defuser = view === 'defuser'
-  // 3D modules are worked on directly; 2D modules still need their controls in a card.
+  // 3D modules are worked on directly; 2D modules (and flat-host hosts like AR) need their controls
+  // in a card.
   const card =
     focused === null || (defuser && focusedOnBomb) ? null : renderModule(focused, focusedOnBomb, defuser)
 
@@ -258,7 +268,11 @@ export function useBombGame({
     /** Card for the focused module (prompt, 2D controls, result), shown over or beside it. */
     card,
     /** What goes onto the 3D bomb, one entry per planned module. */
-    bombModules: slots.map((s, i) => ({ id: s.module.id, status: s.status, content3d: render3d(s, i) })),
+    bombModules: slots.map((s, i) => ({
+      id: s.module.id,
+      status: s.status,
+      content3d: flatControls ? undefined : render3d(s, i),
+    })),
     select: setExpanded,
     back: () => setExpanded(null),
     restart,

@@ -2,9 +2,9 @@ import { MODULES } from '../game/modules'
 import type { ModuleDef } from '../game/modules/types'
 
 /**
- * The AR demo shows the bomb as a physical object. Every level is a preset loadout: all eleven
- * slots are filled, so the bomb looks complete, and across the six levels every module appears.
- * The last level puts all eleven module types on one bomb.
+ * The AR demo uses a level as the module pool for a real bomb: five of its module types are planned
+ * onto the bomb, and the rest of the slots stay open. The last level has every module type in the
+ * pool, so a round can mix the whole set.
  */
 export type ArLevel = {
   id: string
@@ -91,9 +91,9 @@ export const AR_LEVELS: ArLevel[] = [
   level({
     id: 'all-modules',
     number: null,
-    label: 'Alle 11 Module',
-    subtitle: 'Maximale Variation',
-    description: 'Jede der elf Modularten genau einmal – die Bombe in ihrer vollsten Form.',
+    label: 'Alle Modularten',
+    subtitle: 'Maximale Vielfalt',
+    description: 'Alle elf Modularten im Pool – fünf davon landen auf deiner Bombe.',
     accent: '#ff8a1f',
     modules: MODULES.map((module) => module.id),
     // Put the most distinctive modules on the faces you see first (front, upper front).

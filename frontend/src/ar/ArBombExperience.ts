@@ -1,6 +1,14 @@
 import * as THREE from 'three'
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js'
-import { applyEnvironment, createBombModel, preloadBombModels, type BombModel } from './bombModel'
+import {
+  applyEnvironment,
+  BOMB_SLOTS,
+  createBombModel,
+  FACE_Z,
+  preloadBombModels,
+  type BombModel,
+  type ModuleStatus,
+} from './bombModel'
 import { loadXRExtras, loadXr8, type Xr8Api, type XrPipelineModule } from './eighthWall'
 import type { ArLevel } from './levels'
 
@@ -19,6 +27,10 @@ export type ArExperienceCallbacks = {
   onError: (message: string) => void
   /** The stage could not start (AR or preview); the experience has already cleaned up. */
   onFatal: (message: string) => void
+  /** A module plate was tapped; `index` is its plan index (0-based). */
+  onModuleTap: (index: number) => void
+  /** Empty space beside the bomb was tapped; used to close an open module. */
+  onBackgroundTap: () => void
 }
 
 type Mode = 'none' | 'preview' | 'ar'
@@ -59,14 +71,18 @@ type ArContext = {
   reticlePulse: THREE.Mesh | null
   reticleMaterial: THREE.MeshBasicMaterial | null
   placed: boolean
+  /** Ground position the bomb returns to when no module is focused. */
+  basePosition: THREE.Vector3
   userScale: number
   yaw: number
   pop: number
   lastHitTest: number
   lastHint: number
+  lastUpdate: number
   pointerCleanup: () => void
   startedOnBomb: boolean
   dragBomb: boolean
+  downModule: number | null
   lastX: number
   pinchStart: number
   pinchScaleStart: number
@@ -82,6 +98,25 @@ const AR_HEIGHT = 0.72
 const PREVIEW_HEIGHT = 1.55
 const MIN_USER_SCALE = 0.4
 const MAX_USER_SCALE = 2.8
+const GAME_SECONDS = 300
+
+/** How far in front of the camera the focused module floats, and how much it grows. */
+const AR_FOCUS_DISTANCE = 0.8
+const PREVIEW_FOCUS_DISTANCE = 2.6
+const AR_FOCUS_RAISE = 0.35
+const PREVIEW_FOCUS_RAISE = 0.14
+const AR_FOCUS_SCALE = 0.8
+const PREVIEW_FOCUS_SCALE = 0.95
+const WORLD_UP = new THREE.Vector3(0, 1, 0)
+
+type Pose = {
+  position: THREE.Vector3
+  quaternion: THREE.Quaternion
+  scale: number
+}
+
+/** Cached slot transform relative to the bomb's placement root. */
+type SlotLocal = { position: THREE.Vector3; quaternion: THREE.Quaternion }
 
 function distanceBetween(a: { x: number; y: number }, b: { x: number; y: number }) {
   return Math.hypot(a.x - b.x, a.y - b.y)
@@ -89,6 +124,15 @@ function distanceBetween(a: { x: number; y: number }, b: { x: number; y: number 
 
 function messageOf(error: unknown) {
   return error instanceof Error ? error.message : String(error)
+}
+
+/** Pads/truncates a plan to eleven slot ids; missing slots become open empty bays. */
+function normalizeSlots(slots: string[]) {
+  return Array.from({ length: BOMB_SLOTS }, (_, index) => slots[index] ?? 'blank')
+}
+
+function yawQuaternion(yaw: number) {
+  return new THREE.Quaternion().setFromAxisAngle(WORLD_UP, yaw)
 }
 
 /**
@@ -108,6 +152,14 @@ export default class ArBombExperience {
   /** Async guard: only the latest start/stop may touch the stage. */
   private operation = 0
   private bombOperation = 0
+  /** Current bomb configuration: eleven slot ids, the first one is Slot_1. */
+  private slots: string[] = []
+  /** Plan index of the module that has been pulled in front of the camera. */
+  private focused: number | null = null
+  private slotLocals: (SlotLocal | null)[] = []
+  private statuses: ModuleStatus[] = []
+  private timeLeft = GAME_SECONDS
+  private strikes = 0
 
   constructor(container: HTMLElement, level: ArLevel, callbacks: ArExperienceCallbacks) {
     this.container = container
@@ -116,9 +168,11 @@ export default class ArBombExperience {
   }
 
   /** Shows the turntable preview. Safe to call while AR is running. */
-  async showPreview(level: ArLevel): Promise<void> {
+  async showPreview(level: ArLevel, slots: string[]): Promise<void> {
     const operation = ++this.operation
     this.level = level
+    this.slots = normalizeSlots(slots)
+    this.focused = null
     this.mode = 'none'
     await this.stopAr()
     this.teardownPreview()
@@ -129,7 +183,7 @@ export default class ArBombExperience {
       const preview = this.createPreviewContext()
       this.preview = preview
       this.resizePreview()
-      const bomb = await createBombModel(level)
+      const bomb = await createBombModel(this.slots)
       if (operation !== this.operation || this.mode !== 'preview') return
       this.attachBomb(bomb)
       this.framePreview(preview)
@@ -146,9 +200,11 @@ export default class ArBombExperience {
   }
 
   /** Loads the engine and opens the camera. The first tap on the floor places the bomb. */
-  async startAr(level: ArLevel): Promise<void> {
+  async startAr(level: ArLevel, slots: string[]): Promise<void> {
     const operation = ++this.operation
     this.level = level
+    this.slots = normalizeSlots(slots)
+    this.focused = null
     this.mode = 'none'
     this.teardownPreview()
     await this.stopAr()
@@ -158,16 +214,17 @@ export default class ArBombExperience {
       this.callbacks.onFatal(
         'AR braucht HTTPS. Öffne die Demo auf dem Handy über eine HTTPS-Adresse (z. B. ngrok).',
       )
-      await this.showPreview(level)
+      await this.showPreview(level, this.slots)
       return
     }
 
     this.mode = 'ar'
     this.arFailed = false
+    const slotsKey = this.slots.join(',')
     try {
       const [XR8, firstBomb, extras] = await Promise.all([
         loadXr8(),
-        createBombModel(level),
+        createBombModel(this.slots),
         loadXRExtras(),
       ])
       if (operation !== this.operation) {
@@ -175,10 +232,10 @@ export default class ArBombExperience {
         return
       }
 
-      // The level may have been changed while the engine was loading.
+      // The level or plan may have changed while the engine was loading.
       let bomb = firstBomb
-      if (this.level.id !== level.id) {
-        bomb = await createBombModel(this.level)
+      if (this.level.id !== level.id || this.slots.join(',') !== slotsKey) {
+        bomb = await createBombModel(this.slots)
         firstBomb.dispose()
       }
       if (operation !== this.operation) {
@@ -203,14 +260,17 @@ export default class ArBombExperience {
         reticlePulse: null,
         reticleMaterial: null,
         placed: false,
+        basePosition: new THREE.Vector3(),
         userScale: 1,
         yaw: 0,
         pop: 0.65,
         lastHitTest: 0,
         lastHint: 0,
+        lastUpdate: performance.now(),
         pointerCleanup: () => undefined,
         startedOnBomb: false,
         dragBomb: false,
+        downModule: null,
         lastX: 0,
         pinchStart: 0,
         pinchScaleStart: 1,
@@ -221,7 +281,9 @@ export default class ArBombExperience {
       }
       this.ar = ar
       this.bomb = bomb
-      this.applyArBombPose()
+      this.cacheSlotLocals()
+      this.applyGameState()
+      this.snapBombPose('ar')
 
       const sceneModule: XrPipelineModule = {
         name: 'bomb-ar-demo-scene',
@@ -266,13 +328,25 @@ export default class ArBombExperience {
     }
   }
 
-  /** Rebuilds the bomb for a new level, keeping the current placement and orientation. */
-  setLevel(level: ArLevel): void {
+  /** Rebuilds the bomb for a new level/plan, keeping the current placement and orientation. */
+  setBomb(level: ArLevel, slots: string[]): void {
+    const next = normalizeSlots(slots)
+    const levelChanged = this.level.id !== level.id
+    const slotsChanged = next.join(',') !== this.slots.join(',')
     this.level = level
+    this.slots = next
+
+    if (levelChanged) {
+      this.applyPreviewAccent()
+      this.updateArReticleColor()
+    }
+    if (!slotsChanged) return
+
+    this.focused = null
     const token = ++this.bombOperation
 
     if (this.mode === 'preview' && this.preview) {
-      void createBombModel(level)
+      void createBombModel(next)
         .then((bomb) => {
           if (token !== this.bombOperation || this.mode !== 'preview' || !this.preview) return
           this.attachBomb(bomb)
@@ -281,43 +355,61 @@ export default class ArBombExperience {
         })
         .catch((error: unknown) => {
           if (token === this.bombOperation && this.mode === 'preview') {
-            this.callbacks.onError(`Level konnte nicht geladen werden: ${messageOf(error)}`)
+            this.callbacks.onError(`Bombenplan konnte nicht geladen werden: ${messageOf(error)}`)
           }
         })
     }
 
     if (this.mode === 'ar') {
-      void createBombModel(level)
+      void createBombModel(next)
         .then((bomb) => {
           if (token !== this.bombOperation || this.mode !== 'ar' || !this.ar) return
           const previous = this.bomb
-          // Keep the bomb exactly where the player placed it when its modules change.
+          const ar = this.ar
+          // Keep the bomb where it was placed on the floor; the focused pose is only temporary.
+          bomb.group.position.copy(ar.basePosition)
           if (previous) {
-            bomb.group.position.copy(previous.group.position)
-            this.ar.scene?.remove(previous.group)
+            ar.scene?.remove(previous.group)
             previous.dispose()
           }
           this.bomb = bomb
-          if (this.ar.scene) {
-            this.ar.scene.add(bomb.group)
-            if (this.ar.environment) applyEnvironment(bomb, this.ar.environment)
+          if (ar.scene) {
+            ar.scene.add(bomb.group)
+            if (ar.environment) applyEnvironment(bomb, ar.environment)
           }
-          this.applyArBombPose()
-          this.ar.pop = 0.72
-          this.updateArReticleColor()
+          this.cacheSlotLocals()
+          this.applyGameState()
+          this.snapBombPose('ar')
+          ar.pop = 0.72
         })
         .catch((error: unknown) => {
           if (token === this.bombOperation && this.mode === 'ar') {
-            this.callbacks.onError(`Level konnte nicht geladen werden: ${messageOf(error)}`)
+            this.callbacks.onError(`Bombenplan konnte nicht geladen werden: ${messageOf(error)}`)
           }
         })
     }
   }
 
+  /** Pulls a module in front of the camera (or lets it return to the floor with null). */
+  setFocused(index: number | null): void {
+    this.focused =
+      index !== null && Number.isInteger(index) && index >= 0 && index < BOMB_SLOTS ? index : null
+  }
+
+  /** Live timer, strike marks and module LED colours. */
+  setGameStatus(statuses: ModuleStatus[], timeLeft: number, strikes: number): void {
+    this.statuses = statuses
+    this.timeLeft = timeLeft
+    this.strikes = strikes
+    this.applyGameState()
+  }
+
   placeAgain(): void {
     if (!this.ar) return
+    this.focused = null
     this.ar.placed = false
     this.ar.pop = 0.8
+    this.ar.basePosition.set(0, 0, 0)
     if (this.bomb) this.bomb.group.visible = false
     this.callbacks.onPlaced(false)
   }
@@ -326,7 +418,6 @@ export default class ArBombExperience {
     const ar = this.ar
     if (!ar) return
     ar.userScale = THREE.MathUtils.clamp(ar.userScale * factor, MIN_USER_SCALE, MAX_USER_SCALE)
-    this.applyArBombPose()
     ar.pop = Math.min(ar.pop, 0.95)
   }
 
@@ -334,13 +425,14 @@ export default class ArBombExperience {
     const ar = this.ar
     if (!ar) return
     ar.yaw += angle
-    this.applyArBombPose()
   }
 
   /** Stops the camera and removes everything the app added to the DOM or the AR scene. */
   async dispose(): Promise<void> {
     ++this.operation
     ++this.bombOperation
+    this.focused = null
+    this.slotLocals = []
     this.teardownPreview()
     await this.stopAr()
     this.mode = 'none'
@@ -463,6 +555,10 @@ export default class ArBombExperience {
     const pointers = new Map<number, { x: number; y: number }>()
     let pinchStart = 0
     let pinchZoomStart = 1
+    let downAt = 0
+    let downX = 0
+    let downY = 0
+    let moved = 0
 
     canvas.style.touchAction = 'none'
 
@@ -475,6 +571,10 @@ export default class ArBombExperience {
         // Synthetic pointers (tests, some embedded browsers) cannot be captured.
       }
       if (pointers.size === 1) {
+        downAt = performance.now()
+        downX = event.clientX
+        downY = event.clientY
+        moved = 0
         preview.dragging = true
         preview.lastX = event.clientX
         preview.yawVelocity = 0
@@ -489,13 +589,15 @@ export default class ArBombExperience {
     const move = (event: PointerEvent) => {
       if (!pointers.has(event.pointerId)) return
       pointers.set(event.pointerId, { x: event.clientX, y: event.clientY })
+      moved = Math.max(moved, Math.hypot(event.clientX - downX, event.clientY - downY))
       if (pointers.size === 2) {
+        if (this.focused !== null) return
         const [a, b] = [...pointers.values()]
         const span = Math.max(1, distanceBetween(a, b))
         preview.zoom = THREE.MathUtils.clamp((pinchZoomStart * span) / Math.max(1, pinchStart), 0.72, 1.8)
         return
       }
-      if (!preview.dragging) return
+      if (!preview.dragging || this.focused !== null) return
       const delta = event.clientX - preview.lastX
       preview.yaw += delta * 0.012
       preview.yawVelocity = THREE.MathUtils.clamp(delta * 0.6, -5, 5)
@@ -503,18 +605,27 @@ export default class ArBombExperience {
     }
 
     const up = (event: PointerEvent) => {
+      if (!pointers.has(event.pointerId)) return
       pointers.delete(event.pointerId)
       if (pointers.size < 2) pinchStart = 0
       if (pointers.size === 1) {
         const remaining = [...pointers.values()][0]
         preview.lastX = remaining.x
         preview.dragging = true
-      } else {
-        preview.dragging = false
+        return
+      }
+      preview.dragging = false
+
+      // A real tap (not the end of a drag) opens the module under the finger.
+      if (pointers.size === 0 && moved < 9 && performance.now() - downAt < 550) {
+        const index = this.moduleIndexAt(event.clientX, event.clientY, canvas, preview.camera)
+        if (index !== null) this.callbacks.onModuleTap(index)
+        else if (this.focused !== null) this.callbacks.onBackgroundTap()
       }
     }
 
     const wheel = (event: WheelEvent) => {
+      if (this.focused !== null) return
       event.preventDefault()
       preview.zoom = THREE.MathUtils.clamp(preview.zoom * Math.exp(-event.deltaY * 0.0012), 0.72, 1.8)
     }
@@ -541,8 +652,7 @@ export default class ArBombExperience {
   private framePreview(preview: PreviewContext) {
     if (!this.bomb) return
     preview.baseScale = preview.targetHeight / this.bomb.height
-    preview.baseScale *= 0.86 + 0.14 * preview.pop
-    this.bomb.group.scale.setScalar(preview.baseScale)
+    this.snapBombPose('preview')
     this.updatePreviewCamera(preview)
   }
 
@@ -564,19 +674,15 @@ export default class ArBombExperience {
     preview.lastFrame = now
     const elapsed = now / 1000
 
-    if (!preview.dragging) {
+    if (!preview.dragging && this.focused === null) {
       preview.yaw += preview.yawVelocity * delta
       preview.yawVelocity *= Math.exp(-delta * 4.5)
       if (Math.abs(preview.yawVelocity) < 0.02) preview.yaw += delta * 0.12
     }
     preview.pop += (1 - preview.pop) * (1 - Math.exp(-delta * 7))
 
-    if (this.bomb) {
-      this.bomb.group.rotation.y = preview.yaw
-      preview.baseScale = (preview.targetHeight / this.bomb.height) * (0.86 + 0.14 * preview.pop)
-      this.bomb.group.scale.setScalar(preview.baseScale)
-      this.pulseLeds(this.bomb, elapsed)
-    }
+    this.applyBombPose('preview', delta)
+    if (this.bomb) this.pulseLeds(this.bomb, elapsed)
 
     this.updatePreviewCamera(preview)
     preview.renderer.render(preview.scene, preview.camera)
@@ -600,7 +706,8 @@ export default class ArBombExperience {
       this.bomb = bomb
       applyEnvironment(bomb, preview.environment)
       preview.scene.add(bomb.group)
-      bomb.group.rotation.y = preview.yaw
+      this.cacheSlotLocals()
+      this.applyGameState()
       this.applyPreviewAccent()
       this.framePreview(preview)
       return
@@ -616,13 +723,150 @@ export default class ArBombExperience {
       ar.scene.add(bomb.group)
       if (ar.environment) applyEnvironment(bomb, ar.environment)
     }
-    this.applyArBombPose()
+    this.cacheSlotLocals()
+    this.applyGameState()
+    this.snapBombPose('ar')
   }
 
   private pulseLeds(bomb: BombModel, time: number) {
     bomb.leds.forEach((material, index) => {
-      material.emissiveIntensity = 0.85 + Math.sin(time * 2.4 + index * 0.9) * 0.32
+      const base = typeof material.userData.baseIntensity === 'number' ? material.userData.baseIntensity : 1
+      material.emissiveIntensity = base * (0.86 + Math.sin(time * 2.4 + index * 0.9) * 0.14)
     })
+  }
+
+  /** Remembers where each slot sits relative to the placement root, for the focus pose. */
+  private cacheSlotLocals() {
+    const bomb = this.bomb
+    if (!bomb) {
+      this.slotLocals = []
+      return
+    }
+    bomb.group.updateMatrixWorld(true)
+    const inverse = new THREE.Matrix4().copy(bomb.group.matrixWorld).invert()
+    this.slotLocals = Array.from({ length: BOMB_SLOTS }, (_, index) => {
+      const slot = bomb.group.getObjectByName(`Slot_${index + 1}`)
+      if (!slot) return null
+      const local = new THREE.Matrix4().multiplyMatrices(inverse, slot.matrixWorld)
+      const position = new THREE.Vector3()
+      const quaternion = new THREE.Quaternion()
+      local.decompose(position, quaternion, new THREE.Vector3())
+      return { position, quaternion }
+    })
+  }
+
+  private applyGameState() {
+    const bomb = this.bomb
+    if (!bomb) return
+    bomb.setSlotStatuses(this.statuses)
+    bomb.setTime(this.timeLeft)
+    bomb.setStrikes(this.strikes)
+  }
+
+  private basePose(mode: 'preview' | 'ar'): Pose | null {
+    const bomb = this.bomb
+    if (!bomb) return null
+
+    if (mode === 'preview') {
+      const preview = this.preview
+      if (!preview) return null
+      preview.baseScale = preview.targetHeight / bomb.height
+      return {
+        position: new THREE.Vector3(),
+        quaternion: yawQuaternion(preview.yaw),
+        scale: preview.baseScale * (0.86 + 0.14 * preview.pop),
+      }
+    }
+
+    const ar = this.ar
+    if (!ar) return null
+    return {
+      position: ar.basePosition.clone(),
+      quaternion: yawQuaternion(ar.yaw),
+      scale: (AR_HEIGHT / bomb.height) * ar.userScale * (0.72 + 0.28 * ar.pop),
+    }
+  }
+
+  /**
+   * Bomb pose that puts the focused module's face right in front of the camera, upright and
+   * aligned with the screen. Recomputed every frame, so the module follows the phone.
+   */
+  private focusPose(mode: 'preview' | 'ar'): Pose | null {
+    const bomb = this.bomb
+    const camera = mode === 'preview' ? this.preview?.camera : this.ar?.camera
+    if (!bomb || !camera || this.focused === null) return null
+    const slot = this.slotLocals[this.focused]
+    const base = this.basePose(mode)
+    if (!slot || !base) return base
+
+    const cameraPosition = camera.getWorldPosition(new THREE.Vector3())
+    const cameraQuaternion = camera.getWorldQuaternion(new THREE.Quaternion())
+    const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(cameraQuaternion)
+    const up = new THREE.Vector3(0, 1, 0).applyQuaternion(cameraQuaternion)
+
+    const scale = base.scale * (mode === 'preview' ? PREVIEW_FOCUS_SCALE : AR_FOCUS_SCALE)
+    const bombQuaternion = cameraQuaternion.clone().multiply(slot.quaternion.clone().invert())
+    const face = slot.position
+      .clone()
+      .add(new THREE.Vector3(0, 0, FACE_Z))
+      .applyQuaternion(bombQuaternion)
+      .multiplyScalar(scale)
+
+    const distance = mode === 'preview' ? PREVIEW_FOCUS_DISTANCE : AR_FOCUS_DISTANCE
+    const raise = distance * (mode === 'preview' ? PREVIEW_FOCUS_RAISE : AR_FOCUS_RAISE)
+    const point = cameraPosition.clone().addScaledVector(forward, distance).addScaledVector(up, raise)
+
+    return { position: point.sub(face), quaternion: bombQuaternion, scale }
+  }
+
+  private snapBombPose(mode: 'preview' | 'ar') {
+    const bomb = this.bomb
+    if (!bomb) return
+    const pose = (this.focused !== null ? this.focusPose(mode) : null) ?? this.basePose(mode)
+    if (!pose) return
+    bomb.group.position.copy(pose.position)
+    bomb.group.quaternion.copy(pose.quaternion)
+    bomb.group.scale.setScalar(pose.scale)
+    bomb.group.visible = mode === 'preview' || Boolean(this.ar?.placed)
+  }
+
+  private applyBombPose(mode: 'preview' | 'ar', delta: number) {
+    const bomb = this.bomb
+    if (!bomb) return
+    const pose = (this.focused !== null ? this.focusPose(mode) : null) ?? this.basePose(mode)
+    if (!pose) return
+    const k = 1 - Math.exp(-delta * (this.focused !== null ? 11 : 13))
+    bomb.group.position.lerp(pose.position, k)
+    bomb.group.quaternion.slerp(pose.quaternion, k)
+    bomb.group.scale.setScalar(THREE.MathUtils.lerp(bomb.group.scale.x, pose.scale, k))
+    bomb.group.visible = mode === 'preview' || Boolean(this.ar?.placed)
+  }
+
+  /** Plan index of the module under a screen point, or null if the hull/background was hit. */
+  private moduleIndexAt(
+    clientX: number,
+    clientY: number,
+    canvas: HTMLCanvasElement,
+    camera: THREE.PerspectiveCamera,
+  ): number | null {
+    const bomb = this.bomb
+    if (!bomb) return null
+    const rect = canvas.getBoundingClientRect()
+    const raycaster = new THREE.Raycaster()
+    raycaster.setFromCamera(
+      new THREE.Vector2(
+        ((clientX - rect.left) / Math.max(1, rect.width)) * 2 - 1,
+        -(((clientY - rect.top) / Math.max(1, rect.height)) * 2 - 1),
+      ),
+      camera,
+    )
+    for (const hit of raycaster.intersectObject(bomb.group, true)) {
+      for (let object: THREE.Object3D | null = hit.object; object; object = object.parent) {
+        const index = object.userData.planIndex
+        if (typeof index === 'number') return index
+      }
+    }
+    return null
   }
 
   private teardownPreview() {
@@ -696,7 +940,9 @@ export default class ArBombExperience {
     if (this.bomb) {
       scene.add(this.bomb.group)
       applyEnvironment(this.bomb, ar.environment)
-      this.applyArBombPose()
+      this.cacheSlotLocals()
+      this.applyGameState()
+      this.snapBombPose('ar')
       this.bomb.group.visible = ar.placed
     }
 
@@ -734,12 +980,12 @@ export default class ArBombExperience {
     if (!ar) return
     const now = performance.now()
     const time = now / 1000
+    const delta = Math.min((now - ar.lastUpdate) / 1000, 1 / 20)
+    ar.lastUpdate = now
 
-    ar.pop += (1 - ar.pop) * 0.12
-    if (this.bomb) {
-      this.applyArBombPose()
-      this.pulseLeds(this.bomb, time)
-    }
+    ar.pop += (1 - ar.pop) * (1 - Math.exp(-delta * 7))
+    this.applyBombPose('ar', delta)
+    if (this.bomb) this.pulseLeds(this.bomb, time)
 
     if (ar.placed || !ar.reticle || !ar.camera) return
 
@@ -775,8 +1021,13 @@ export default class ArBombExperience {
       ar.downY = event.clientY
       ar.lastX = event.clientX
       if (pointers.size === 1) {
-        ar.startedOnBomb = ar.placed && this.pointerHitsBomb(event.clientX, event.clientY)
-        ar.dragBomb = ar.startedOnBomb
+        ar.downModule =
+          ar.placed && ar.camera
+            ? this.moduleIndexAt(event.clientX, event.clientY, canvas, ar.camera)
+            : null
+        ar.startedOnBomb =
+          ar.downModule !== null || (ar.placed && this.pointerHitsBomb(event.clientX, event.clientY))
+        ar.dragBomb = ar.startedOnBomb && this.focused === null
       } else if (pointers.size === 2) {
         const [a, b] = [...pointers.values()]
         ar.pinchStart = Math.max(1, distanceBetween(a, b))
@@ -791,6 +1042,7 @@ export default class ArBombExperience {
       ar.moved = Math.max(ar.moved, Math.hypot(event.clientX - ar.downX, event.clientY - ar.downY))
 
       if (pointers.size === 2) {
+        if (this.focused !== null) return
         const [a, b] = [...pointers.values()]
         const span = Math.max(1, distanceBetween(a, b))
         ar.userScale = THREE.MathUtils.clamp(
@@ -798,15 +1050,13 @@ export default class ArBombExperience {
           MIN_USER_SCALE,
           MAX_USER_SCALE,
         )
-        this.applyArBombPose()
         return
       }
 
-      if (!ar.dragBomb) return
+      if (!ar.dragBomb || this.focused !== null) return
       const delta = event.clientX - ar.lastX
       ar.lastX = event.clientX
       ar.yaw += delta * 0.012
-      this.applyArBombPose()
     }
 
     const up = (event: PointerEvent) => {
@@ -819,18 +1069,24 @@ export default class ArBombExperience {
       if (quick && tap) {
         if (!ar.placed) {
           if (!this.tryPlaceAt(event.clientX, event.clientY, true)) this.hintNoSurface()
+        } else if (ar.downModule !== null) {
+          this.callbacks.onModuleTap(ar.downModule)
+        } else if (this.focused !== null) {
+          this.callbacks.onBackgroundTap()
         } else if (!ar.startedOnBomb) {
           this.tryPlaceAt(event.clientX, event.clientY, false)
         }
       }
       ar.dragBomb = false
       ar.startedOnBomb = false
+      ar.downModule = null
     }
 
     const cancel = (event: PointerEvent) => {
       pointers.delete(event.pointerId)
       ar.dragBomb = false
       ar.startedOnBomb = false
+      ar.downModule = null
     }
 
     canvas.addEventListener('pointerdown', down)
@@ -891,14 +1147,15 @@ export default class ArBombExperience {
   private placeBomb(position: { x: number; y: number; z: number }) {
     const ar = this.ar
     if (!ar || !this.bomb) return
-    this.bomb.group.position.set(position.x, position.y + 0.002, position.z)
+    ar.basePosition.set(position.x, position.y + 0.002, position.z)
+    this.bomb.group.position.copy(ar.basePosition)
     this.bomb.group.visible = true
     if (ar.reticle) ar.reticle.visible = false
     ar.placed = true
     ar.pop = 0.55
-    this.applyArBombPose()
+    this.snapBombPose('ar')
     this.callbacks.onPlaced(true)
-    this.callbacks.onHint('Platziert! Ziehen dreht die Bombe, Pinch ändert die Größe.')
+    this.callbacks.onHint('Platziert! Tippe ein Modul an, um es zu entschärfen.')
   }
 
   private hintNoSurface() {
@@ -908,16 +1165,6 @@ export default class ArBombExperience {
     if (now - ar.lastHint < 2400) return
     ar.lastHint = now
     this.callbacks.onHint('Noch keine Fläche erkannt. Bewege das Handy langsam über den Boden.')
-  }
-
-  private applyArBombPose() {
-    const ar = this.ar
-    const bomb = this.bomb
-    if (!ar || !bomb) return
-    const baseScale = AR_HEIGHT / bomb.height
-    bomb.group.scale.setScalar(baseScale * ar.userScale * (0.72 + 0.28 * ar.pop))
-    bomb.group.rotation.y = ar.yaw
-    if (!ar.placed) bomb.group.visible = false
   }
 
   private arOnDetach() {
@@ -931,13 +1178,15 @@ export default class ArBombExperience {
     if (this.arFailed) return
     this.arFailed = true
     this.callbacks.onFatal(message)
-    await this.showPreview(this.level)
+    await this.showPreview(this.level, this.slots)
   }
 
   private async stopAr(): Promise<void> {
     const ar = this.ar
     if (!ar) return
     this.ar = null
+    this.focused = null
+    this.slotLocals = []
     ar.pointerCleanup()
     if (this.bomb) {
       ar.scene?.remove(this.bomb.group)
