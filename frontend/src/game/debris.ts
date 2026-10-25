@@ -131,11 +131,21 @@ const down = new THREE.Vector3(0, -1, 0)
 const axis = new THREE.Vector3()
 const tip = new THREE.Quaternion()
 
-/** Keeps a piece on top of the floor; returns how deep it had sunk in. */
-function liftOutOfFloor(object: THREE.Object3D) {
+const center = new THREE.Vector3()
+const parentScale = new THREE.Vector3()
+
+/** Height of the floor (in world space) under a point; flat at the origin unless the caller says otherwise. */
+export type FloorAt = (x: number, z: number) => number
+const flatFloor: FloorAt = () => FLOOR_Y
+
+/** Keeps a piece on top of the floor; returns how deep it had sunk in (in the piece's own space). */
+function liftOutOfFloor(object: THREE.Object3D, floorAt: FloorAt) {
   object.updateMatrixWorld(true)
   box.setFromObject(object)
-  const depth = FLOOR_Y - box.min.y
+  box.getCenter(center)
+  // the bomb may be scaled (e.g. lying on a table in a room): convert the world depth to its space
+  const scale = object.parent ? object.parent.getWorldScale(parentScale).y : 1
+  const depth = (floorAt(center.x, center.z) - box.min.y) / scale
   if (depth > 0) object.position.y += depth
   return depth
 }
@@ -144,7 +154,7 @@ function liftOutOfFloor(object: THREE.Object3D) {
  * Moves the pieces one step: gravity, tumbling, and crashing onto the floor (bounce, friction,
  * then rest). `onImpact` gets the impact speed of every hard landing, for the clatter.
  */
-export function stepDebris(pieces: Piece[], dt: number, onImpact: (speed: number) => void) {
+export function stepDebris(pieces: Piece[], dt: number, onImpact: (speed: number) => void, floorAt: FloorAt = flatFloor) {
   for (const piece of pieces) {
     const { object, velocity, spin } = piece
     if (piece.state === 'resting') continue
@@ -159,7 +169,7 @@ export function stepDebris(pieces: Piece[], dt: number, onImpact: (speed: number
       object.position.z += velocity.z * dt
       velocity.multiplyScalar(Math.exp(-dt * 6))
       object.position.y -= 0.6 * dt // drops down as it tips; the floor stops it
-      liftOutOfFloor(object)
+      liftOutOfFloor(object, floorAt)
       if (Math.abs(axis.y) > 0.999) piece.state = 'resting'
       continue
     }
@@ -171,7 +181,7 @@ export function stepDebris(pieces: Piece[], dt: number, onImpact: (speed: number
     object.rotation.z += spin.z * dt
 
     // floor contact: lift the piece out of the floor and bounce it off
-    if (liftOutOfFloor(object) <= 0) continue
+    if (liftOutOfFloor(object, floorAt) <= 0) continue
     if (velocity.y < 0) {
       if (velocity.y < -2.5) onImpact(-velocity.y)
       velocity.y *= -0.32

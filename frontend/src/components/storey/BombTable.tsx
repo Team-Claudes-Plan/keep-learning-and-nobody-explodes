@@ -7,6 +7,8 @@ const TABLE_HEIGHT = 0.42
 /** The model is sized like room furniture; scaled up so the bomb looks right on it. */
 const TABLE_SCALE = 2
 export const TABLE_TOP = TABLE_HEIGHT * TABLE_SCALE
+/** Half the table top's size along x and z (from the model), for the bomb's pieces to land on. */
+export const TABLE_HALF_SIZE: [number, number] = [0.55 * TABLE_SCALE, 0.3 * TABLE_SCALE]
 /** Where the bomb lies on the table, relative to the table's centre. */
 export const BOMB_SPOT: [number, number, number] = [-0.12, TABLE_TOP, 0]
 

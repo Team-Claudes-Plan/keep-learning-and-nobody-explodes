@@ -3,6 +3,8 @@ import { useFrame, useThree, type ThreeEvent } from '@react-three/fiber'
 import * as THREE from 'three'
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js'
 import {
+  BLAST_DELAY,
+  BOMB_CENTER,
   COAST_DAMPING,
   DIM_START,
   easeInOutCubic,
@@ -15,6 +17,9 @@ import {
   YAW_STEP,
   type BombContentProps,
 } from '../../game/Bomb3D'
+import { playBoom, playClank } from '../../game/boom'
+import { shatterBomb, stepDebris, type FloorAt, type Piece } from '../../game/debris'
+import Explosion from '../../game/Explosion'
 import { isDrag } from '../interaction'
 import { roomZoom } from '../cameras'
 
@@ -97,6 +102,10 @@ export type RoomBombProps = Omit<BombContentProps, 'interactive' | 'ownMaterials
   lifted: boolean
   onLift: () => void
   onPutDown: () => void
+  /** Called the moment the bomb blows up (a moment after `exploded`, once it lies on the table again). */
+  onBlast?: () => void
+  /** Where the pieces of a blown-up bomb land (world height under a point); the room floor otherwise. */
+  floorAt?: FloorAt
 }
 
 /**
@@ -104,8 +113,8 @@ export type RoomBombProps = Omit<BombContentProps, 'interactive' | 'ownMaterials
  * in front of the camera; drag to turn it, click a module to bring that module in front of the camera.
  * The camera never moves; it only zooms in while a module is open, as on the bomb page.
  */
-export default function RoomBomb({ rest, lifted, onLift, onPutDown, ...content }: RoomBombProps) {
-  const { focused } = content
+export default function RoomBomb({ rest, lifted, onLift, onPutDown, onBlast, floorAt, ...content }: RoomBombProps) {
+  const { focused, exploded = false } = content
   const { bomb, setArrived, dimOn, portals, handlers } = useBombContent({
     ...content,
     interactive: lifted,
@@ -182,11 +191,12 @@ export default function RoomBomb({ rest, lifted, onLift, onPutDown, ...content }
   const wasLifted = useRef(false)
 
   // Pick up, put down, open and close a module: each one an eased move from where the bomb is now.
+  // When it goes off, it goes back onto the table first, so the whole room sees it blow up.
   useEffect(() => {
     const s = spin.current
     if (lifted && !wasLifted.current) Object.assign(s, newSpin())
     wasLifted.current = lifted
-    const to = !lifted ? poses.rest() : focused !== null ? poses.focus(focused) : poses.lift(s)
+    const to = exploded || !lifted ? poses.rest() : focused !== null ? poses.focus(focused) : poses.lift(s)
     if (!to) return
     setArrived(false)
     dimOn.current = false
@@ -196,9 +206,9 @@ export default function RoomBomb({ rest, lifted, onLift, onPutDown, ...content }
       from: { ...pose, position: pose.position.clone(), quaternion: pose.quaternion.clone() },
       to,
       t: 0,
-      focusing: lifted && focused !== null,
+      focusing: !exploded && lifted && focused !== null,
     }
-  }, [lifted, focused, poses, pose, setArrived, dimOn])
+  }, [lifted, focused, exploded, poses, pose, setArrived, dimOn])
 
   // Drag anywhere to turn the picked-up bomb. Once let go, a flick coasts out and it eases into the nearest stop.
   useEffect(() => {
@@ -261,7 +271,7 @@ export default function RoomBomb({ rest, lifted, onLift, onPutDown, ...content }
       if (f.t >= 1) {
         flight.current = null
         if (f.focusing) setArrived(true)
-        else if (lifted) s.enabled = true
+        else if (lifted && !exploded) s.enabled = true
       }
     } else if (s.enabled) {
       if (!s.dragging) {
@@ -303,6 +313,41 @@ export default function RoomBomb({ rest, lifted, onLift, onPutDown, ...content }
     })
   })
 
+  // Explosion, as on the bomb page: back on the table, a short pause, then the bomb is torn apart
+  // (see debris.ts) and its pieces land on the table and the floor. The bomb is a fresh clone per game.
+  const [blasted, setBlasted] = useState(false)
+  const countdown = useRef(0)
+  const debris = useRef<Piece[]>([])
+  const clanks = useRef(0)
+  useEffect(() => {
+    if (!blasted) return
+    playBoom()
+    debris.current = shatterBomb(bomb)
+  }, [blasted, bomb])
+
+  useFrame((_, delta) => {
+    if (!exploded) return
+    const dt = Math.min(delta, 1 / 30)
+    if (!blasted) {
+      if (!flight.current) countdown.current += dt
+      if (countdown.current > BLAST_DELAY) {
+        setBlasted(true)
+        onBlast?.()
+      }
+      return
+    }
+    // at most a few clangs per frame, or it turns into noise
+    clanks.current = 0
+    stepDebris(
+      debris.current,
+      dt,
+      (speed) => {
+        if (clanks.current++ < 3) playClank(speed)
+      },
+      floorAt,
+    )
+  })
+
   useEffect(
     () => () => {
       camera.zoom = baseZoom
@@ -313,7 +358,7 @@ export default function RoomBomb({ rest, lifted, onLift, onPutDown, ...content }
 
   // Lying on the table: one invisible box catches the pointer, so the gaps between modules don't break hovering.
   const [hovered, setHovered] = useState(false)
-  const resting = !lifted
+  const resting = !lifted && !exploded
   useEffect(() => {
     if (!hovered || !resting) return
     document.body.style.cursor = 'pointer'
@@ -341,6 +386,11 @@ export default function RoomBomb({ rest, lifted, onLift, onPutDown, ...content }
         <group scale={resting && hovered ? HOVER_SCALE : 1}>
           {portals}
           <primitive object={bomb} position={bounds.center.clone().negate()} {...handlers} />
+          {blasted && (
+            <group position={bounds.center.clone().negate()}>
+              <Explosion center={BOMB_CENTER} />
+            </group>
+          )}
         </group>
         {resting && (
           <mesh
@@ -358,7 +408,7 @@ export default function RoomBomb({ rest, lifted, onLift, onPutDown, ...content }
         )}
       </group>
 
-      {lifted && focused === null && (
+      {lifted && !exploded && focused === null && (
         <mesh
           position={backdrop.position}
           quaternion={backdrop.quaternion}
