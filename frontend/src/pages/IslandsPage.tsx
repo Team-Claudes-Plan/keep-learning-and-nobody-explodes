@@ -7,9 +7,11 @@ import IslandCamera from '../components/islands/IslandCamera'
 import IslandScene from '../components/islands/IslandScene'
 import { IslandPartner, NewIsland, You } from '../components/islands/IslandActions'
 import UploadDialog, { UploadIcon } from '../components/islands/UploadDialog'
+import FriendsDialog, { FriendsIcon } from '../components/islands/FriendsDialog'
 import BannerDialog from '../components/islands/BannerDialog'
 import WelcomeDialog from '../components/islands/WelcomeDialog'
-import { usePresence, useIslands } from '../api/useIslands'
+import { reloadIslands, usePresence, useIslands } from '../api/useIslands'
+import { onAddedToIsland } from '../api/invites'
 import type { IslandsResponse } from '../api/types'
 import { bridgeBetween, islandCenter, resolveIsland } from '../data/islands'
 
@@ -20,6 +22,7 @@ function IslandsView({ data }: { data: IslandsResponse }) {
   const { islandId } = useParams()
   const [storeyDelta, setStoreyDelta] = useState(0)
   const [uploadOpen, setUploadOpen] = useState(false)
+  const [friendsOpen, setFriendsOpen] = useState(false)
   const { me, islands } = data
 
   const resolved = useMemo(() => islands.map(resolveIsland), [islands])
@@ -44,14 +47,15 @@ function IslandsView({ data }: { data: IslandsResponse }) {
 
   useEffect(() => {
     // The upload is tied to the current island, so stay put while the dialog is open.
-    if (uploadOpen) return
+    // Invites are tied to the current island as well.
+    if (uploadOpen || friendsOpen) return
     const handleKey = (event: KeyboardEvent) => {
       if (event.key === 'ArrowRight') goTo(activeIndex + 1)
       if (event.key === 'ArrowLeft') goTo(activeIndex - 1)
     }
     window.addEventListener('keydown', handleKey)
     return () => window.removeEventListener('keydown', handleKey)
-  }, [activeIndex, goTo, uploadOpen])
+  }, [activeIndex, goTo, uploadOpen, friendsOpen])
 
   if (!active) {
     return (
@@ -178,6 +182,21 @@ function IslandsView({ data }: { data: IslandsResponse }) {
 
       <button
         type="button"
+        className="upload-fab friends-fab"
+        onClick={() => setFriendsOpen(true)}
+        title={`Invite friends to ${active.island.name}`}
+        aria-label={`Invite friends to ${active.island.name}`}
+      >
+        <span className="upload-fab-body chamfer">
+          <span className="upload-fab-face chamfer">
+            <FriendsIcon size={40} className="upload-fab-icon" />
+            <span className="upload-fab-label">Friends</span>
+          </span>
+        </span>
+      </button>
+
+      <button
+        type="button"
         className="upload-fab"
         onClick={() => setUploadOpen(true)}
         title={`Upload documents to ${active.island.name}`}
@@ -192,12 +211,18 @@ function IslandsView({ data }: { data: IslandsResponse }) {
       </button>
 
       {uploadOpen && <UploadDialog island={active.island} onClose={() => setUploadOpen(false)} />}
+      {friendsOpen && (
+        <FriendsDialog island={active.island} me={me} onForked={open} onClose={() => setFriendsOpen(false)} />
+      )}
     </>
   )
 }
 
 export default function IslandsPage() {
   const state = useIslands()
+
+  // A friend added me to an island: fetch the islands again so it shows up.
+  useEffect(() => onAddedToIsland(() => void reloadIslands().catch(() => undefined)), [])
 
   if (state.status === 'loading') return null
   if (state.status === 'signed-out') return <WelcomeDialog />

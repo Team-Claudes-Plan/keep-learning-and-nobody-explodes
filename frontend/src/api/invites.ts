@@ -28,6 +28,7 @@ type ServerMessage =
     }
   | { type: 'invite_answered'; invite_id: string; accepted: boolean }
   | { type: 'invite_cancelled'; invite_id: string }
+  | { type: 'added_to_island'; island_id: string; by: UserSummary }
   | { type: 'error'; request_id?: string; code: string; message: string }
 
 // ---- What the app sees ----
@@ -80,6 +81,7 @@ class UserChannel {
   private nextRequest = 1
   private requests = new Map<string, { resolve(id: string): void; reject(error: Error): void }>()
   private outgoing = new Map<string, (outcome: InviteOutcome) => void>()
+  private islandListeners = new Set<(islandId: string) => void>()
   private started = false
 
   getState = () => this.state
@@ -88,6 +90,14 @@ class UserChannel {
     this.listeners.add(listener)
     return () => {
       this.listeners.delete(listener)
+    }
+  }
+
+  /** Calls `listener` whenever someone makes me a member of an island. */
+  onAddedToIsland = (listener: (islandId: string) => void) => {
+    this.islandListeners.add(listener)
+    return () => {
+      this.islandListeners.delete(listener)
     }
   }
 
@@ -172,6 +182,9 @@ class UserChannel {
         // Either the inviter took it back (I am the invitee) or the server dropped mine.
         this.removeIncoming(message.invite_id)
         this.finish(message.invite_id, 'cancelled')
+        break
+      case 'added_to_island':
+        for (const listener of this.islandListeners) listener(message.island_id)
         break
       case 'error': {
         const request = message.request_id ? this.requests.get(message.request_id) : undefined
@@ -279,7 +292,8 @@ const MOCK_ANSWER_MS = 3000
 
 /**
  * Plays the server and the partners: reports the mock presence, and an online partner accepts
- * every invite after a few seconds. `window.mockInvite()` lets Mia invite you.
+ * every invite after a few seconds. `window.mockInvite()` lets Mia invite you,
+ * `window.mockAddedToIsland()` pretends she added you to an island.
  */
 class MockServer implements Transport {
   private timers = new Set<number>()
@@ -296,6 +310,12 @@ class MockServer implements Transport {
     const poll = window.setInterval(() => this.reportPresence(), 1000)
     this.timers.add(poll)
     ;(window as unknown as { mockInvite?: () => void }).mockInvite = () => this.inviteMe()
+    ;(window as unknown as { mockAddedToIsland?: () => void }).mockAddedToIsland = () =>
+      events.message({
+        type: 'added_to_island',
+        island_id: 'with-mia',
+        by: mockUser('user-mia') ?? { id: 'user-mia', name: 'Mia' },
+      })
   }
 
   private later(ms: number, run: () => void) {
@@ -364,6 +384,12 @@ export function startUserChannel() {
 export function sendInvite(request: InviteRequest, onOutcome: (outcome: InviteOutcome) => void): Promise<string> {
   channel.start()
   return channel.invite(request, onOutcome)
+}
+
+/** Calls `listener` with the island id whenever someone makes me a member of an island. */
+export function onAddedToIsland(listener: (islandId: string) => void): () => void {
+  channel.start()
+  return channel.onAddedToIsland(listener)
 }
 
 export function cancelInvite(inviteId: string) {

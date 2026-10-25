@@ -46,6 +46,9 @@ pub enum ServerMessage {
     /// The invite is gone: taken back, answered in another tab, or its
     /// inviter or invitee went offline.
     InviteCancelled { invite_id: Uuid },
+    /// Someone made this user a member of an island: created it with them,
+    /// added them, or forked an island to learn with them.
+    AddedToIsland { island_id: Uuid, by: UserSummary },
     Error {
         #[serde(skip_serializing_if = "Option::is_none")]
         request_id: Option<String>,

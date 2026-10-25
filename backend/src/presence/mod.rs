@@ -296,6 +296,34 @@ impl Hub {
     pub fn withdraw(&self, invite_id: Uuid) {
         self.lock().cancel(invite_id);
     }
+
+    /// `by` made `user` a member of an island. The user hears about it, and
+    /// the two become partners now rather than on their next connect.
+    pub fn added_to_island(&self, island_id: Uuid, by: UserSummary, user: Uuid) {
+        let mut inner = self.lock();
+        let by_id = by.id;
+        inner.send(
+            user,
+            &Arc::new(ServerMessage::AddedToIsland { island_id, by }),
+        );
+        for (own, other) in [(user, by_id), (by_id, user)] {
+            let online = inner.is_online(other);
+            let Some(entry) = inner.users.get_mut(&own) else {
+                continue;
+            };
+            if entry.partners.contains(&other) {
+                continue;
+            }
+            entry.partners.push(other);
+            inner.send(
+                own,
+                &Arc::new(ServerMessage::Presence {
+                    user_id: other,
+                    online,
+                }),
+            );
+        }
+    }
 }
 
 fn unknown_invite() -> PresenceError {
@@ -401,6 +429,40 @@ mod tests {
             hub.answer(MIA, id, false).expect_err("answered").code,
             ErrorCode::UnknownInvite
         );
+    }
+
+    #[test]
+    fn a_new_member_hears_it_and_both_become_partners() {
+        let hub = Hub::new();
+        let alex_summary = UserSummary {
+            id: ALEX,
+            name: "Alex".to_owned(),
+        };
+        let island = Uuid::from_u128(10);
+        let mut alex = hub.connect(ALEX, vec![]);
+        let mut mia = hub.connect(MIA, vec![]);
+        assert_eq!(drain(&mut alex), []);
+
+        hub.added_to_island(island, alex_summary.clone(), MIA);
+        assert_eq!(
+            drain(&mut mia),
+            [
+                ServerMessage::AddedToIsland {
+                    island_id: island,
+                    by: alex_summary.clone()
+                },
+                presence(ALEX, true)
+            ]
+        );
+        assert_eq!(drain(&mut alex), [presence(MIA, true)]);
+
+        // a second island together is no news for presence
+        hub.added_to_island(Uuid::from_u128(11), alex_summary, MIA);
+        assert_eq!(drain(&mut mia).len(), 1);
+        assert_eq!(drain(&mut alex), []);
+
+        hub.disconnect(MIA, mia.id);
+        assert_eq!(drain(&mut alex), [presence(MIA, false)]);
     }
 
     #[test]

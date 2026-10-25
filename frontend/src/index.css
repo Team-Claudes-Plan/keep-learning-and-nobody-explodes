@@ -2977,6 +2977,72 @@ canvas {
   margin-top: 18px;
 }
 
+/* Invite friends: a second button stacked on the upload button, and its dialog. */
+
+.upload-fab.friends-fab {
+  bottom: 148px;
+}
+
+.friends-fab .upload-fab-face {
+  color: #e2457a;
+  background:
+    linear-gradient(160deg, rgba(255, 255, 255, 0.5) 0 20%, transparent 20%),
+    linear-gradient(32deg, rgba(0, 60, 40, 0.22) 0 26%, transparent 26%),
+    linear-gradient(115deg, #8ee6b0 0 44%, #5fd394 44% 70%, #3bb877 70%);
+}
+
+.friends-fab .upload-fab-icon {
+  animation-delay: 0.6s;
+}
+
+.friends-section {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 3px dashed rgba(27, 16, 48, 0.18);
+}
+
+.upload-header + .friends-section {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: none;
+}
+
+.friends-section-title {
+  margin-bottom: 4px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.friends-dialog .hud-note {
+  margin-bottom: 8px;
+  color: #6b5f80;
+}
+
+.friends-dialog .welcome-form:has(input + input) {
+  flex-direction: column;
+}
+
+.friends-dialog .upload-message {
+  margin-top: 0;
+}
+
+.friends-id-row {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.friends-id {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  padding: 6px 8px;
+  border: 2px dashed rgba(27, 16, 48, 0.3);
+  background: #ffffff;
+  font-size: 12px;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .upload-fab-icon,
   .upload-dropzone-icon {

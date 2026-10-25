@@ -184,39 +184,68 @@ export function NewIsland({ onCreated, inline = false }: { onCreated: (islandId:
 /**
  * Who learns on this island. A partner can join an island of one; a full island is forked to
  * learn with someone else, and the fork starts with the houses both already know.
+ * `inline` drops the collapsible HUD wrapper, for the invite friends dialog.
  */
-export function IslandPartner({ island, onForked }: { island: Island; onForked: (islandId: string) => void }) {
+export function IslandPartner({
+  island,
+  onForked,
+  inline = false,
+}: {
+  island: Island
+  onForked: (islandId: string) => void
+  inline?: boolean
+}) {
   const action = useAction()
   const [partner, setPartner] = useState('')
   const [name, setName] = useState('')
+  const [added, setAdded] = useState(false)
   const full = island.group.members.length > 1
+  const formClass = inline ? 'welcome-form' : undefined
+  // The dialog explains where the id comes from, so the field can stay short.
+  const hint = inline ? 'Their user id' : PARTNER_HINT
 
-  if (!full) {
-    return (
+  const wrap = (summary: string, body: ReactNode) =>
+    inline ? (
+      body
+    ) : (
       <details className="hud-details">
-        <summary>Add a partner</summary>
+        <summary>{summary}</summary>
+        {body}
+      </details>
+    )
+
+  if (!full || added) {
+    return wrap(
+      'Add a partner',
+      <>
         <div className="hud-note">An island has room for one partner to learn with you.</div>
+        {added ? (
+          <div className="upload-message is-good">Partner added. You can learn together now.</div>
+        ) : (
         <Form
           action={action}
           submit="Add partner"
+          className={formClass}
           disabled={!partner.trim()}
           onSubmit={() =>
             void action.run(async () => {
               await addIslandMember(island.id, partner.trim())
               setPartner('')
+              setAdded(inline)
               await reloadIslands()
             })
           }
         >
-          <input value={partner} onChange={(event) => setPartner(event.target.value)} placeholder={PARTNER_HINT} />
+          <input value={partner} onChange={(event) => setPartner(event.target.value)} placeholder={hint} />
         </Form>
-      </details>
+        )}
+      </>,
     )
   }
 
-  return (
-    <details className="hud-details">
-      <summary>Learn this with someone else</summary>
+  return wrap(
+    'Learn this with someone else',
+    <>
       <div className="hud-note">
         Creates a copy of this island for you and a new partner. It shares the houses; each is built as far as you
         both already know its topic.
@@ -224,6 +253,7 @@ export function IslandPartner({ island, onForked }: { island: Island; onForked: 
       <Form
         action={action}
         submit="Create shared copy"
+        className={formClass}
         disabled={!partner.trim()}
         onSubmit={() =>
           void action.run(async () => {
@@ -235,13 +265,13 @@ export function IslandPartner({ island, onForked }: { island: Island; onForked: 
           })
         }
       >
-        <input value={partner} onChange={(event) => setPartner(event.target.value)} placeholder={PARTNER_HINT} />
+        <input value={partner} onChange={(event) => setPartner(event.target.value)} placeholder={hint} />
         <input
           value={name}
           onChange={(event) => setName(event.target.value)}
           placeholder={`Name (optional, default "${island.name}")`}
         />
       </Form>
-    </details>
+    </>,
   )
 }

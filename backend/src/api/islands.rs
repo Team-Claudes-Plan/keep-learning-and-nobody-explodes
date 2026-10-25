@@ -146,6 +146,9 @@ pub async fn islands_create(
         .create_island(name, user.id(), payload.partner_id)
         .await
         .map_err(|error| ApiError::db("create island", &error))?;
+    if let Some(partner) = payload.partner_id {
+        state.presence.added_to_island(id, user.0.clone(), partner);
+    }
 
     Ok(Json(CreatedIsland { id }))
 }
@@ -165,7 +168,12 @@ pub async fn islands_add_member(
         .await
         .map_err(|error| ApiError::db("add island member", &error))?;
     match added {
-        AddMember::Added => Ok(StatusCode::NO_CONTENT),
+        AddMember::Added => {
+            state
+                .presence
+                .added_to_island(island_id, user.0.clone(), payload.user_id);
+            Ok(StatusCode::NO_CONTENT)
+        }
         AddMember::AlreadyMember => Err(ApiError::Conflict(
             "user is already a member of the island".to_owned(),
         )),
@@ -199,6 +207,9 @@ pub async fn islands_fork(
         .await
         .map_err(|error| ApiError::db("fork island", &error))?
         .ok_or_else(|| ApiError::NotFound(format!("island {island_id} not found")))?;
+    state
+        .presence
+        .added_to_island(id, user.0.clone(), payload.partner_id);
 
     Ok(Json(CreatedIsland { id }))
 }

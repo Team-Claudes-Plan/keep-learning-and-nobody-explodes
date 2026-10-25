@@ -25,6 +25,7 @@ game itself runs over the [session protocol](session-protocol.md).
 | `invite` | `invite_id, from: { id, name }, island_id, topic_id, storey_id, game_id` | someone invites you; on connect again for every invite still open |
 | `invite_answered` | `invite_id, accepted` | to the inviter |
 | `invite_cancelled` | `invite_id` | the invite is gone: taken back, answered in another tab, or the inviter or invitee went offline |
+| `added_to_island` | `island_id, by: { id, name }` | someone made you a member of an island: created it with you, added you, or forked one to learn with you. The two of you are partners from now on, so a `presence` for them follows if it is news |
 | `error` | `request_id?, code, message` | answers one message; the connection stays open |
 
 Error codes: `bad_message`, `partner_offline` (no open channel),
