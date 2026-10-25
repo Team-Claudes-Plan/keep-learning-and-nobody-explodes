@@ -12,11 +12,13 @@ use serde_json::json;
 use tokio::{sync::broadcast, time::timeout};
 use uuid::Uuid;
 
+use grpc::akasha::Language;
+
 use super::{
     Connection, CreateGame, Outgoing, Sessions,
     protocol::{Answer, Brief, EndReason, ErrorCode, GameEvent, Role, ServerMessage, Status},
 };
-use crate::db::Database;
+use crate::db::{Database, language_code};
 
 /// A house with `tasks` tasks and the two users of its island.
 struct Seed {
@@ -24,7 +26,7 @@ struct Seed {
     players: [Uuid; 2],
 }
 
-async fn seed_topic(db: &Database, tasks: usize) -> Seed {
+async fn seed_topic(db: &Database, tasks: usize, language: Language) -> Seed {
     let players = [
         db.create_user("session test a").await.expect("user"),
         db.create_user("session test b").await.expect("user"),
@@ -34,9 +36,11 @@ async fn seed_topic(db: &Database, tasks: usize) -> Seed {
         .await
         .expect("island");
     let topic: Uuid = sqlx::query_scalar(
-        "INSERT INTO topics (island_id, name) VALUES ($1, 'Bytes') RETURNING id",
+        "INSERT INTO topics (island_id, language, name)
+         VALUES ($1, $2, 'Bytes') RETURNING id",
     )
     .bind(island)
+    .bind(language_code(language))
     .fetch_one(db.pool())
     .await
     .expect("topic");
@@ -113,8 +117,8 @@ async fn plays_a_game_and_restores_it() {
     let Seed {
         topic,
         players: [alex, mia],
-    } = seed_topic(&db, 3).await;
-    let sessions = Sessions::new(db.clone());
+    } = seed_topic(&db, 3, Language::German).await;
+    let sessions = Sessions::new(db.clone(), Language::German);
 
     let too_many = sessions
         .create(CreateGame {
@@ -126,6 +130,43 @@ async fn plays_a_game_and_restores_it() {
         })
         .await;
     assert_eq!(too_many.expect_err("only 3 tasks").code, ErrorCode::NoTasks);
+
+    // a topic of another language does not exist for this game
+    let foreign = seed_topic(&db, 2, Language::English).await;
+    let foreign_only = sessions
+        .create(CreateGame {
+            player: alex,
+            topics: vec![foreign.topic],
+            question_count: 1,
+            role: None,
+            time_limit_secs: None,
+        })
+        .await;
+    assert_eq!(
+        foreign_only.expect_err("no English topics here").code,
+        ErrorCode::NoTasks
+    );
+
+    // a game started in the other language is not joinable by id either
+    let english_sessions = Sessions::new(db.clone(), Language::English);
+    let english_game = english_sessions
+        .create(CreateGame {
+            player: mia,
+            topics: vec![foreign.topic],
+            question_count: 1,
+            role: None,
+            time_limit_secs: None,
+        })
+        .await
+        .expect("english game");
+    assert_eq!(
+        sessions
+            .join(english_game.game_id, alex, None)
+            .await
+            .expect_err("the English game is hidden")
+            .code,
+        ErrorCode::UnknownGame
+    );
 
     let a = sessions
         .create(CreateGame {
@@ -221,7 +262,7 @@ async fn plays_a_game_and_restores_it() {
     )));
 
     // a fresh registry stands in for a server restart
-    let restarted = Sessions::new(db.clone());
+    let restarted = Sessions::new(db.clone(), Language::German);
     let player = restarted
         .authenticate(a.game_id, b.token)
         .await
@@ -330,11 +371,12 @@ mod websocket {
         let Seed {
             topic,
             players: [alex, mia],
-        } = seed_topic(&db, 2).await;
+        } = seed_topic(&db, 2, Language::German).await;
 
         let state = Arc::new(GlobalState {
-            sessions: Sessions::new(db.clone()),
+            sessions: Sessions::new(db.clone(), Language::German),
             db,
+            language: Language::German,
         });
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
             .await

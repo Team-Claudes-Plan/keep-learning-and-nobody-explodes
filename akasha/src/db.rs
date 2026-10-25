@@ -29,17 +29,23 @@ impl Database {
         Ok(Self { pool })
     }
 
-    /// The topics (houses) and skills (storeys) of an island, oldest first.
-    /// Topics without skills are returned with an empty skill list.
-    pub async fn topic_skills(&self, island_id: Uuid) -> Result<Vec<ExistingTopic>, sqlx::Error> {
+    /// The topics (houses) and skills (storeys) of an island in `language`,
+    /// oldest first. Topics without skills are returned with an empty skill
+    /// list.
+    pub async fn topic_skills(
+        &self,
+        island_id: Uuid,
+        language: &str,
+    ) -> Result<Vec<ExistingTopic>, sqlx::Error> {
         let rows: Vec<(String, Option<String>)> = sqlx::query_as(
             "SELECT t.name, s.name
              FROM topics t
              LEFT JOIN skills s ON s.topic_id = t.id
-             WHERE t.island_id = $1
+             WHERE t.island_id = $1 AND t.language = $2
              ORDER BY t.created_at, t.id, s.created_at, s.id",
         )
         .bind(island_id)
+        .bind(language)
         .fetch_all(&self.pool)
         .await?;
 
@@ -64,11 +70,12 @@ impl Database {
     /// Inserts one task and one instruction per question in a single
     /// transaction, so a failed chronicle never leaves partial task rows.
     /// Topics and skills are created on `island_id` as needed; names that only
-    /// differ in case from existing ones are reused.
+    /// differ in case from existing ones of the same language are reused.
     pub async fn store_questions(
         &self,
         document_id: Uuid,
         island_id: Uuid,
+        language: &str,
         topics: &[TopicSkills],
     ) -> Result<(), sqlx::Error> {
         let mut transaction = self.pool.begin().await?;
@@ -79,11 +86,13 @@ impl Database {
         {
             // `DO UPDATE` instead of `DO NOTHING`, so the existing row is returned
             let topic_id: Uuid = sqlx::query_scalar(
-                "INSERT INTO topics (island_id, name) VALUES ($1, $2)
-                 ON CONFLICT (island_id, lower(name)) DO UPDATE SET name = topics.name
+                "INSERT INTO topics (island_id, language, name) VALUES ($1, $2, $3)
+                 ON CONFLICT (island_id, language, lower(name))
+                 DO UPDATE SET name = topics.name
                  RETURNING id",
             )
             .bind(island_id)
+            .bind(language)
             .bind(topic.topic.trim())
             .fetch_one(&mut *transaction)
             .await?;
@@ -355,12 +364,21 @@ mod tests {
         .await
         .expect("island");
         let existing_topic: Uuid = sqlx::query_scalar(
-            "INSERT INTO topics (island_id, name) VALUES ($1, 'Geografie') RETURNING id",
+            "INSERT INTO topics (island_id, language, name)
+             VALUES ($1, 'german', 'Geografie') RETURNING id",
         )
         .bind(island)
         .fetch_one(pool)
         .await
         .expect("topic");
+        let _: Uuid = sqlx::query_scalar(
+            "INSERT INTO topics (island_id, language, name)
+             VALUES ($1, 'english', 'Geografie') RETURNING id",
+        )
+        .bind(island)
+        .fetch_one(pool)
+        .await
+        .expect("english topic");
         let existing_skill: Uuid = sqlx::query_scalar(
             "INSERT INTO skills (topic_id, name) VALUES ($1, 'Hauptstädte') RETURNING id",
         )
@@ -420,12 +438,15 @@ mod tests {
         ];
 
         database
-            .store_questions(document_id, island, &topics)
+            .store_questions(document_id, island, "german", &topics)
             .await
             .expect("store questions");
 
         assert_eq!(
-            database.topic_skills(island).await.expect("topic skills"),
+            database
+                .topic_skills(island, "german")
+                .await
+                .expect("topic skills"),
             [
                 ExistingTopic {
                     topic: "Geografie".to_owned(),
@@ -437,6 +458,17 @@ mod tests {
                 },
             ],
             "no duplicate for another casing, no topic without questions"
+        );
+        assert_eq!(
+            database
+                .topic_skills(island, "english")
+                .await
+                .expect("english topic skills"),
+            [ExistingTopic {
+                topic: "Geografie".to_owned(),
+                skills: Vec::new(),
+            }],
+            "the same topic name exists separately per language; only German got questions"
         );
 
         let rows: Vec<StoredRow> = sqlx::query_as(

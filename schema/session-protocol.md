@@ -16,7 +16,8 @@ strikes. Clients only render what they are told.
 ## Rules
 
 - The questions come from the chosen `topics`: the houses of an island (see
-  `GET /api/islands`).
+  `GET /api/islands`). Only houses of the backend's configured language exist;
+  topic ids of another language are treated as unknown.
 - A bomb has `question_count` parts (1–11). **Turn n** plays part n.
 - Each turn one player is the **defuser** (sees the module, answers) and the
   other is the **expert** (sees the prompt and the manual page). **Roles swap

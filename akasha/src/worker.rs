@@ -33,10 +33,12 @@ pub async fn process_chronicle(
         "processing chronicle"
     );
 
+    let language = job.language.to_ascii_lowercase();
+
     // TODO: Implement some sort of lock so if multiple process jobs run in parallel,
     //  which might result in same skill names in different wordings, they can be written
     //  to the db without duplication
-    let existing = database.topic_skills(job.island_id).await?;
+    let existing = database.topic_skills(job.island_id, &language).await?;
     let existing_topics = existing
         .iter()
         .map(|topic| topic.topic.clone())
@@ -60,7 +62,7 @@ pub async fn process_chronicle(
     };
 
     if let Err(error) = database
-        .store_questions(document_id, job.island_id, &topics)
+        .store_questions(document_id, job.island_id, &language, &topics)
         .await
     {
         tracing::error!(

@@ -16,6 +16,7 @@ mod worker;
 use crate::{akasha::AkashaClient, config::Config, db::Database};
 use anyhow::{Context, Result};
 use axum::{Router, routing::get};
+use grpc::akasha::Language;
 use std::sync::Arc;
 use tower_http::trace::TraceLayer;
 use tracing_subscriber::EnvFilter;
@@ -27,6 +28,8 @@ static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 pub struct GlobalState {
     pub db: Database,
     pub sessions: session::Sessions,
+    /// Language the backend reads and writes content in.
+    pub language: Language,
 }
 
 #[tokio::main]
@@ -48,7 +51,8 @@ async fn main() -> Result<()> {
 
     let state = Arc::new(GlobalState {
         db: db.clone(),
-        sessions: session::Sessions::new(db.clone()),
+        sessions: session::Sessions::new(db.clone(), config.akasha_language),
+        language: config.akasha_language,
     });
 
     let app = Router::new()
