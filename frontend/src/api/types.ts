@@ -273,3 +273,4 @@ export type Presence = {
   userId: string
   status: PresenceStatus
 }
+

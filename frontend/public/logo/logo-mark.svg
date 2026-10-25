@@ -1,0 +1,53 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Keep learning and nobody explodes">
+  <defs>
+    <radialGradient id="bg" cx="50%" cy="38%" r="75%">
+      <stop offset="0" stop-color="#ffcf6b"/>
+      <stop offset=".25" stop-color="#ff8a3d"/>
+      <stop offset=".55" stop-color="#d9467a"/>
+      <stop offset=".85" stop-color="#5b2a9e"/>
+      <stop offset="1" stop-color="#1c0d40"/>
+    </radialGradient>
+    <clipPath id="clip"><rect width="512" height="512" rx="112"/></clipPath>
+  </defs>
+  <g clip-path="url(#clip)">
+    <rect width="512" height="512" fill="url(#bg)"/>
+    <!-- sunburst -->
+    <g opacity=".16" fill="#fff" transform="translate(256 200)">
+      <path id="ray" d="M0 0 L-60 -420 L60 -420Z"/>
+      <use href="#ray" transform="rotate(40)"/><use href="#ray" transform="rotate(80)"/>
+      <use href="#ray" transform="rotate(120)"/><use href="#ray" transform="rotate(160)"/>
+      <use href="#ray" transform="rotate(200)"/><use href="#ray" transform="rotate(240)"/>
+      <use href="#ray" transform="rotate(280)"/><use href="#ray" transform="rotate(320)"/>
+    </g>
+    <g stroke="#1b1030" stroke-width="12" stroke-linejoin="round" stroke-linecap="round">
+      <!-- open book -->
+      <path d="M256 392 C216 366 150 360 78 372 L78 460 C150 448 216 454 256 480Z" fill="#fbf3dc"/>
+      <path d="M256 392 C296 366 362 360 434 372 L434 460 C362 448 296 454 256 480Z" fill="#fbf3dc"/>
+      <path d="M78 372 L78 460 L256 480 L256 392Z" fill="none" stroke="none"/>
+      <path d="M70 380 L70 468 C146 456 214 462 256 490 C298 462 366 456 442 468 L442 380" fill="none" stroke="#5b3fd1" stroke-width="14"/>
+      <g stroke="#c9b98f" stroke-width="7" fill="none">
+        <path d="M110 396 C150 392 196 398 232 414"/><path d="M110 422 C150 418 196 424 232 440"/>
+        <path d="M402 396 C362 392 316 398 280 414"/><path d="M402 422 C362 418 316 424 280 440"/>
+      </g>
+      <!-- bomb body -->
+      <circle cx="256" cy="268" r="124" fill="#2b2d42"/>
+      <!-- cap -->
+      <path d="M218 158 L294 158 L304 130 L208 130Z" fill="#6b6f80"/>
+      <!-- fuse -->
+      <path d="M256 130 C256 96 292 98 300 66 C304 50 316 44 328 40" fill="none" stroke="#c8a165" stroke-width="14"/>
+    </g>
+    <!-- bomb shine -->
+    <ellipse cx="206" cy="222" rx="30" ry="18" transform="rotate(-35 206 222)" fill="#8d93b8"/>
+    <!-- smiling face -->
+    <g fill="#fff">
+      <circle cx="222" cy="282" r="15"/><circle cx="290" cy="282" r="15"/>
+    </g>
+    <g fill="#1b1030"><circle cx="226" cy="285" r="7"/><circle cx="294" cy="285" r="7"/></g>
+    <path d="M226 318 Q256 346 286 318" fill="none" stroke="#fff" stroke-width="10" stroke-linecap="round"/>
+    <!-- spark -->
+    <g transform="translate(332 36)">
+      <path d="M0 -34 L10 -10 L34 0 L10 10 L0 34 L-10 10 L-34 0 L-10 -10Z" fill="#ff8a1f" stroke="#1b1030" stroke-width="8" stroke-linejoin="round"/>
+      <path d="M0 -16 L5 -5 L16 0 L5 5 L0 16 L-5 5 L-16 0 L-5 -5Z" fill="#fff6c2"/>
+    </g>
+  </g>
+</svg>

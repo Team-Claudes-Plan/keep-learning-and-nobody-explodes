@@ -6,7 +6,6 @@ import {
   createUser,
   forkIsland,
   setCurrentUserId,
-  uploadDocuments,
 } from '../../api/client'
 import { reloadIslands } from '../../api/useIslands'
 import type { Island, UserSummary } from '../../api/types'
@@ -166,57 +165,6 @@ export function NewIsland({ onCreated, open = false }: { onCreated: (islandId: s
           placeholder={`Partner (optional): ${PARTNER_HINT}`}
         />
       </Form>
-    </details>
-  )
-}
-
-/** Uploads documents; Akasha turns them into the island's houses. */
-export function UploadDocuments({ island }: { island: Island }) {
-  const action = useAction()
-  const [files, setFiles] = useState<File[]>([])
-  const [inputKey, setInputKey] = useState(0)
-  const [result, setResult] = useState<string | null>(null)
-
-  return (
-    <details className="hud-details">
-      <summary>Upload documents</summary>
-      <div className="hud-note">
-        Scripts, slides or notes. They are read and turned into questions, sorted into houses by topic.
-        {island.origin_id && ' This island shares its documents with the island it was forked from.'}
-      </div>
-      <Form
-        action={action}
-        submit="Upload"
-        disabled={files.length === 0}
-        onSubmit={() =>
-          void action.run(async () => {
-            setResult(null)
-            const response = await uploadDocuments(island.id, files)
-            setFiles([])
-            setInputKey((key) => key + 1)
-            const failed = response.failures.map((failure) => failure.filename ?? 'a file').join(', ')
-            setResult(
-              `Uploaded ${response.objects.length} file(s).` +
-                (failed ? ` Failed: ${failed}.` : '') +
-                ' New houses appear once the questions are ready.',
-            )
-            await reloadIslands()
-          })
-        }
-      >
-        <input
-          key={inputKey}
-          type="file"
-          multiple
-          onChange={(event) => setFiles(Array.from(event.target.files ?? []))}
-        />
-      </Form>
-      {result && <div className="hud-note">{result}</div>}
-      <div className="hud-buttons">
-        <button type="button" onClick={() => void reloadIslands().catch(() => undefined)}>
-          Refresh houses
-        </button>
-      </div>
     </details>
   )
 }
