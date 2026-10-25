@@ -31,10 +31,13 @@ setting is kept in `localStorage`.
 
 - `src/audio/engine.ts` — one shared `AudioContext`, master/compressor, mute
   state, and the procedural ambience beds (islands, house, room, bomb, book).
+- `src/audio/music.ts` — a continuous generative piece (Dmaj9 → Bm9 → Gmaj9 →
+  A7sus4) with pads, bass, plucks and bells. It runs across route changes and is
+  only ducked, never restarted.
 - `src/audio/sfx.ts` — the sound library (`playSfx(name)`): UI clicks, timer
-  ticks, correct/wrong/strike, explosion, debris clanks, fanfare, every module's
-  mechanical signature, page flips, doors, bridges, birds/cars and upload
-  feedback.
+  ticks (the last ten seconds are deliberately loud), correct/wrong/strike,
+  explosion, debris clanks, fanfare, every module's mechanical signature, page
+  flips, doors, bridges, birds/cars and upload feedback.
 - `src/audio/AudioRoot.tsx` — unlocks audio on the first gesture, plays a quiet
   click for ordinary buttons and links, and hosts the mute switch.
 - `src/audio/useAmbience.ts` — starts a soundscape for a page and sprinkles in

@@ -106,6 +106,7 @@ function StoreyRoom({ island, house, storey }: { island: ResolvedIsland; house: 
         <BombTable position={BOMB_TABLE_POSITION} />
         <Suspense fallback={null}>
           <RoomBomb
+            key={game.round}
             rest={BOMB_REST}
             lifted={lifted}
             onLift={lift}
@@ -115,6 +116,7 @@ function StoreyRoom({ island, house, storey }: { island: ResolvedIsland; house: 
             onSelect={(index) => ready && game.select(index)}
             timeLeft={game.timeLeft}
             strikes={game.strikes}
+            exploded={game.exploded}
           />
         </Suspense>
       </SceneCanvas>

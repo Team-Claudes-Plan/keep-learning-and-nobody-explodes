@@ -203,14 +203,21 @@ export function playSfx(name: SoundName, options: PlaySfxOptions = {}) {
       toneAt({ type: 'square', freq: f(120), freqEnd: f(88), duration: 0.22, gain: 0.04, when: 0.03 })
       break
     case 'pageFlip':
-      noiseAt({ duration: 0.22, gain: 0.05, type: 'bandpass', freq: 1050, freqEnd: 3400, q: 0.7 })
-      noiseAt({ duration: 0.16, gain: 0.026, type: 'highpass', freq: 2200, freqEnd: 900, when: 0.07 })
+      // Paper bending: bright rustle plus a soft low body.
+      noiseAt({ duration: 0.22, gain: 0.05, type: 'bandpass', freq: 1050, freqEnd: 3400, q: 0.7, pan: -0.15 })
+      noiseAt({ duration: 0.16, gain: 0.026, type: 'highpass', freq: 2200, freqEnd: 900, when: 0.07, pan: 0.2 })
+      noiseAt({ duration: 0.18, gain: 0.018, type: 'lowpass', freq: 520, when: 0.02 })
       break
     case 'whoosh':
-      noiseAt({ duration: 0.42, gain: 0.09, type: 'bandpass', freq: 280, freqEnd: 2200, q: 0.6 })
+      // Wider whoosh: two bands sweeping in opposite stereo positions.
+      noiseAt({ duration: 0.42, gain: 0.08, type: 'bandpass', freq: 280, freqEnd: 2200, q: 0.6, pan: -0.25 })
+      noiseAt({ duration: 0.36, gain: 0.035, type: 'bandpass', freq: 380, freqEnd: 1700, q: 0.8, when: 0.03, pan: 0.25 })
+      toneAt({ type: 'sine', freq: f(110), freqEnd: f(180), duration: 0.38, gain: 0.015 })
       break
     case 'whooshBack':
-      noiseAt({ duration: 0.38, gain: 0.08, type: 'bandpass', freq: 2200, freqEnd: 260, q: 0.6 })
+      noiseAt({ duration: 0.38, gain: 0.075, type: 'bandpass', freq: 2200, freqEnd: 260, q: 0.6, pan: 0.25 })
+      noiseAt({ duration: 0.32, gain: 0.032, type: 'bandpass', freq: 1700, freqEnd: 320, q: 0.8, when: 0.03, pan: -0.25 })
+      toneAt({ type: 'sine', freq: f(180), freqEnd: f(100), duration: 0.34, gain: 0.014 })
       break
     case 'cloud':
       noiseAt({ duration: 0.7, gain: 0.085, type: 'lowpass', freq: 240, freqEnd: 1500, q: 0.6 })
@@ -232,74 +239,125 @@ export function playSfx(name: SoundName, options: PlaySfxOptions = {}) {
 
     /* ----------------------------------------------------------------- bomb */
     case 'arm':
-      ;[440, 554, 659].forEach((hz, i) =>
-        toneAt({ type: 'square', freq: f(hz), duration: 0.07, gain: 0.04, lowpass: 2200, when: i * 0.11 }),
+      // Power comes up: relay clicks, a low hum and a rising ready signal.
+      toneAt({ type: 'sine', freq: f(58), duration: 0.5, gain: 0.025, attack: 0.05 })
+      ;[440, 554, 659, 880].forEach((hz, i) =>
+        toneAt({ type: 'square', freq: f(hz), duration: 0.07, gain: 0.035, lowpass: 2400, when: i * 0.1 }),
       )
-      noiseAt({ duration: 0.03, gain: 0.05, type: 'highpass', freq: 2400, when: 0.34 })
+      ;[0, 0.1, 0.2, 0.31].forEach((when) =>
+        noiseAt({ duration: 0.015, gain: 0.03, type: 'highpass', freq: 2600, when }),
+      )
+      toneAt({ type: 'triangle', freq: f(220), freqEnd: f(330), duration: 0.35, gain: 0.015, when: 0.1 })
       break
     case 'select':
-      toneAt({ type: 'sine', freq: f(640), freqEnd: f(980), duration: 0.12, gain: 0.035 })
-      noiseAt({ duration: 0.25, gain: 0.055, type: 'bandpass', freq: 480, freqEnd: 1900, q: 0.7 })
+      // Latch the module into view: mechanical click plus a short air sweep.
+      noiseAt({ duration: 0.02, gain: 0.04, type: 'highpass', freq: 1800 })
+      toneAt({ type: 'triangle', freq: f(190), freqEnd: f(140), duration: 0.06, gain: 0.03 })
+      toneAt({ type: 'sine', freq: f(640), freqEnd: f(980), duration: 0.14, gain: 0.03 })
+      noiseAt({ duration: 0.26, gain: 0.05, type: 'bandpass', freq: 480, freqEnd: 1900, q: 0.7 })
       break
     case 'back':
-      toneAt({ type: 'sine', freq: f(760), freqEnd: f(340), duration: 0.14, gain: 0.035 })
-      noiseAt({ duration: 0.27, gain: 0.055, type: 'bandpass', freq: 1900, freqEnd: 420, q: 0.7 })
+      // The same latch, but the air rushes back out.
+      noiseAt({ duration: 0.02, gain: 0.035, type: 'highpass', freq: 1700 })
+      toneAt({ type: 'triangle', freq: f(170), freqEnd: f(110), duration: 0.06, gain: 0.025 })
+      toneAt({ type: 'sine', freq: f(760), freqEnd: f(340), duration: 0.15, gain: 0.03 })
+      noiseAt({ duration: 0.28, gain: 0.05, type: 'bandpass', freq: 1900, freqEnd: 420, q: 0.7 })
       break
     case 'hoverModule':
       toneAt({ type: 'sine', freq: f(920), freqEnd: f(1080), duration: 0.03, gain: 0.017 })
       break
     case 'tick':
-      noiseAt({ duration: 0.022, gain: 0.03, type: 'highpass', freq: 2800 })
-      toneAt({ type: 'sine', freq: f(1550), duration: 0.018, gain: 0.015 })
+      // Wooden clock tick: short body plus a little top-end.
+      noiseAt({ duration: 0.016, gain: 0.028, type: 'bandpass', freq: 1800, q: 1.2 })
+      toneAt({ type: 'triangle', freq: f(720), freqEnd: f(520), duration: 0.028, gain: 0.025 })
       break
     case 'tickUrgent':
-      toneAt({ type: 'sine', freq: f(1320), duration: 0.055, gain: 0.06 })
-      toneAt({ type: 'sine', freq: f(990), duration: 0.05, gain: 0.035, when: 0.08 })
+      // Loud, sharp clock tick for the last ten seconds: it has to cut through
+      // the music and the module sounds.
+      noiseAt({ duration: 0.025, gain: 0.1, type: 'highpass', freq: 3000 })
+      toneAt({ type: 'square', freq: f(1850), freqEnd: f(1250), duration: 0.045, gain: 0.075, lowpass: 5200 })
+      toneAt({ type: 'sine', freq: f(140), freqEnd: f(78), duration: 0.08, gain: 0.09 })
+      toneAt({ type: 'triangle', freq: f(2650), duration: 0.04, gain: 0.03, when: 0.004 })
       break
     case 'send':
+      // Uplink chirp with a relay click underneath.
       toneAt({ type: 'square', freq: f(880), freqEnd: f(1400), duration: 0.07, gain: 0.045, lowpass: 4200 })
       toneAt({ type: 'sine', freq: f(1760), duration: 0.05, gain: 0.03, when: 0.055 })
+      toneAt({ type: 'triangle', freq: f(1500), duration: 0.08, gain: 0.018, when: 0.09 })
       noiseAt({ duration: 0.03, gain: 0.025, type: 'highpass', freq: 2600 })
       break
     case 'correct':
+      // Bright four-note arpeggio with a glassy sparkle on top.
       ;[523.25, 659.25, 783.99, 1046.5].forEach((hz, i) =>
-        toneAt({ type: 'triangle', freq: f(hz), duration: i === 3 ? 0.24 : 0.13, gain: 0.075, when: i * 0.085 }),
+        toneAt({ type: 'triangle', freq: f(hz), duration: i === 3 ? 0.26 : 0.14, gain: 0.075, when: i * 0.085 }),
+      )
+      ;[1046.5, 1318.51, 1567.98].forEach((hz, i) =>
+        toneAt({ type: 'sine', freq: f(hz), duration: 0.28, gain: 0.018, when: 0.28 + i * 0.05 }),
       )
       break
     case 'wrong':
-      toneAt({ type: 'sawtooth', freq: f(220), duration: 0.25, gain: 0.05, lowpass: 900 })
-      toneAt({ type: 'sawtooth', freq: f(233), duration: 0.25, gain: 0.045, lowpass: 900 })
-      toneAt({ type: 'square', freq: f(110), duration: 0.18, gain: 0.035, when: 0.03 })
+      // Dissonant two-tone buzz, a low thump and a dry error click.
+      toneAt({ type: 'sawtooth', freq: f(220), duration: 0.26, gain: 0.05, lowpass: 900 })
+      toneAt({ type: 'sawtooth', freq: f(233), duration: 0.26, gain: 0.045, lowpass: 900 })
+      toneAt({ type: 'square', freq: f(110), duration: 0.2, gain: 0.035, when: 0.03 })
+      toneAt({ type: 'sine', freq: f(70), freqEnd: f(45), duration: 0.24, gain: 0.05, when: 0.02 })
+      noiseAt({ duration: 0.018, gain: 0.03, type: 'highpass', freq: 2200, when: 0.02 })
       break
     case 'strike':
-      ;[0, 0.22, 0.44].forEach((when) => {
-        toneAt({ type: 'square', freq: f(880), duration: 0.1, gain: 0.06, lowpass: 3000, when })
-        toneAt({ type: 'square', freq: f(620), duration: 0.1, gain: 0.05, lowpass: 3000, when: when + 0.11 })
+      // Klaxon hits with a low thump; the last one rings out.
+      ;[0, 0.22, 0.44].forEach((when, i) => {
+        toneAt({ type: 'square', freq: f(880), duration: 0.1, gain: 0.055, lowpass: 3000, when })
+        toneAt({ type: 'square', freq: f(620), duration: 0.1, gain: 0.045, lowpass: 3000, when: when + 0.11 })
+        toneAt({ type: 'sine', freq: f(70), freqEnd: f(45), duration: 0.2, gain: 0.06, when })
+        if (i === 2) {
+          toneAt({ type: 'sawtooth', freq: f(620), freqEnd: f(430), duration: 0.7, gain: 0.025, lowpass: 2200, when: 0.55 })
+        }
       })
       break
     case 'boom': {
-      noiseAt({ duration: 2.2, gain: 0.42, type: 'lowpass', freq: 1800, freqEnd: 120, q: 0.5, attack: 0.004 })
-      noiseAt({ duration: 0.4, gain: 0.1, type: 'highpass', freq: 1600, freqEnd: 260, q: 0.6 })
-      toneAt({ type: 'sine', freq: f(115), freqEnd: f(28), duration: 0.9, gain: 0.28 })
-      toneAt({ type: 'sine', freq: f(55), freqEnd: f(24), duration: 1.3, gain: 0.16 })
+      // Crack, body, sub drop, flying debris and a faint ringing in the ears.
+      noiseAt({ duration: 0.16, gain: 0.16, type: 'highpass', freq: 2200, q: 0.6, attack: 0.002 })
+      noiseAt({ duration: 2.6, gain: 0.46, type: 'lowpass', freq: 2200, freqEnd: 90, q: 0.45, attack: 0.004 })
+      noiseAt({ duration: 1.2, gain: 0.12, type: 'bandpass', freq: 700, freqEnd: 120, q: 0.5, when: 0.02, pan: -0.25 })
+      noiseAt({ duration: 1.1, gain: 0.1, type: 'bandpass', freq: 900, freqEnd: 150, q: 0.5, when: 0.06, pan: 0.3 })
+      toneAt({ type: 'sine', freq: f(120), freqEnd: f(24), duration: 1.2, gain: 0.32 })
+      toneAt({ type: 'sine', freq: f(54), freqEnd: f(20), duration: 1.8, gain: 0.18 })
+      toneAt({ type: 'triangle', freq: f(240), freqEnd: f(45), duration: 0.5, gain: 0.06 })
+      ;[0.35, 0.55, 0.72, 0.95, 1.2, 1.5].forEach((when, i) =>
+        noiseAt({
+          duration: 0.05,
+          gain: 0.05 - i * 0.006,
+          type: 'highpass',
+          freq: 1800 + Math.random() * 1800,
+          when,
+          pan: Math.random() * 1.4 - 0.7,
+        }),
+      )
+      toneAt({ type: 'sine', freq: f(3200), duration: 1.8, gain: 0.008, attack: 0.2, when: 0.1 })
       break
     }
     case 'clank': {
-      const base = f(300 + Math.random() * 500)
-      for (const ratio of [1, 2.76, 5.4]) {
-        toneAt({ type: 'triangle', freq: base * ratio, duration: 0.3, gain: 0.055 })
-      }
-      noiseAt({ duration: 0.05, gain: 0.04, type: 'highpass', freq: 2600 })
+      // Sheet metal: inharmonic partials, a bright scrape and a low body thud.
+      const base = f(260 + Math.random() * 600)
+      ;[1, 2.4, 4.1, 6.2].forEach((ratio, i) =>
+        toneAt({ type: 'triangle', freq: base * ratio, duration: 0.32 - i * 0.03, gain: 0.032 - i * 0.005 }),
+      )
+      noiseAt({ duration: 0.04, gain: 0.04, type: 'highpass', freq: 2200 })
+      toneAt({ type: 'sine', freq: f(90), freqEnd: f(55), duration: 0.14, gain: 0.05 })
       break
     }
     case 'fanfare': {
+      // Timpani hit, a bright fanfare, then a warm held chord and a sparkle.
+      toneAt({ type: 'sine', freq: f(130), freqEnd: f(60), duration: 0.45, gain: 0.1, when: 0.5 })
+      noiseAt({ duration: 0.25, gain: 0.05, type: 'lowpass', freq: 260, when: 0.5 })
       ;[523.25, 659.25, 783.99, 1046.5].forEach((hz, i) =>
         toneAt({ type: 'square', freq: f(hz), duration: 0.18, gain: 0.06, lowpass: 5000, when: i * 0.11 }),
       )
-      ;[523.25, 659.25, 783.99, 1046.5].forEach((hz) =>
-        toneAt({ type: 'triangle', freq: f(hz), duration: 1.35, gain: 0.04, when: 0.5 }),
+      ;[523.25, 659.25, 783.99, 1046.5, 1318.51].forEach((hz) =>
+        toneAt({ type: 'triangle', freq: f(hz), duration: 1.5, gain: 0.038, when: 0.5 }),
       )
-      toneAt({ type: 'sine', freq: f(261.63), duration: 1.35, gain: 0.055, when: 0.5 })
+      toneAt({ type: 'sine', freq: f(261.63), duration: 1.5, gain: 0.055, when: 0.5 })
+      toneAt({ type: 'sine', freq: f(2093), duration: 0.9, gain: 0.012, when: 0.85 })
       break
     }
     case 'testDone':
@@ -308,65 +366,111 @@ export function playSfx(name: SoundName, options: PlaySfxOptions = {}) {
       )
       break
     case 'door':
+      // Creak, latch and a soft low thud as it swings shut.
       toneAt({ type: 'sawtooth', freq: f(135), freqEnd: f(72), duration: 0.35, gain: 0.045, lowpass: 600 })
       noiseAt({ duration: 0.3, gain: 0.035, type: 'lowpass', freq: 520 })
       toneAt({ type: 'sine', freq: f(92), freqEnd: f(46), duration: 0.22, gain: 0.07, when: 0.24 })
+      noiseAt({ duration: 0.02, gain: 0.035, type: 'highpass', freq: 2200, when: 0.26 })
       break
     case 'pickup':
-      noiseAt({ duration: 0.2, gain: 0.04, type: 'bandpass', freq: 500, freqEnd: 1700, q: 0.7 })
+      // Cloth/air as the bomb comes off the table plus a metal grip.
+      noiseAt({ duration: 0.24, gain: 0.045, type: 'bandpass', freq: 400, freqEnd: 1900, q: 0.7 })
       toneAt({ type: 'sine', freq: f(420), freqEnd: f(700), duration: 0.12, gain: 0.035 })
+      noiseAt({ duration: 0.015, gain: 0.02, type: 'highpass', freq: 2500, when: 0.02 })
       break
     case 'putdown':
-      noiseAt({ duration: 0.18, gain: 0.035, type: 'bandpass', freq: 1700, freqEnd: 420, q: 0.7 })
-      toneAt({ type: 'sine', freq: f(110), freqEnd: f(55), duration: 0.18, gain: 0.06 })
+      // Setting it back down: descending air, a low thud and a metal tick.
+      noiseAt({ duration: 0.2, gain: 0.04, type: 'bandpass', freq: 1900, freqEnd: 350, q: 0.7 })
+      toneAt({ type: 'sine', freq: f(110), freqEnd: f(50), duration: 0.2, gain: 0.07 })
+      noiseAt({ duration: 0.015, gain: 0.03, type: 'highpass', freq: 2200, when: 0.18 })
       break
 
     /* -------------------------------------------------------------- modules */
     case 'snip':
-      noiseAt({ duration: 0.032, gain: 0.075, type: 'highpass', freq: 2300 })
-      noiseAt({ duration: 0.03, gain: 0.06, type: 'highpass', freq: 3100, when: 0.045 })
-      toneAt({ type: 'triangle', freq: f(2300), freqEnd: f(840), duration: 0.09, gain: 0.05 })
+      // Sharp jaws, a metallic ring and a tiny spark of copper.
+      noiseAt({ duration: 0.022, gain: 0.08, type: 'highpass', freq: 3000 })
+      toneAt({ type: 'triangle', freq: f(2500), freqEnd: f(900), duration: 0.09, gain: 0.055 })
+      noiseAt({ duration: 0.018, gain: 0.05, type: 'highpass', freq: 4200, when: 0.045 })
+      toneAt({ type: 'sine', freq: f(1200), duration: 0.05, gain: 0.02, when: 0.05 })
       break
     case 'fuse':
-      noiseAt({ duration: 0.022, gain: 0.045, type: 'highpass', freq: 1900 })
-      toneAt({ type: 'triangle', freq: f(430), freqEnd: f(300), duration: 0.05, gain: 0.05 })
+      // Ceramic/metal click as the fuse seats, with a little contact ring.
+      noiseAt({ duration: 0.018, gain: 0.05, type: 'highpass', freq: 2000 })
+      toneAt({ type: 'triangle', freq: f(420), freqEnd: f(280), duration: 0.06, gain: 0.06, lowpass: 1600 })
+      noiseAt({ duration: 0.04, gain: 0.035, type: 'lowpass', freq: 700, when: 0.012 })
+      toneAt({ type: 'sine', freq: f(900), duration: 0.035, gain: 0.018, when: 0.008 })
       break
     case 'switch':
-      noiseAt({ duration: 0.024, gain: 0.06, type: 'lowpass', freq: 950 })
-      toneAt({ type: 'square', freq: f(170), duration: 0.035, gain: 0.035, lowpass: 900 })
+      // A proper toggle: high tick, body clack, spring ring and a low thump.
+      {
+        const body = 190 + Math.random() * 40
+        noiseAt({ duration: 0.018, gain: 0.05, type: 'highpass', freq: 2800 })
+        noiseAt({ duration: 0.055, gain: 0.07, type: 'lowpass', freq: 1300 })
+        toneAt({ type: 'triangle', freq: f(body), freqEnd: f(body * 0.58), duration: 0.085, gain: 0.05, lowpass: 1500 })
+        toneAt({ type: 'sine', freq: f(780 + Math.random() * 240), duration: 0.07, gain: 0.014, when: 0.006 })
+        toneAt({ type: 'sine', freq: f(120), duration: 0.06, gain: 0.025, when: 0.012 })
+      }
       break
     case 'ratchet':
-      toneAt({ type: 'square', freq: f(1250), duration: 0.022, gain: 0.035, lowpass: 4200 })
-      noiseAt({ duration: 0.018, gain: 0.035, type: 'highpass', freq: 2600 })
+      // Detent of a rotary switch: crisp tick with a small metal ring.
+      {
+        const base = 1050 + Math.random() * 500
+        toneAt({ type: 'square', freq: f(base), duration: 0.018, gain: 0.03, lowpass: 5200 })
+        toneAt({ type: 'triangle', freq: f(base * 1.9), duration: 0.05, gain: 0.012 })
+        noiseAt({ duration: 0.012, gain: 0.035, type: 'highpass', freq: 3400 })
+        toneAt({ type: 'sine', freq: f(160), duration: 0.03, gain: 0.025 })
+      }
       break
     case 'plug':
-      toneAt({ type: 'sine', freq: f(520), freqEnd: f(175), duration: 0.07, gain: 0.06 })
-      noiseAt({ duration: 0.035, gain: 0.04, type: 'lowpass', freq: 900 })
+      // Rubber pop, contact click and a small cable thump.
+      toneAt({ type: 'sine', freq: f(380), freqEnd: f(160), duration: 0.075, gain: 0.07 })
+      noiseAt({ duration: 0.04, gain: 0.055, type: 'lowpass', freq: 800 })
+      toneAt({ type: 'triangle', freq: f(220), duration: 0.06, gain: 0.03, when: 0.01 })
+      noiseAt({ duration: 0.012, gain: 0.03, type: 'highpass', freq: 2600, when: 0.05 })
       break
     case 'servo':
-      toneAt({ type: 'sawtooth', freq: f(110), freqEnd: f(195), duration: 0.22, gain: 0.03, lowpass: 1300 })
-      noiseAt({ duration: 0.18, gain: 0.025, type: 'bandpass', freq: 520, q: 1.1 })
+      // Little motor spins up, moves the part and hits the end stop.
+      toneAt({ type: 'sawtooth', freq: f(90), freqEnd: f(175), duration: 0.24, gain: 0.03, lowpass: 1100 })
+      noiseAt({ duration: 0.2, gain: 0.022, type: 'bandpass', freq: 420, q: 1.1 })
+      toneAt({ type: 'square', freq: f(300), duration: 0.04, gain: 0.012, when: 0.21 })
+      noiseAt({ duration: 0.018, gain: 0.025, type: 'highpass', freq: 1800, when: 0.21 })
       break
     case 'dial':
-      toneAt({ type: 'square', freq: f(1600), duration: 0.02, gain: 0.03, lowpass: 4800 })
-      noiseAt({ duration: 0.014, gain: 0.026, type: 'highpass', freq: 3200 })
+      // Heavier number-wheel detent than the small rotary switch.
+      {
+        const base = 700 + Math.random() * 300
+        toneAt({ type: 'square', freq: f(base), duration: 0.025, gain: 0.03, lowpass: 4200 })
+        noiseAt({ duration: 0.012, gain: 0.025, type: 'highpass', freq: 2600 })
+        toneAt({ type: 'sine', freq: f(120), duration: 0.04, gain: 0.03 })
+        toneAt({ type: 'triangle', freq: f(base * 2.4), duration: 0.06, gain: 0.008 })
+      }
       break
     case 'key':
-      noiseAt({ duration: 0.018, gain: 0.032, type: 'highpass', freq: 2500 })
+      // Typewriter / terminal key: small plastic click with a short tone.
+      noiseAt({ duration: 0.016, gain: 0.032, type: 'highpass', freq: 2500 })
       toneAt({ type: 'triangle', freq: f(1120), duration: 0.02, gain: 0.022 })
+      noiseAt({ duration: 0.02, gain: 0.02, type: 'lowpass', freq: 700, when: 0.012 })
       break
     case 'buttonPress':
-      toneAt({ type: 'square', freq: f(500), duration: 0.08, gain: 0.042, lowpass: 2600 })
-      toneAt({ type: 'sine', freq: f(1000), duration: 0.035, gain: 0.022 })
+      // Arcade button: low thump, plastic click and a clear beep.
+      toneAt({ type: 'sine', freq: f(150), freqEnd: f(85), duration: 0.07, gain: 0.055 })
+      noiseAt({ duration: 0.018, gain: 0.045, type: 'highpass', freq: 2100 })
+      toneAt({ type: 'square', freq: f(500), duration: 0.09, gain: 0.04, lowpass: 2800 })
+      toneAt({ type: 'sine', freq: f(1000), duration: 0.04, gain: 0.018, when: 0.005 })
       break
     case 'slide':
-      noiseAt({ duration: 0.18, gain: 0.04, type: 'bandpass', freq: 500, freqEnd: 1700, q: 0.8 })
-      noiseAt({ duration: 0.15, gain: 0.025, type: 'bandpass', freq: 1700, freqEnd: 480, when: 0.06 })
+      // Friction along the rail, then a soft stop.
+      noiseAt({ duration: 0.2, gain: 0.04, type: 'bandpass', freq: 380, freqEnd: 1600, q: 0.7 })
+      noiseAt({ duration: 0.16, gain: 0.025, type: 'bandpass', freq: 1600, freqEnd: 420, when: 0.05 })
+      toneAt({ type: 'sine', freq: f(150), freqEnd: f(110), duration: 0.18, gain: 0.02 })
+      noiseAt({ duration: 0.014, gain: 0.028, type: 'highpass', freq: 2200, when: 0.19 })
       break
     case 'radar':
-      toneAt({ type: 'sine', freq: f(1050), duration: 0.8, gain: 0.055 })
-      toneAt({ type: 'sine', freq: f(1050), duration: 0.68, gain: 0.022, when: 0.18 })
-      toneAt({ type: 'sine', freq: f(1050), duration: 0.55, gain: 0.01, when: 0.36 })
+      // Sonar ping with a low sweep and three decaying echoes.
+      toneAt({ type: 'sine', freq: f(1050), duration: 0.9, gain: 0.055 })
+      toneAt({ type: 'sine', freq: f(1050), duration: 0.7, gain: 0.018, when: 0.18 })
+      toneAt({ type: 'sine', freq: f(1050), duration: 0.5, gain: 0.008, when: 0.36 })
+      toneAt({ type: 'sine', freq: f(180), freqEnd: f(120), duration: 0.6, gain: 0.012 })
       break
 
     /* ---------------------------------------------------------------- world */

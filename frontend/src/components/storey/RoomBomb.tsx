@@ -17,6 +17,9 @@ import {
 } from '../../game/Bomb3D'
 import { isDrag } from '../interaction'
 import { roomZoom } from '../cameras'
+import { playBoom, playClank } from '../../audio/sfx'
+import Explosion from '../../game/Explosion'
+import { shatterBomb, stepDebris, type Piece } from '../../game/debris'
 
 /** Width of the bomb lying on the table, and once picked up (it comes towards the camera). */
 const REST_WIDTH = 0.9
@@ -105,7 +108,7 @@ type RoomBombProps = Omit<BombContentProps, 'interactive' | 'ownMaterials'> & {
  * The camera never moves; it only zooms in while a module is open, as on the bomb page.
  */
 export default function RoomBomb({ rest, lifted, onLift, onPutDown, ...content }: RoomBombProps) {
-  const { focused } = content
+  const { focused, exploded = false } = content
   const { bomb, setArrived, dimOn, portals, handlers } = useBombContent({
     ...content,
     interactive: lifted,
@@ -180,6 +183,27 @@ export default function RoomBomb({ rest, lifted, onLift, onPutDown, ...content }
   const spin = useRef(newSpin())
   const flight = useRef<Flight | null>(null)
   const wasLifted = useRef(false)
+  /** The blast has happened: the bomb is in pieces and the fireball is out. */
+  const [blasted, setBlasted] = useState(false)
+  const debris = useRef<Piece[]>([])
+  const clanks = useRef(0)
+  const blastTimer = useRef<number | null>(null)
+
+  // Explode shortly after the timer runs out / the third strike lands, so the
+  // result is readable for a moment before the bomb is torn apart.
+  useEffect(() => {
+    if (!exploded) return
+    spin.current.enabled = false
+    spin.current.dragging = false
+    blastTimer.current = window.setTimeout(() => {
+      setBlasted(true)
+      playBoom()
+      debris.current = shatterBomb(bomb)
+    }, 900)
+    return () => {
+      if (blastTimer.current !== null) window.clearTimeout(blastTimer.current)
+    }
+  }, [exploded, bomb])
 
   // Pick up, put down, open and close a module: each one an eased move from where the bomb is now.
   useEffect(() => {
@@ -301,6 +325,14 @@ export default function RoomBomb({ rest, lifted, onLift, onPutDown, ...content }
       material.envMapIntensity = 0.9
       material.needsUpdate = true
     })
+
+    // After the blast, let the pieces tumble and crash (at most a few clangs per frame).
+    if (blasted) {
+      clanks.current = 0
+      stepDebris(debris.current, Math.min(delta, 1 / 30), (speed) => {
+        if (clanks.current++ < 2) playClank(speed)
+      })
+    }
   })
 
   useEffect(
@@ -342,6 +374,7 @@ export default function RoomBomb({ rest, lifted, onLift, onPutDown, ...content }
           {portals}
           <primitive object={bomb} position={bounds.center.clone().negate()} {...handlers} />
         </group>
+        {blasted && <Explosion center={[0, 0, 0]} />}
         {resting && (
           <mesh
             scale={HOVER_SCALE}

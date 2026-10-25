@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router'
+import { setMusicDucked } from '../audio/music'
 import { playSfx, SOUND_LIBRARY, type SoundName } from '../audio/sfx'
 
 const ALL_GAP_MS = 380
@@ -11,6 +12,12 @@ export default function SoundTestPage() {
   const run = useRef(0)
 
   useEffect(() => () => void run.current++, [])
+
+  // Keep the background music out of the way while auditioning effects.
+  useEffect(() => {
+    setMusicDucked(true)
+    return () => setMusicDucked(false)
+  }, [])
 
   function play(name: SoundName) {
     playSfx(name)

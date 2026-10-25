@@ -56,6 +56,7 @@ export default function Bomb({
   return (
     <div className="bomb-screen">
       <Bomb3D
+        key={game.round}
         bare
         modules={game.bombModules}
         focused={game.focused}

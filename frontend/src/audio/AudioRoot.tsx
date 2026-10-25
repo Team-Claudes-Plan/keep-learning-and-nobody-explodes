@@ -1,6 +1,7 @@
 import { useEffect } from 'react'
 import AudioToggle from './AudioToggle'
 import { unlockAudio } from './engine'
+import { startMusic } from './music'
 import { isSoundName, playSfx } from './sfx'
 
 /** Anything the browser would treat as a UI control. */
@@ -26,7 +27,12 @@ const CONTROL_SELECTOR = [
  */
 export default function AudioRoot() {
   useEffect(() => {
-    const unlock = () => unlockAudio()
+    // Music continues across routes because this component never unmounts.
+    startMusic()
+    const unlock = () => {
+      unlockAudio()
+      startMusic()
+    }
     const onClick = (event: MouseEvent) => {
       const target = event.target
       if (!(target instanceof Element)) return

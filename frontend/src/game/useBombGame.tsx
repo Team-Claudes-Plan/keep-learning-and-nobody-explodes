@@ -134,10 +134,11 @@ export function useBombGame({
     return () => clearTimeout(id)
   }, [running, timeLeft])
 
-  // The last half minute gets a clock tick, the last ten seconds a sharper one.
+  // The last half minute gets a clock tick, the last ten seconds a loud one.
   useEffect(() => {
     if (!running || timeLeft > 30) return
-    playSfx(timeLeft <= 10 ? 'tickUrgent' : 'tick')
+    if (timeLeft <= 10) playSfx('tickUrgent', { volume: 1.2 })
+    else playSfx('tick', { volume: 0.8 })
   }, [running, timeLeft])
 
   // Arming chime once the questions are on the bomb (and it is actually active, not lying on a table).

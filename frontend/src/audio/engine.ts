@@ -97,6 +97,12 @@ export function isAudioUnlocked() {
   return unlocked
 }
 
+/** Master output, for sub-mixes such as the procedural music. */
+export function getMasterBus(): GainNode | null {
+  getAudioContext()
+  return master
+}
+
 /** Shared two second noise buffer; every noise sound reads from it. */
 export function noiseBuffer(context: AudioContext): AudioBuffer {
   if (noise && noise.sampleRate === context.sampleRate) return noise
@@ -114,6 +120,8 @@ function clamp(value: number, min: number, max: number) {
 type OutputOptions = {
   gain: number
   pan?: number
+  /** Optional sub-mix (e.g. the music bus) instead of the master output. */
+  bus?: AudioNode
 }
 
 /** Gain node (already scheduled) into the master bus, optionally panned. */
@@ -126,7 +134,7 @@ function output(context: AudioContext, options: OutputOptions) {
     gain.connect(panner)
     tail = panner
   }
-  tail.connect(master!)
+  tail.connect(options.bus ?? master!)
   return gain
 }
 
@@ -146,6 +154,8 @@ export type ToneOptions = {
   /** Optional low-pass that softens harsh waveforms. */
   lowpass?: number
   detune?: number
+  /** Optional sub-mix (e.g. the music bus) instead of the master output. */
+  bus?: AudioNode
 }
 
 export function tone(options: ToneOptions) {
@@ -153,7 +163,7 @@ export function tone(options: ToneOptions) {
   if (!context) return
   const now = context.currentTime + (options.when ?? 0)
   const duration = Math.max(0.02, options.duration)
-  const gain = output(context, { gain: options.gain ?? 0.14, pan: options.pan })
+  const gain = output(context, { gain: options.gain ?? 0.14, pan: options.pan, bus: options.bus })
   const peak = Math.max(0.0002, options.gain ?? 0.14)
   const attack = Math.max(0.002, options.attack ?? 0.006)
   gain.gain.setValueAtTime(0.0001, now)
@@ -194,6 +204,8 @@ export type NoiseOptions = {
   pan?: number
   /** Playback rate, e.g. 1.5 for a brighter hiss. */
   rate?: number
+  /** Optional sub-mix (e.g. the music bus) instead of the master output. */
+  bus?: AudioNode
 }
 
 export function noiseBurst(options: NoiseOptions) {
@@ -202,7 +214,7 @@ export function noiseBurst(options: NoiseOptions) {
   const now = context.currentTime + (options.when ?? 0)
   const duration = Math.max(0.02, options.duration)
   const peak = Math.max(0.0002, options.gain ?? 0.12)
-  const gain = output(context, { gain: peak, pan: options.pan })
+  const gain = output(context, { gain: peak, pan: options.pan, bus: options.bus })
   gain.gain.setValueAtTime(0.0001, now)
   gain.gain.exponentialRampToValueAtTime(peak, now + Math.max(0.002, options.attack ?? 0.004))
   gain.gain.exponentialRampToValueAtTime(0.0001, now + duration)
