@@ -28,7 +28,7 @@ const typeQuery = (type: QuestionType | null) => (type ? `?typ=${type}` : '')
 const typeLabel = (type: QuestionType | null) => (type ? `Üben: ${QUESTION_TYPE_LABELS[type]}` : 'Zufällige Bombe')
 
 /** Copies a link and briefly says so. */
-function CopyLink({ url }: { url: string }) {
+export function CopyLink({ url }: { url: string }) {
   const [copied, setCopied] = useState(false)
   return (
     <span className="koop-link">

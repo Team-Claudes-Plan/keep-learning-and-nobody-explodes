@@ -218,6 +218,16 @@ export type SessionServerMessage =
   | { type: 'presence'; player_id: string; online: boolean }
   | { type: 'error'; code: SessionErrorCode; message: string }
 
+/** A waiting game, as `GET /api/sessions` lists them (games of the last hour, newest first). */
+export type Lobby = {
+  id: string
+  /** House (topic) ids the questions come from. */
+  topics: string[]
+  question_count: number
+  /** The role left for whoever joins, if the creator picked one. */
+  open_role: Role | null
+}
+
 // Islands, as `GET /api/islands` returns them (backend/src/api/islands.rs).
 // An island holds the documents a user uploaded and belongs to one or two users. Akasha files the
 // questions it generates from the documents under topics; each topic is a house on the island.

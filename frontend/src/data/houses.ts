@@ -1,6 +1,6 @@
 import type { FacadeConfig } from './facadeTypes'
 import type { HouseParts } from './houseParts'
-import type { HouseKitId } from './houseKits'
+import { KIT_MIDDLE_HEIGHT, type HouseKitId } from './houseKits'
 
 export type Room = {
   floorColor: string
@@ -108,4 +108,11 @@ export function maxLevel(house: House): number {
 export function houseAtLevel(house: House, level: number): House {
   const count = Math.min(maxLevel(house), Math.max(1, Math.floor(level)))
   return count === house.storeys.length ? house : { ...house, storeys: house.storeys.slice(0, count) }
+}
+
+/** Storey heights of a house, shown with this many more (or fewer) storeys than it has. */
+export function previewHeights(house: House, delta: number): number[] {
+  const heights = house.storeys.map((storey) => storey.height)
+  if (delta < 0) return heights.slice(0, Math.max(1, heights.length + delta))
+  return [...heights, ...Array.from({ length: delta }, () => KIT_MIDDLE_HEIGHT)]
 }

@@ -133,6 +133,16 @@ export async function mockUploadDocuments(islandId: string, files: File[]): Prom
   }
 }
 
+/** Whether a mock user is online right now. */
+export function mockIsOnline(userId: string): boolean {
+  return ONLINE.has(userId)
+}
+
+/** The mock users, for the mock invite channel. */
+export function mockUser(userId: string): UserSummary | undefined {
+  return USERS.get(userId)
+}
+
 /** Reports the current status of each user, then flips Mia now and then so the UI can be seen reacting. */
 export function mockSubscribePresence(userIds: string[], onPresence: (presence: Presence) => void): () => void {
   for (const userId of userIds) {
