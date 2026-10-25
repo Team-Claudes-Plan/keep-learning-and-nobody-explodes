@@ -16,7 +16,7 @@ export default function TitlePage() {
     setLeaving(true)
     // One last big bang, then the clouds roll in.
     fx.current.bursts.push({ x: 0, y: 0.5, z: -2.5, scale: 2.2 })
-    window.setTimeout(() => playCloudTransition(() => navigate('/city')), 180)
+    window.setTimeout(() => playCloudTransition(() => navigate('/islands')), 180)
   }
 
   return (

@@ -207,6 +207,78 @@ canvas {
   color: #ffffff;
 }
 
+.hud-buttons button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.hud-island-count {
+  align-self: center;
+  padding: 0 4px;
+  font-size: 12px;
+  color: #4b5563;
+}
+
+.hud-members {
+  list-style: none;
+  margin: 4px 0 8px;
+  padding: 0;
+}
+
+.hud-members li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* Islands: member name tags and bridge signs in the 3D view */
+
+.avatar-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #9ca3af;
+  flex: none;
+}
+
+.is-online .avatar-dot {
+  background: #22c55e;
+  box-shadow: 0 0 0 2px rgba(34, 197, 94, 0.25);
+}
+
+.avatar-tag,
+.island-sign {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.85);
+  border: 1px solid rgba(13, 42, 80, 0.12);
+  color: #1f2937;
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+  user-select: none;
+}
+
+.avatar-tag.is-offline {
+  color: #6b7280;
+  background: rgba(255, 255, 255, 0.6);
+}
+
+.island-sign {
+  font-size: 12px;
+  padding: 3px 10px;
+}
+
+.island-sign.is-hovered {
+  background: #2563eb;
+  border-color: #2563eb;
+  color: #ffffff;
+}
+
 /* Minigames */
 
 /* Light theme matching the city design (feature/frontend-textures). */

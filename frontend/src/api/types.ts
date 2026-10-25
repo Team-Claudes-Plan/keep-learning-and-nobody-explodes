@@ -199,3 +199,48 @@ export type SessionServerMessage =
     }
   | { type: 'presence'; player_id: string; online: boolean }
   | { type: 'error'; code: SessionErrorCode; message: string }
+
+// Islands: one island per learning group, see the islands page.
+
+export type UserSummary = {
+  id: string
+  name: string
+}
+
+/** One user learning alone, or the user together with a friend. */
+export type LearningGroup = {
+  id: string
+  members: [UserSummary] | [UserSummary, UserSummary]
+}
+
+/** A house design placed on an island's grid, built up to `level` storeys. */
+export type IslandHouse = {
+  /** Id of the house design, e.g. the Mathematics house. */
+  houseId: string
+  cell: { i: number; j: number }
+  level: number
+}
+
+export type Island = {
+  id: string
+  name: string
+  group: LearningGroup
+  houses: IslandHouse[]
+}
+
+/**
+ * The islands the current user may see: only those of groups they belong to.
+ * The backend enforces this; the frontend just shows what it gets.
+ */
+export type IslandsResponse = {
+  me: UserSummary
+  islands: Island[]
+}
+
+export type PresenceStatus = 'online' | 'offline'
+
+/** Live status of a user, pushed while the islands page is open. */
+export type Presence = {
+  userId: string
+  status: PresenceStatus
+}

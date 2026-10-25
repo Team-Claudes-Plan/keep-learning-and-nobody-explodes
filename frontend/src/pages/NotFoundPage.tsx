@@ -6,7 +6,7 @@ export default function NotFoundPage() {
     <Hud title="Not found">
       <div>This page does not exist.</div>
       <div className="hud-links">
-        <Link to="/city">Back to city</Link>
+        <Link to="/islands">Back to the islands</Link>
       </div>
     </Hud>
   )

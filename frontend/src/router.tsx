@@ -1,6 +1,6 @@
-import { createBrowserRouter } from 'react-router'
+import { Navigate, createBrowserRouter } from 'react-router'
 import TitlePage from './pages/TitlePage'
-import CityPage from './pages/CityPage'
+import IslandsPage from './pages/IslandsPage'
 import HousePage from './pages/HousePage'
 import StoreyPage from './pages/StoreyPage'
 import NotFoundPage from './pages/NotFoundPage'
@@ -10,9 +10,10 @@ import { KoopBombPage, KoopManualPage, KoopStartPage } from './pages/KoopPages'
 
 export const router = createBrowserRouter([
   { path: '/', element: <TitlePage /> },
-  { path: '/city', element: <CityPage /> },
-  { path: '/houses/:houseId', element: <HousePage /> },
-  { path: '/houses/:houseId/storeys/:storeyId', element: <StoreyPage /> },
+  { path: '/islands/:islandId?', element: <IslandsPage /> },
+  { path: '/islands/:islandId/houses/:houseId', element: <HousePage /> },
+  { path: '/islands/:islandId/houses/:houseId/storeys/:storeyId', element: <StoreyPage /> },
+  { path: '/city', element: <Navigate to="/islands" replace /> },
   { path: '/minigames', element: <MinigamesPage /> },
   { path: '/minigames/bomb', element: <BombPage /> },
   { path: '/minigames/modules/:moduleId', element: <BombPage /> },

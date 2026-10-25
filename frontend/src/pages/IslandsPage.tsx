@@ -1,48 +1,120 @@
-import { useState } from 'react'
-import { Link, useNavigate } from 'react-router'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { Link, useNavigate, useParams } from 'react-router'
 import SceneCanvas from '../components/SceneCanvas'
-import Skyscraper from '../components/Skyscraper'
-import Streets from '../components/city/Streets'
-import Island from '../components/city/Island'
-import River from '../components/city/River'
-import Traffic from '../components/city/Traffic'
-import Animals from '../components/city/Animals'
-import Birds from '../components/city/Birds'
 import Hud from '../components/Hud'
-import { HOUSES } from '../data/houses'
-import { clampToShoreline } from '../data/island'
+import Bridge from '../components/islands/Bridge'
+import IslandCamera from '../components/islands/IslandCamera'
+import IslandScene from '../components/islands/IslandScene'
+import { usePresence, useIslands } from '../api/useIslands'
+import type { IslandsResponse } from '../api/types'
+import { bridgeBetween, islandCenter, resolveIsland } from '../data/islands'
 
-export default function CityPage() {
+const MIN_ZOOM = 30
+
+function IslandsView({ data }: { data: IslandsResponse }) {
   const navigate = useNavigate()
+  const { islandId } = useParams()
   const [storeyDelta, setStoreyDelta] = useState(0)
+  const { me, islands } = data
+
+  const resolved = useMemo(() => islands.map(resolveIsland), [islands])
+  const activeIndex = Math.max(0, islands.findIndex((island) => island.id === islandId))
+  const active = resolved[activeIndex]
+
+  const memberIds = useMemo(
+    () => islands.flatMap((island) => island.group.members.map((member) => member.id)),
+    [islands],
+  )
+  const presence = usePresence(memberIds, me.id)
+
+  const goTo = useCallback(
+    (index: number) => {
+      const island = islands[index]
+      if (island) navigate(`/islands/${island.id}`, { replace: true })
+    },
+    [islands, navigate],
+  )
+
+  useEffect(() => {
+    const handleKey = (event: KeyboardEvent) => {
+      if (event.key === 'ArrowRight') goTo(activeIndex + 1)
+      if (event.key === 'ArrowLeft') goTo(activeIndex - 1)
+    }
+    window.addEventListener('keydown', handleKey)
+    return () => window.removeEventListener('keydown', handleKey)
+  }, [activeIndex, goTo])
+
+  if (!active) {
+    return (
+      <Hud title="No islands yet">
+        <div>You are not part of any learning group yet.</div>
+      </Hud>
+    )
+  }
+
+  const prev = islands[activeIndex - 1]
+  const next = islands[activeIndex + 1]
 
   return (
     <>
-      <SceneCanvas
-        grid={false}
-        controls={{ minZoom: 30, maxZoom: 300 }}
-        panBounds={{ clamp: clampToShoreline }}
-        onPointerMissed={() => undefined}
-      >
-        <Island />
-        <Streets />
-        <River />
-        <Traffic />
-        <Animals />
-        <Birds />
-        {HOUSES.map((house) => (
-          <Skyscraper
-            key={house.id}
-            house={house}
+      <SceneCanvas grid={false} controls={{ minZoom: MIN_ZOOM, maxZoom: 300 }} onPointerMissed={() => undefined}>
+        {resolved.map((entry, index) => (
+          <IslandScene
+            key={entry.island.id}
+            resolved={entry}
+            center={islandCenter(index)}
+            me={me}
+            presence={presence}
             storeyDelta={storeyDelta}
-            onClick={(id) => navigate(`/houses/${id}`)}
+            onHouseClick={(houseId) => navigate(`/islands/${entry.island.id}/houses/${houseId}`)}
           />
         ))}
+
+        {islands.slice(1).map((island, index) => (
+          <Bridge
+            key={`${islands[index].id}-${island.id}`}
+            span={bridgeBetween(index)}
+            activeIndex={activeIndex}
+            leftName={islands[index].name}
+            rightName={island.name}
+            onCross={goTo}
+          />
+        ))}
+
+        <IslandCamera center={islandCenter(activeIndex)} minZoom={MIN_ZOOM} />
       </SceneCanvas>
 
-      <Hud title="City">
+      <Hud title={active.island.name}>
+        <ul className="hud-members">
+          {active.island.group.members.map((member) => {
+            const status = presence[member.id] ?? 'offline'
+            return (
+              <li key={member.id} className={`is-${status}`}>
+                <span className="avatar-dot" />
+                {member.id === me.id ? `${member.name} (you)` : member.name}
+                <span className="hud-concept">{status}</span>
+              </li>
+            )
+          })}
+        </ul>
+
+        {islands.length > 1 && (
+          <div className="hud-buttons">
+            <button type="button" disabled={!prev} onClick={() => goTo(activeIndex - 1)}>
+              ←
+            </button>
+            <span className="hud-island-count">
+              Island {activeIndex + 1} of {islands.length}
+            </span>
+            <button type="button" disabled={!next} onClick={() => goTo(activeIndex + 1)}>
+              →
+            </button>
+          </div>
+        )}
+
+        <div className="hud-section">Controls</div>
         <div>Drag to pan &middot; Scroll to zoom</div>
-        <div>The rocky shore is the edge of the world</div>
+        <div>Click a bridge (or ← →) to visit another island</div>
         <div>Click a building to enter</div>
 
         <div className="hud-section">Preview storeys</div>
@@ -60,13 +132,30 @@ export default function CityPage() {
         </div>
 
         <ul className="hud-links">
-          {HOUSES.map((house) => (
-            <li key={house.id}>
-              <Link to={`/houses/${house.id}`}>{house.name}</Link>
+          {active.houses.map((placed) => (
+            <li key={placed.house.id}>
+              <Link to={`/islands/${active.island.id}/houses/${placed.house.id}`}>{placed.house.name}</Link>
+              <span className="hud-concept">
+                Level {placed.level}/{placed.maxLevel}
+              </span>
             </li>
           ))}
         </ul>
       </Hud>
     </>
   )
+}
+
+export default function IslandsPage() {
+  const state = useIslands()
+
+  if (state.status === 'loading') return null
+  if (state.status === 'error') {
+    return (
+      <Hud title="Islands">
+        <div>⚠️ Could not load your islands: {state.message}</div>
+      </Hud>
+    )
+  }
+  return <IslandsView data={state.data} />
 }
