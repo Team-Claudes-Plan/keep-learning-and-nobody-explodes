@@ -1,8 +1,9 @@
 import type { Island, IslandHouse, IslandsResponse, Presence, UploadResponse, UserSummary } from './types'
 
 // An in-memory stand-in for the backend's islands, following the same rules (backend/src/api/islands.rs):
-// topics live on the original island and are shared with its forks, knowledge is per user and topic
-// (the mock keeps the old topic-level numbers), and a house is built as far as every member knows it.
+// topics live on the original island and are shared with its forks, each topic has an ordered skill
+// tree, a user passed the first n storeys of a topic, and a house is built as far as every member
+// passed it, plus the next storey to play.
 
 const ME: UserSummary = { id: 'user-me', name: 'Alex' }
 const MIA: UserSummary = { id: 'user-mia', name: 'Mia' }
@@ -10,11 +11,8 @@ const LEO: UserSummary = { id: 'user-leo', name: 'Leo' }
 
 const USERS = new Map([ME, MIA, LEO].map((user) => [user.id, user]))
 
-/** Same scale as the backend's `knowledge::MAX_LEVEL`. */
-const MAX_LEVEL = 4
-
 type MockIsland = { id: string; name: string; originId: string | null; members: string[] }
-type MockTopic = { id: string; islandId: string; name: string }
+type MockTopic = { id: string; islandId: string; name: string; skills: string[] }
 
 const ISLANDS: MockIsland[] = [
   { id: 'solo', name: 'Semester 1', originId: null, members: [ME.id] },
@@ -26,16 +24,21 @@ const ISLANDS: MockIsland[] = [
 ]
 
 const TOPICS: MockTopic[] = [
-  { id: 'topic-algebra', islandId: 'solo', name: 'Algebra' },
-  { id: 'topic-maps', islandId: 'solo', name: 'Maps and projections' },
-  { id: 'topic-cells', islandId: 'solo', name: 'Cell structure' },
-  { id: 'topic-calculus', islandId: 'with-mia', name: 'Calculus' },
-  { id: 'topic-sensors', islandId: 'with-mia', name: 'Sensors' },
-  { id: 'topic-plants', islandId: 'with-mia', name: 'Photosynthesis' },
-  { id: 'topic-lines', islandId: 'mia-and-leo', name: 'Act one' },
+  { id: 'topic-algebra', islandId: 'solo', name: 'Algebra', skills: ['Terms', 'Equations', 'Inequalities'] },
+  { id: 'topic-maps', islandId: 'solo', name: 'Maps and projections', skills: ['Scale', 'Coordinates', 'Projections'] },
+  { id: 'topic-cells', islandId: 'solo', name: 'Cell structure', skills: ['Membrane', 'Organelles', 'Nucleus', 'Division'] },
+  {
+    id: 'topic-calculus',
+    islandId: 'with-mia',
+    name: 'Calculus',
+    skills: ['Limits', 'Derivatives', 'Chain rule', 'Integrals', 'Series', 'Differential equations'],
+  },
+  { id: 'topic-sensors', islandId: 'with-mia', name: 'Sensors', skills: ['Signals', 'Calibration', 'Filtering'] },
+  { id: 'topic-plants', islandId: 'with-mia', name: 'Photosynthesis', skills: ['Light reaction', 'Calvin cycle'] },
+  { id: 'topic-lines', islandId: 'mia-and-leo', name: 'Act one', skills: ['Scene one'] },
 ]
 
-/** Level per user and topic; missing entries are 0. */
+/** Storeys passed in a row per user and topic; missing entries are 0. */
 const KNOWLEDGE: Record<string, Record<string, number>> = {
   [ME.id]: { 'topic-algebra': 1, 'topic-maps': 2, 'topic-cells': 3, 'topic-calculus': 3, 'topic-sensors': 2 },
   [MIA.id]: { 'topic-calculus': 4, 'topic-sensors': 1, 'topic-plants': 2 },
@@ -65,8 +68,17 @@ function requireUser(userId: string): void {
 }
 
 function house(topic: MockTopic, members: string[]): IslandHouse {
-  const level = Math.min(...members.map((member) => KNOWLEDGE[member]?.[topic.id] ?? 0))
-  return { topic_id: topic.id, name: topic.name, level: Math.min(level, MAX_LEVEL), unlocked: level > 0 }
+  const passed = Math.min(...members.map((member) => KNOWLEDGE[member]?.[topic.id] ?? 0))
+  const level = Math.min(passed, topic.skills.length)
+  const skills = topic.skills.map((name, position) => ({
+    skill_id: `${topic.id}-skill-${position}`,
+    name,
+    position,
+    tasks: 6,
+    passed: position < level,
+    unlocked: position <= level,
+  }))
+  return { topic_id: topic.id, name: topic.name, level, unlocked: skills.length > 0, skills }
 }
 
 function toIsland(island: MockIsland): Island {
@@ -111,14 +123,14 @@ export async function mockForkIsland(islandId: string, partnerId: string, name?:
   return { id }
 }
 
-/** Pretends Akasha found one topic per uploaded file. */
+/** Pretends Akasha found one topic with three skills per uploaded file. */
 export async function mockUploadDocuments(islandId: string, files: File[]): Promise<UploadResponse> {
   await delay(300)
   const owner = root(memberIsland(islandId))
   for (const file of files) {
     const name = file.name.replace(/\.[^.]*$/, '') || file.name
     if (!TOPICS.some((topic) => topic.islandId === owner && topic.name.toLowerCase() === name.toLowerCase())) {
-      TOPICS.push({ id: `topic-${nextId++}`, islandId: owner, name })
+      TOPICS.push({ id: `topic-${nextId++}`, islandId: owner, name, skills: ['Basics', 'Practice', 'Mastery'] })
     }
   }
   return {

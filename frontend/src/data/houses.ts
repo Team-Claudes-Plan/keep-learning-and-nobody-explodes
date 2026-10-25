@@ -14,6 +14,8 @@ export type Storey = {
   concept?: string
   parts?: Partial<HouseParts>
   room: Room
+  /** On an island: the skill this storey teaches, and whether every member passed it. */
+  skill?: { id: string; passed: boolean; tasks: number }
 }
 
 /** A house design (e.g. Mathematics). The same design can stand on several islands at different levels. */
@@ -27,7 +29,7 @@ export type House = {
   kit?: HouseKitId
   parts?: Partial<HouseParts>
   footprint: [number, number]
-  /** Every storey the design has; an island shows only as many as its level. */
+  /** The design's own storeys; on an island the house gets one storey per unlocked skill. */
   storeys: Storey[]
 }
 
@@ -99,15 +101,12 @@ export function houseHeight(house: House): number {
   return house.storeys.reduce((total, storey) => total + storey.height, 0)
 }
 
-/** Highest level a design can reach: one level per storey. */
-export function maxLevel(house: House): number {
-  return house.storeys.length
-}
-
-/** The house as built on one island: only its first `level` storeys (at least one). */
-export function houseAtLevel(house: House, level: number): House {
-  const count = Math.min(maxLevel(house), Math.max(1, Math.floor(level)))
-  return count === house.storeys.length ? house : { ...house, storeys: house.storeys.slice(0, count) }
+/** A storey of the design for the storey at `index`; above its own storeys the design repeats its middle floor. */
+export function designStorey(house: House, index: number): Storey {
+  const own = house.storeys[index]
+  if (own) return own
+  const top = house.storeys[house.storeys.length - 1]
+  return { id: `extra-${index}`, label: `Floor ${index + 1}`, height: KIT_MIDDLE_HEIGHT, room: top.room, parts: top.parts }
 }
 
 /** Storey heights of a house, shown with this many more (or fewer) storeys than it has. */

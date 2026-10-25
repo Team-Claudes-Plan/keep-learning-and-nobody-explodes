@@ -2,12 +2,11 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router'
 import { USES_BACKEND } from '../api/client'
 import { InviteError, cancelInvite, channelState, presenceOf, sendInvite, useUserChannel } from '../api/invites'
-import { acquireSession, createSession, releaseSession, type SessionClient } from '../api/session'
+import { SessionRefused, acquireSession, createSession, releaseSession, type SessionClient } from '../api/session'
 import type { UserSummary } from '../api/types'
+import { sessionErrorText } from './sessionErrors'
+import { questionsForStorey, secondsForQuestions } from './sessionRules'
 
-/** The bomb an invite starts: the house's topic, a few modules, five minutes. */
-const SESSION_MODULES = 5
-const SESSION_SECONDS = 300
 /** An invite nobody answers is taken back. */
 const INVITE_TIMEOUT_MS = 60000
 
@@ -17,11 +16,21 @@ export type InviteFlow =
   | { step: 'waiting'; partner: UserSummary }
   | { step: 'error'; title: string; message: string }
 
-type Target = { islandId: string; topicId: string; storeyId: string }
+/** The storey to play: `storeyId` is the id of its skill, `storeyIndex` its floor (0 is the ground floor). */
+type Target = { islandId: string; topicId: string; storeyId: string; storeyIndex: number }
 
-/** Where each player goes once the invite is accepted: the inviter defuses, the invitee reads. */
-export function gamePath(gameId: string, role: 'defuser' | 'expert'): string {
-  if (USES_BACKEND) return role === 'defuser' ? `/koop/spiel/${gameId}` : `/koop/spiel/${gameId}?rolle=expert`
+/**
+ * Where each player goes once the invite is accepted: the inviter starts with the bomb, the invitee
+ * with the manual. `islandId` lets the game page lead back to the house afterwards.
+ */
+export function gamePath(gameId: string, role: 'defuser' | 'expert', islandId?: string): string {
+  if (USES_BACKEND) {
+    const query = new URLSearchParams()
+    if (role === 'expert') query.set('rolle', 'expert')
+    if (islandId) query.set('insel', islandId)
+    const search = query.toString()
+    return `/koop/spiel/${gameId}${search ? `?${search}` : ''}`
+  }
   // Without a backend the seeded koop plays the game: both sides build the bomb from the seed.
   return role === 'defuser' ? `/koop/${gameId}/bombe` : `/koop/${gameId}/handbuch`
 }
@@ -115,17 +124,20 @@ export function useInviteFlow(partner: UserSummary | null, target: Target | null
       if (current.done) return
       teardown(true)
       setFlow({ step: 'idle' })
-      navigate(gamePath(gameId, 'defuser'))
+      navigate(gamePath(gameId, 'defuser', target.islandId))
     }
 
     try {
       let gameId: string
       if (USES_BACKEND) {
+        const questions = questionsForStorey(target.storeyIndex)
         gameId = await createSession({
           topics: [target.topicId],
-          questionCount: SESSION_MODULES,
+          questionCount: questions,
           role: 'defuser',
-          timeLimitSecs: SESSION_SECONDS,
+          timeLimitSecs: secondsForQuestions(questions),
+          storey: { skillId: target.storeyId, islandId: target.islandId },
+          invited: partner.id,
         })
         // Hold the game's socket until the inviter moves on to the game page.
         const client = acquireSession(gameId)
@@ -171,6 +183,8 @@ export function useInviteFlow(partner: UserSummary | null, target: Target | null
       if (current.done) return
       if (error instanceof InviteError && error.code === 'partner_offline') {
         fail(`${partner.name} ist offline`, `Ohne Experten kein Entschärfen. Versuch es, sobald ${partner.name} online ist.`)
+      } else if (error instanceof SessionRefused || error instanceof InviteError) {
+        fail('Das geht hier nicht', sessionErrorText(error))
       } else {
         fail('Das hat nicht geklappt', error instanceof Error ? error.message : String(error))
       }

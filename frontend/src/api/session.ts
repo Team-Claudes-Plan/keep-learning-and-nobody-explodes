@@ -48,11 +48,24 @@ export type SessionState = {
   error: SessionError | null
 }
 
+/** The server refused create, join or resume, or the connection failed before (`code: 'connection'`). */
+export class SessionRefused extends Error {
+  readonly code: SessionError['code']
+  constructor(code: SessionError['code'], message: string) {
+    super(message)
+    this.code = code
+  }
+}
+
 export type CreateOptions = {
   topics: string[]
   questionCount: number
   role?: Role
   timeLimitSecs?: number
+  /** A storey game: the skill of the storey and the island it is played on. */
+  storey?: { skillId: string; islandId: string }
+  /** Only this user may join. */
+  invited?: string
 }
 
 const OVER: GameView['status'][] = ['won', 'lost', 'aborted']
@@ -99,6 +112,8 @@ function applyEvent(game: GameView, event: GameEvent, sequence: number): GameVie
         ...next,
         status: 'waiting',
         topics: event.topics,
+        skill_id: event.skill_id ?? null,
+        invited: event.invited ?? null,
         players: [{ player_id: event.created_by, seat: 0, online: true }],
         parts: event.parts.map((part) => ({ position: part.position, question_type: part.question_type, result: null })),
       }
@@ -174,7 +189,8 @@ export class SessionClient {
       const stop = this.subscribe(() => {
         if (this.state.connection === 'failed' || this.state.connection === 'closed') {
           stop()
-          reject(new Error(this.state.error?.message ?? 'connection closed'))
+          const error = this.state.error
+          reject(new SessionRefused(error?.code ?? 'connection', error?.message ?? 'connection closed'))
         } else if (this.entered) stop()
       })
     })
@@ -404,6 +420,9 @@ export async function createSession(options: CreateOptions): Promise<string> {
     question_count: options.questionCount,
     role: options.role,
     time_limit_secs: options.timeLimitSecs,
+    skill_id: options.storey?.skillId,
+    island_id: options.storey?.islandId,
+    invited: options.invited,
   })
   try {
     const gameId = await client.welcomed()
