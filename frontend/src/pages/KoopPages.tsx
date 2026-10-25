@@ -9,6 +9,7 @@ import { MODULES } from '../game/modules'
 import { QUESTION_TYPE_LABELS, QUESTION_TYPES } from '../game/questionTypes'
 import ManualBook from './ManualBook'
 import NotFoundPage from './NotFoundPage'
+import { playSfx } from '../audio/sfx'
 
 function useSeed() {
   const { seed } = useParams()
@@ -35,8 +36,10 @@ function CopyLink({ url }: { url: string }) {
       <code>{url}</code>
       <button
         className="mg-button"
+        data-sfx="none"
         onClick={() => {
           void navigator.clipboard?.writeText(url).then(() => {
+            playSfx('copy')
             setCopied(true)
             setTimeout(() => setCopied(false), 1500)
           })
@@ -62,7 +65,12 @@ export function KoopStartPage() {
 
   function join(code: string) {
     const value = Number(code.trim())
-    if (Number.isInteger(value) && value > 0) setSeed(value)
+    if (Number.isInteger(value) && value > 0) {
+      playSfx('uiSuccess')
+      setSeed(value)
+    } else {
+      playSfx('uiError')
+    }
   }
 
   return (
@@ -110,7 +118,7 @@ export function KoopStartPage() {
           placeholder="z. B. 482913"
           aria-label="Code vom Mitspieler"
         />
-        <button className="mg-button" type="submit">Übernehmen</button>
+        <button className="mg-button" type="submit" data-sfx="none">Übernehmen</button>
       </form>
 
       <div className="mg-grid">

@@ -3,7 +3,7 @@ import { Canvas, createPortal, useFrame, useThree, type ThreeEvent } from '@reac
 import { useGLTF } from '@react-three/drei'
 import * as THREE from 'three'
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js'
-import { playBoom, playClank } from './boom'
+import { playBoom, playClank, playSfx } from '../audio/sfx'
 import { shatterBomb, stepDebris, type Piece } from './debris'
 import Explosion from './Explosion'
 import { makeEmptyBay } from './emptyBay'
@@ -410,6 +410,8 @@ export function useBombContent({
 
   // Hover frame (overview only)
   const [hovered, setHovered] = useState<number | null>(null)
+  /** Last slot the pointer was over, so moving across a module does not retrigger the blip. */
+  const soundedHover = useRef<number | null>(null)
   const frame = useMemo(() => makeSelectionFrame(), [])
   useEffect(() => {
     if (hovered === null || focused !== null || !interactive) return
@@ -532,6 +534,10 @@ export function useBombContent({
     }
     const index = planIndexOf(event.object)
     setHovered(index)
+    if (index !== soundedHover.current) {
+      soundedHover.current = index
+      if (index !== null) playSfx('hoverModule')
+    }
     document.body.style.cursor = index !== null ? 'pointer' : ''
   }
 
@@ -579,6 +585,7 @@ export function useBombContent({
         onPointerMove: handleHover,
         onPointerOut: () => {
           setHovered(null)
+          soundedHover.current = null
           document.body.style.cursor = ''
         },
       }
@@ -840,7 +847,7 @@ export default function Bomb3D(props: Bomb3DProps) {
         : (!bare || children) && (
             <div className={`bomb-zoom is-${overlay}`}>
               {!bare && (
-                <button className="mg-button bomb-zoom-back" onClick={onBack}>
+                <button className="mg-button bomb-zoom-back" onClick={onBack} data-sfx="none">
                   ← Zurück zur Bombe
                 </button>
               )}

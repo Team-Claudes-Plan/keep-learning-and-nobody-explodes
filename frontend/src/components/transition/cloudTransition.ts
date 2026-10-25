@@ -1,3 +1,5 @@
+import { playSfx } from '../../audio/sfx'
+
 export type CloudPhase = 'idle' | 'in' | 'hold' | 'out'
 
 // Milliseconds per phase. Keep in sync with the CSS animation durations.
@@ -26,11 +28,13 @@ export function getCloudPhase() {
  */
 export function playCloudTransition(onCovered: () => void) {
   if (phase !== 'idle') return
+  playSfx('cloud')
   setPhase('in')
   window.setTimeout(() => {
     setPhase('hold')
     onCovered()
     window.setTimeout(() => {
+      playSfx('whooshBack', { volume: 0.5 })
       setPhase('out')
       window.setTimeout(() => setPhase('idle'), CLOUD_TIMING.out + 150)
     }, CLOUD_TIMING.hold)

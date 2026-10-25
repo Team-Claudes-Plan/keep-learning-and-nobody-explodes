@@ -4,6 +4,8 @@ import { PageFlip } from 'page-flip'
 import type { Briefed } from '../game/briefing'
 import GlyphIcon from '../game/GlyphIcon'
 import { seededRandom, type Random } from '../game/plan'
+import { playSfx } from '../audio/sfx'
+import { useAmbience } from '../audio/useAmbience'
 
 type Props = {
   seed: number
@@ -31,6 +33,7 @@ const PAGE_HEIGHT = 730
  * it bends and curls like real paper (StPageFlip). A click, the buttons or ← → turn it too.
  */
 export default function ManualBook({ seed, typeLabel, plan }: Props) {
+  useAmbience('book')
   const users = plan.flatMap((entry) =>
     entry.manual.user ? [{ user: entry.manual.user, prompt: entry.manual.prompt ?? '' }] : [],
   )
@@ -65,6 +68,14 @@ export default function ManualBook({ seed, typeLabel, plan }: Props) {
   const host = useRef<HTMLDivElement>(null)
   const flip = useRef<PageFlip | null>(null)
   const [page, setPage] = useState(0)
+  const lastPage = useRef(0)
+
+  // Paper rustle whenever a page actually turns (click, key or drag).
+  useEffect(() => {
+    if (page === lastPage.current) return
+    lastPage.current = page
+    playSfx('pageFlip')
+  }, [page])
 
   useEffect(() => {
     if (!host.current) return
@@ -138,11 +149,11 @@ export default function ManualBook({ seed, typeLabel, plan }: Props) {
       {sheets.map((sheet, i) => createPortal(faces[i].node, sheet, `face-${i}`))}
 
       <nav className="book-nav">
-        <button className="mg-button" onClick={() => turn(-1)} disabled={page === 0}>
+        <button className="mg-button" onClick={() => turn(-1)} disabled={page === 0} data-sfx="none">
           ◀ Zurück
         </button>
         <span>{label}</span>
-        <button className="mg-button" onClick={() => turn(1)} disabled={page >= last}>
+        <button className="mg-button" onClick={() => turn(1)} disabled={page >= last} data-sfx="none">
           Weiter ▶
         </button>
       </nav>

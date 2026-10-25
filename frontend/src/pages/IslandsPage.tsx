@@ -8,6 +8,8 @@ import IslandScene from '../components/islands/IslandScene'
 import UploadDialog, { UploadIcon } from '../components/islands/UploadDialog'
 import { usePresence, useIslands } from '../api/useIslands'
 import type { IslandsResponse } from '../api/types'
+import { playSfx } from '../audio/sfx'
+import { useAmbience } from '../audio/useAmbience'
 import { bridgeBetween, islandCenter, resolveIsland } from '../data/islands'
 
 const MIN_ZOOM = 30
@@ -18,6 +20,7 @@ function IslandsView({ data }: { data: IslandsResponse }) {
   const [storeyDelta, setStoreyDelta] = useState(0)
   const [uploadOpen, setUploadOpen] = useState(false)
   const { me, islands } = data
+  useAmbience('islands')
 
   const resolved = useMemo(() => islands.map(resolveIsland), [islands])
   const activeIndex = Math.max(0, islands.findIndex((island) => island.id === islandId))
@@ -32,7 +35,10 @@ function IslandsView({ data }: { data: IslandsResponse }) {
   const goTo = useCallback(
     (index: number) => {
       const island = islands[index]
-      if (island) navigate(`/islands/${island.id}`, { replace: true })
+      if (island) {
+        playSfx('whoosh')
+        navigate(`/islands/${island.id}`, { replace: true })
+      }
     },
     [islands, navigate],
   )
@@ -104,13 +110,13 @@ function IslandsView({ data }: { data: IslandsResponse }) {
 
         {islands.length > 1 && (
           <div className="hud-buttons">
-            <button type="button" disabled={!prev} onClick={() => goTo(activeIndex - 1)}>
+            <button type="button" disabled={!prev} onClick={() => goTo(activeIndex - 1)} data-sfx="none">
               ←
             </button>
             <span className="hud-island-count">
               Island {activeIndex + 1} of {islands.length}
             </span>
-            <button type="button" disabled={!next} onClick={() => goTo(activeIndex + 1)}>
+            <button type="button" disabled={!next} onClick={() => goTo(activeIndex + 1)} data-sfx="none">
               →
             </button>
           </div>
@@ -150,7 +156,11 @@ function IslandsView({ data }: { data: IslandsResponse }) {
       <button
         type="button"
         className="upload-fab"
-        onClick={() => setUploadOpen(true)}
+        onClick={() => {
+          playSfx('uploadOpen')
+          setUploadOpen(true)
+        }}
+        data-sfx="none"
         title={`Upload documents to ${active.island.name}`}
         aria-label={`Upload documents to ${active.island.name}`}
       >
@@ -162,7 +172,15 @@ function IslandsView({ data }: { data: IslandsResponse }) {
         </span>
       </button>
 
-      {uploadOpen && <UploadDialog island={active.island} onClose={() => setUploadOpen(false)} />}
+      {uploadOpen && (
+        <UploadDialog
+          island={active.island}
+          onClose={() => {
+            playSfx('uploadClose')
+            setUploadOpen(false)
+          }}
+        />
+      )}
     </>
   )
 }

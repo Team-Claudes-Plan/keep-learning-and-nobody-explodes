@@ -4,6 +4,7 @@ import { Canvas } from '@react-three/fiber'
 import TitleScene from '../components/title/TitleScene'
 import { createTitleFx, TITLE_LINES, type TitleFx } from '../components/title/titleFx'
 import { playCloudTransition } from '../components/transition/cloudTransition'
+import { playSfx } from '../audio/sfx'
 import './TitlePage.css'
 
 export default function TitlePage() {
@@ -13,6 +14,7 @@ export default function TitlePage() {
 
   const play = () => {
     if (leaving) return
+    playSfx('launch')
     setLeaving(true)
     // One last big bang, then the clouds roll in.
     fx.current.bursts.push({ x: 0, y: 0.5, z: -2.5, scale: 2.2 })
@@ -32,7 +34,7 @@ export default function TitlePage() {
       <h1 className="visually-hidden">{TITLE_LINES.join(' ')}</h1>
 
       <div className="title-ui">
-        <button type="button" className="play-button" onClick={play} disabled={leaving}>
+        <button type="button" className="play-button" onClick={play} disabled={leaving} data-sfx="none">
           Play
         </button>
       </div>

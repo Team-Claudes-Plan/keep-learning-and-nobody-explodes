@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import { Html } from '@react-three/drei'
 import type { ThreeEvent } from '@react-three/fiber'
 import type { BridgeSpan } from '../../data/islands'
+import { playSfx } from '../../audio/sfx'
 
 const DECK_Y = 0.1
 /** Height of the arch at the middle, relative to the bridge length. */
@@ -54,6 +55,7 @@ export default function Bridge({ span, activeIndex, leftName, rightName, onCross
 
   const handleClick = (event: ThreeEvent<MouseEvent>) => {
     event.stopPropagation()
+    playSfx('bridge')
     onCross(toIndex)
   }
   const handleOver = (event: ThreeEvent<PointerEvent>) => {

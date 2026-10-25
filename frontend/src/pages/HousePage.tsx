@@ -27,6 +27,8 @@ import type { InteriorDesign } from '../data/interiorTypes'
 import { isDrag } from '../components/interaction'
 import KitFacade, { useKitCrownHeight } from '../components/facade/KitFacade'
 import { HOUSE_KITS, type HouseKitId } from '../data/houseKits'
+import { playSfx } from '../audio/sfx'
+import { useAmbience } from '../audio/useAmbience'
 
 const WALL_THICKNESS = 0.08
 /** Gap between a room's outer wall and the kit shell around it. */
@@ -85,6 +87,7 @@ function StoreyRoom({
   const handleClick = (event: ThreeEvent<MouseEvent>) => {
     if (isDrag(event)) return
     event.stopPropagation()
+    playSfx('door')
     onClick()
   }
 
@@ -181,6 +184,7 @@ function HouseView({ island, placed }: { island: ResolvedIsland; placed: PlacedH
   const navigate = useNavigate()
   const { house } = placed
   const base = `/islands/${island.island.id}/houses/${house.id}`
+  useAmbience('house')
   const design = resolveDesign(house.facade.design)
   const atlas = house.facade.atlas ?? DEFAULT_WALL_ATLAS
   const wall = useWallTextures(house.facade.textures, design, atlas)

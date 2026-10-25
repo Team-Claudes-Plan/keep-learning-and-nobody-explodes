@@ -23,6 +23,28 @@ bun run lint      # oxlint
 bun run preview   # serve the production build
 ```
 
+## Audio
+
+All sounds are synthesised with the Web Audio API — there are no audio files to
+download. The speaker button in the top-right corner mutes everything and the
+setting is kept in `localStorage`.
+
+- `src/audio/engine.ts` — one shared `AudioContext`, master/compressor, mute
+  state, and the procedural ambience beds (islands, house, room, bomb, book).
+- `src/audio/sfx.ts` — the sound library (`playSfx(name)`): UI clicks, timer
+  ticks, correct/wrong/strike, explosion, debris clanks, fanfare, every module's
+  mechanical signature, page flips, doors, bridges, birds/cars and upload
+  feedback.
+- `src/audio/AudioRoot.tsx` — unlocks audio on the first gesture, plays a quiet
+  click for ordinary buttons and links, and hosts the mute switch.
+- `src/audio/useAmbience.ts` — starts a soundscape for a page and sprinkles in
+  wildlife one-shots.
+
+UI controls get a default click automatically. Use `data-sfx="none"` to opt out
+when a handler plays its own sound, or `data-sfx="whoosh"` (any name from
+`SoundName`) to pick a specific effect. Module cards opt out as a group because
+their value changes already play the matching mechanical sound.
+
 ## Routes
 
 - `/` → redirects to `/city`.

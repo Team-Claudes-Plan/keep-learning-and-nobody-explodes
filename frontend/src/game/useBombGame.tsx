@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { playSfx, type SoundName } from '../audio/sfx'
 import { fetchQuestions, submitAnswer } from '../api/client'
 import type { AnswerResult, AnswerSubmission, Question, QuestionType } from '../api/types'
 import { submissionFor } from './adapters'
@@ -13,6 +14,21 @@ import { initialValue, isComplete, submitsImmediately, type AnyValue } from './p
 const BOMB_SIZE = 5
 const BOMB_SECONDS = 300
 const MAX_STRIKES = 3
+
+/** Mechanical signature of each module, shared by its 2D card and its 3D controls. */
+const MODULE_SFX: Record<string, SoundName> = {
+  wires: 'snip',
+  fuses: 'fuse',
+  switches: 'switch',
+  rotary: 'ratchet',
+  cables: 'plug',
+  sorter: 'servo',
+  lock: 'dial',
+  terminal: 'key',
+  buttons: 'buttonPress',
+  slider: 'slide',
+  radar: 'radar',
+}
 
 type Slot = PlannedModule & {
   value: AnyValue
@@ -67,6 +83,8 @@ export function useBombGame({
   const [mode, setMode] = useState<Mode>('random')
   /** Modules the plan had before it was cut down to the slots on the bomb. */
   const [plannedCount, setPlannedCount] = useState(0)
+  /** The current bomb has already played its arming chime. */
+  const armed = useRef(false)
 
   useEffect(() => {
     const controller = new AbortController()
@@ -116,12 +134,38 @@ export function useBombGame({
     return () => clearTimeout(id)
   }, [running, timeLeft])
 
+  // The last half minute gets a clock tick, the last ten seconds a sharper one.
+  useEffect(() => {
+    if (!running || timeLeft > 30) return
+    playSfx(timeLeft <= 10 ? 'tickUrgent' : 'tick')
+  }, [running, timeLeft])
+
+  // Arming chime once the questions are on the bomb (and it is actually active, not lying on a table).
+  useEffect(() => {
+    if (load.status !== 'ready') {
+      armed.current = false
+      return
+    }
+    if (paused || armed.current) return
+    armed.current = true
+    playSfx('arm')
+  }, [load.status, paused])
+
+  useEffect(() => {
+    if (load.status === 'error') playSfx('uiError')
+  }, [load.status])
+
+  useEffect(() => {
+    if (outcome === 'test') playSfx('testDone')
+  }, [outcome])
+
   function restart() {
     setLoad({ status: 'loading' })
     setRound((r) => r + 1)
   }
 
   function changeMode(next: Mode) {
+    playSfx('uiClick')
     setLoad({ status: 'loading' })
     setMode(next)
   }
@@ -134,15 +178,23 @@ export function useBombGame({
   async function lockIn(index: number, value: AnyValue = slots[index].value) {
     const slot = slots[index]
     if (slot.status !== 'active' || exploded || !isComplete(slot.task.primitive, value)) return
+    playSfx('send')
     const submission = submissionFor(slot.task, value)
     updateSlot(index, { value, status: 'sending', error: undefined })
     try {
       const result = await submitAnswer(submission)
       const status: SlotStatus =
         result.correct === true ? 'solved' : result.correct === false ? 'failed' : 'submitted'
+      if (result.correct === true) playSfx('correct')
+      else if (result.correct === false) {
+        playSfx('wrong')
+        // Third strike blows the bomb up a moment later; the alarm leads into the blast.
+        if (strikes + 1 >= MAX_STRIKES) window.setTimeout(() => playSfx('strike'), 300)
+      }
       // Stay on this module so the player sees the result.
       updateSlot(index, { status, submission, result })
     } catch (err) {
+      playSfx('uiError')
       updateSlot(index, { status: 'active', error: errorMessage(err) })
     }
   }
@@ -154,6 +206,9 @@ export function useBombGame({
 
   function changeValue(index: number, value: AnyValue) {
     const slot = slots[index]
+    // Every module has its own mechanical signature, shared by the 2D card and the 3D controls.
+    const buttons = slot.module.id === 'buttons' && Array.isArray(value) ? value.length : 0
+    playSfx(MODULE_SFX[slot.module.id] ?? 'uiClick', { rate: 1 + buttons * 0.07 })
     if (isImmediate(slot) && isComplete(slot.task.primitive, value)) lockIn(index, value)
     else updateSlot(index, { value })
   }
@@ -235,6 +290,16 @@ export function useBombGame({
   const card =
     focused === null || (defuser && focusedOnBomb) ? null : renderModule(focused, focusedOnBomb, defuser)
 
+  const select = useCallback((index: number) => {
+    playSfx('select')
+    setExpanded(index)
+  }, [])
+
+  const back = useCallback(() => {
+    playSfx('back')
+    setExpanded(null)
+  }, [])
+
   return {
     load,
     round,
@@ -259,8 +324,8 @@ export function useBombGame({
     card,
     /** What goes onto the 3D bomb, one entry per planned module. */
     bombModules: slots.map((s, i) => ({ id: s.module.id, status: s.status, content3d: render3d(s, i) })),
-    select: setExpanded,
-    back: () => setExpanded(null),
+    select,
+    back,
     restart,
   }
 }

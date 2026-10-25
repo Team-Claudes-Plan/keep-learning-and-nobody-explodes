@@ -17,6 +17,8 @@ import { resolveDesign } from '../data/baseDesigns'
 import { getModule } from '../game/modules'
 import Celebration from '../game/Celebration'
 import { useBombGame } from '../game/useBombGame'
+import { playSfx } from '../audio/sfx'
+import { useAmbience } from '../audio/useAmbience'
 
 /** Front and centre of the room, in front of the furniture. */
 const BOMB_TABLE_POSITION: [number, number, number] = [0, 0, 4]
@@ -37,6 +39,18 @@ function StoreyRoom({ island, house, storey }: { island: ResolvedIsland; house: 
   const game = useBombGame({ modules: ROOM_MODULES, paused: !lifted })
   const ready = game.load.status === 'ready'
   const { focused, back } = game
+  useAmbience('room', !lifted)
+  useAmbience('bomb', lifted)
+
+  const lift = () => {
+    playSfx('pickup')
+    setLifted(true)
+  }
+
+  const putDown = () => {
+    playSfx('putdown')
+    setLifted(false)
+  }
 
   // Esc: close the open module first, then put the bomb back on the table.
   useEffect(() => {
@@ -44,7 +58,7 @@ function StoreyRoom({ island, house, storey }: { island: ResolvedIsland; house: 
     const onKey = (event: KeyboardEvent) => {
       if (event.key !== 'Escape') return
       if (focused !== null) back()
-      else setLifted(false)
+      else putDown()
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
@@ -94,8 +108,8 @@ function StoreyRoom({ island, house, storey }: { island: ResolvedIsland; house: 
           <RoomBomb
             rest={BOMB_REST}
             lifted={lifted}
-            onLift={() => setLifted(true)}
-            onPutDown={() => setLifted(false)}
+            onLift={lift}
+            onPutDown={putDown}
             modules={ready ? game.bombModules : PLACEHOLDER_MODULES}
             focused={focused}
             onSelect={(index) => ready && game.select(index)}

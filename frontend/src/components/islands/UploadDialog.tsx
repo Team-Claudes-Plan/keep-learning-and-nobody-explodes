@@ -2,6 +2,7 @@ import { useEffect, useId, useRef, useState } from 'react'
 import type { DragEvent } from 'react'
 import { uploadDocuments } from '../../api/client'
 import type { Island, UploadResponse } from '../../api/types'
+import { playSfx } from '../../audio/sfx'
 
 type UploadState =
   | { status: 'idle' }
@@ -94,6 +95,11 @@ export default function UploadDialog({ island, onClose }: UploadDialogProps) {
   useEffect(() => () => abortRef.current?.abort(), [])
 
   useEffect(() => {
+    if (state.status === 'done') playSfx(state.result.failures.length > 0 ? 'uploadError' : 'uploadDone')
+    else if (state.status === 'error') playSfx('uploadError')
+  }, [state])
+
+  useEffect(() => {
     const handleKey = (event: KeyboardEvent) => {
       if (event.key === 'Escape' && !uploading) onClose()
     }
@@ -103,6 +109,7 @@ export default function UploadDialog({ island, onClose }: UploadDialogProps) {
 
   const addFiles = (added: FileList | null) => {
     if (!added?.length) return
+    playSfx('uiClick', { volume: 0.7 })
     setFiles((current) => {
       const known = new Set(current.map(fileKey))
       return [...current, ...Array.from(added).filter((file) => !known.has(fileKey(file)))]
@@ -163,7 +170,7 @@ export default function UploadDialog({ island, onClose }: UploadDialogProps) {
             </div>
             <div className="upload-subtitle">to {island.name}</div>
           </div>
-          <button type="button" className="upload-close" onClick={onClose} disabled={uploading} aria-label="Close">
+          <button type="button" className="upload-close" onClick={onClose} disabled={uploading} aria-label="Close" data-sfx="none">
             ×
           </button>
         </div>
@@ -245,7 +252,7 @@ export default function UploadDialog({ island, onClose }: UploadDialogProps) {
               Cancel
             </button>
           ) : (
-            <button type="button" onClick={onClose}>
+            <button type="button" onClick={onClose} data-sfx="none">
               {state.status === 'done' ? 'Done' : 'Close'}
             </button>
           )}

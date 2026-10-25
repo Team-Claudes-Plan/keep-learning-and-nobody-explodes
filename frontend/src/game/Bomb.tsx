@@ -1,4 +1,5 @@
 import type { Question, QuestionType } from '../api/types'
+import { useAmbience } from '../audio/useAmbience'
 import Bomb3D from './Bomb3D'
 import Celebration from './Celebration'
 import type { ModuleDef } from './modules/types'
@@ -31,6 +32,7 @@ export default function Bomb({
   badge,
 }: BombProps) {
   const game = useBombGame({ modules, plan: fixedPlan, view, testBar, practice })
+  useAmbience('bomb')
 
   if (game.load.status === 'error') {
     return (
@@ -113,7 +115,7 @@ function TestBar({ mode, playable, shown, planned, onMode, onRestart }: TestBarP
   return (
     <div className="bomb-testbar">
       <button className="mg-button" onClick={() => step(-1)} aria-label="Vorheriger Fragetyp">◀</button>
-      <select className="mg-select" value={mode} onChange={(e) => onMode(e.target.value as Mode)} aria-label="Fragetyp">
+      <select className="mg-select" value={mode} onChange={(e) => onMode(e.target.value as Mode)} aria-label="Fragetyp" data-sfx="none">
         <option value="random">Zufällige Bombe</option>
         {QUESTION_TYPES.map((type) => (
           <option key={type} value={type} disabled={!playable.has(type)}>

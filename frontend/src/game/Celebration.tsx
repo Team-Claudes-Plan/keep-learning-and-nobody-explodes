@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react'
-import { playFanfare } from './boom'
+import { playFanfare } from '../audio/sfx'
 
 // The party when the bomb is defused: confetti cannons fire from both bottom corners, more
 // confetti rains from the top, a fanfare plays and a big banner pops in. Mount it to start it.

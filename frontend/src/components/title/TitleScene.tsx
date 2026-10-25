@@ -13,6 +13,7 @@ import {
 } from 'three'
 
 import { TITLE_LINES, type Burst, type TitleFxRef } from './titleFx'
+import { playSfx } from '../../audio/sfx'
 
 const FONT_URL = '/fonts/inter-latin-600.woff'
 
@@ -436,6 +437,11 @@ function fire(slot: Slot, burst: Burst) {
   slot.y = burst.y
   slot.z = burst.z
   slot.scale = burst.scale
+  // A distant, soft boom for every burst; nearer/larger bangs are louder and panned to their side.
+  playSfx('distantBoom', {
+    volume: 0.12 + burst.scale * 0.08,
+    pan: Math.max(-1, Math.min(1, burst.x / 9)),
+  })
   slot.puffDirs.forEach((dir, i) => {
     if (i === 0) dir.set(0, 0, 0)
     else dir.randomDirection().multiplyScalar(0.5 + Math.random() * 0.5)
