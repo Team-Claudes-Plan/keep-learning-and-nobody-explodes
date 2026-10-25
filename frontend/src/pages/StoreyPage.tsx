@@ -15,6 +15,7 @@ import { useIslandHouse } from '../data/useIslandHouse'
 import { DEFAULT_WALL_ATLAS, resolveParts } from '../data/houseParts'
 import { resolveDesign } from '../data/baseDesigns'
 import { getModule } from '../game/modules'
+import Celebration from '../game/Celebration'
 import { useBombGame } from '../game/useBombGame'
 
 /** Front and centre of the room, in front of the furniture. */
@@ -124,6 +125,7 @@ function StoreyRoom({ island, house, storey }: { island: ResolvedIsland; house: 
             <div className="bomb-zoom-panel">{game.card}</div>
           </div>
         )}
+        {lifted && game.outcome === 'defused' && <Celebration />}
         {lifted && over && (
           <button className={`bomb-screen-result ${game.exploded ? 'is-bad' : 'is-good'}`} onClick={game.restart}>
             {game.exploded ? '💥 BOOM' : '✅ Entschärft'}

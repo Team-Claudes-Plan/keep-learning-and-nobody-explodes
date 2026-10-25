@@ -4,7 +4,7 @@ import { RouterProvider } from 'react-router'
 import './index.css'
 import { router } from './router'
 import SkyBackdrop from './components/SkyBackdrop'
-import CloudTransition from './components/transition/CloudTransition'
+import CloudTransition from './components/transition/CloudTransition.tsx'
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

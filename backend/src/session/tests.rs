@@ -31,16 +31,17 @@ async fn seed_topic(db: &Database, tasks: usize) -> Uuid {
     for _ in 0..tasks {
         let task: Uuid = sqlx::query_scalar(
             "INSERT INTO tasks (document_id, question_type, content, solution)
-             VALUES ($1, 'single_choice', $2, '1') RETURNING id",
+             VALUES ($1, 'single_choice', $2, $3) RETURNING id",
         )
         .bind(document)
         .bind(json!({ "prompt": "Wie viele Bits hat ein Byte?", "options": ["4", "8"] }))
+        .bind(json!({ "correct_answer": 1 }))
         .fetch_one(db.pool())
         .await
         .expect("task");
         sqlx::query("INSERT INTO instructions (task_id, instruction) VALUES ($1, $2)")
             .bind(task)
-            .bind(json!({ "text": "Die zweite Option ist richtig." }))
+            .bind(json!({ "options": ["4", "8"] }))
             .execute(db.pool())
             .await
             .expect("instruction");
@@ -178,7 +179,7 @@ async fn plays_a_game_and_restores_it() {
     assert!(b_seen.iter().any(|m| matches!(
         m,
         ServerMessage::Briefing { turn: 2, brief: Brief::Expert { instruction, .. } }
-            if instruction["text"] == "Die zweite Option ist richtig."
+            if instruction["options"] == json!(["4", "8"])
     )));
 
     // a fresh registry stands in for a server restart
@@ -336,7 +337,23 @@ mod websocket {
         };
         let briefing = expect(defuser, "briefing").await;
         assert_eq!(briefing["role"], "defuser");
-        assert_eq!(briefing["task"]["options"], json!(["4", "8"]));
+        // the answers only exist as symbols for the defuser ...
+        assert!(briefing["task"].get("options").is_none());
+        assert!(briefing["task"].get("prompt").is_none());
+        let glyphs = briefing["glyphs"].as_array().expect("glyphs");
+        assert_eq!(glyphs.len(), 2);
+        assert_ne!(glyphs[0], glyphs[1]);
+
+        // ... and the expert's symbols say which one is which
+        let expert_briefing = expect(other, "briefing").await;
+        assert_eq!(expert_briefing["role"], "expert");
+        assert_eq!(
+            expert_briefing["symbols"],
+            json!([
+                { "glyph": glyphs[0], "text": "4" },
+                { "glyph": glyphs[1], "text": "8" },
+            ])
+        );
 
         send(
             other,

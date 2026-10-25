@@ -3,7 +3,7 @@ import { useFrame, type ThreeEvent } from '@react-three/fiber'
 import { Text } from '@react-three/drei'
 import type * as THREE from 'three'
 import { FACE, FONT_URL } from './module3d'
-import { ModuleHeading } from './Label3D'
+import { ModuleHeading, PlateText } from './Label3D'
 import type { ModuleProps } from './types'
 
 const ACTIVE = '#ffb547'
@@ -137,7 +137,8 @@ function Wheel({ x, digit, cursor, disabled, onTurn, onFocus }: WheelProps) {
           onClick={arrow(by)}
         >
           <circleGeometry args={[0.03, 3]} />
-          <meshBasicMaterial color={cursor && !disabled ? ACTIVE : '#7d8590'} toneMapped={false} />
+          {/* dark on the light plate; the wheel being typed into gets the accent */}
+          <meshBasicMaterial color={cursor && !disabled ? ACTIVE : '#2f343c'} toneMapped={false} />
         </mesh>
       ))}
       {/* cursor frame for keyboard input */}
@@ -195,7 +196,7 @@ export default function LockModule3D({ primitive, value, onChange, disabled, hea
     return () => window.removeEventListener('keydown', onKey)
   })
 
-  const first = -((DIGITS - 1) * WHEEL_GAP) / 2 - (primitive.unit ? 0.05 : 0)
+  const first = -((DIGITS - 1) * WHEEL_GAP) / 2
 
   return (
     <group>
@@ -217,16 +218,8 @@ export default function LockModule3D({ primitive, value, onChange, disabled, hea
         />
       ))}
       {primitive.unit && (
-        <Text
-          font={FONT_URL}
-          position={[first + (DIGITS - 1) * WHEEL_GAP + WHEEL_WIDTH / 2 + 0.04, WHEEL_Y, FACE + 0.012]}
-          fontSize={0.05}
-          anchorX="left"
-          anchorY="middle"
-          color="#f2f4f7"
-        >
-          {primitive.unit}
-        </Text>
+        // under the wheels, so long units fit too (in koop it is the defuser's half of the question)
+        <PlateText text={`Antwort in: ${primitive.unit}`} position={[0, WHEEL_Y - 0.25, FACE + 0.014]} fontSize={0.04} />
       )}
     </group>
   )

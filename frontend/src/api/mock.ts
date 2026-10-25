@@ -42,14 +42,15 @@ const QUESTIONS: Question[] = [
   {
     type: 'number_input',
     id: 'mock-num-1',
-    prompt: 'Wie viele Minuten hat ein Tag?',
-    unit: 'min',
+    // koop: the question goes to the manual, the unit to the bomb, so both halves are needed
+    prompt: 'Wie lang ist ein Tag?',
+    unit: 'Minuten',
   },
   {
     type: 'number_input',
     id: 'mock-num-2',
-    prompt: 'Wie viele Beine hat eine Spinne?',
-    unit: null,
+    prompt: 'Wie schwer ist ein Liter Wasser?',
+    unit: 'Gramm',
   },
   {
     type: 'matching',
@@ -132,7 +133,7 @@ const SOLUTIONS: Record<string, AnswerMap[QuestionType]> = {
   'mock-group-2': [0, 1, 2, 0, 1, 2],
   'mock-tf-2': [false, true],
   'mock-num-1': 1440,
-  'mock-num-2': 8,
+  'mock-num-2': 1000,
   'mock-match-1': [1, 2, 0],
   'mock-group-1': [0, 1, 0, 1, 0],
   'mock-order-1': [1, 0, 2],

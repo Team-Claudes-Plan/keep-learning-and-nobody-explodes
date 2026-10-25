@@ -8,6 +8,8 @@ import type { ModuleProps } from './types'
 
 const BUTTON_COLORS = ['#e5484d', '#3e63dd', '#eab308', '#30a46c', '#8e4ec6', '#f76b15', '#12a594', '#d6409f']
 const PLATE_WIDTH = 0.86
+/** Height of the dark plate under each button that carries its label. */
+const LABEL_HEIGHT = 0.1
 
 type PushButtonProps = {
   x: number
@@ -27,6 +29,7 @@ function PushButton({ x, y, radius, width, label, color, step, disabled, onPress
   const cap = useRef<THREE.Group>(null)
   const [hover, setHover] = useState(false)
   const pressed = step !== -1
+  const labelY = -radius * 1.22 - 0.012 - LABEL_HEIGHT / 2
 
   useFrame((_, delta) => {
     if (cap.current) cap.current.position.z += ((pressed ? 0.012 : 0.03) - cap.current.position.z) * (1 - Math.exp(-delta * 24))
@@ -65,13 +68,18 @@ function PushButton({ x, y, radius, width, label, color, step, disabled, onPress
           </Text>
         )}
       </group>
+      {/* dark plate behind the label, so text and symbols read well on the light metal */}
+      <mesh position={[0, labelY, 0.008]} raycast={() => null}>
+        <boxGeometry args={[width * 0.94, LABEL_HEIGHT, 0.004]} />
+        <meshBasicMaterial color="#14171c" />
+      </mesh>
       <Label
         font={FONT_URL}
-        position={[0, -radius * 1.22 - 0.02, 0.012]}
-        fontSize={labelSize(label, width * 0.92, 0.09, 0.032)}
-        maxWidth={width * 0.92}
+        position={[0, labelY, 0.012]}
+        fontSize={labelSize(label, width * 0.88, LABEL_HEIGHT - 0.01, 0.032)}
+        maxWidth={width * 0.88}
         anchorX="center"
-        anchorY="top"
+        anchorY="middle"
         textAlign="center"
         lineHeight={1.1}
         color="#f2f4f7"
@@ -137,9 +145,10 @@ export default function ButtonsModule3D({ primitive, value, onChange, disabled, 
         </mesh>
         <mesh position={[0, 0, 0.022]} onClick={reset}>
           <boxGeometry args={[0.18, 0.058, 0.024]} />
-          <meshStandardMaterial color={canReset ? '#8d939b' : '#3a3f47'} metalness={0.5} roughness={0.4} />
+          {/* unlit like the lock-in button: light grey with dark text when usable, dark when not */}
+          <meshBasicMaterial color={canReset ? '#c9ced6' : '#2a2f37'} />
         </mesh>
-        <Text font={FONT_URL} position={[0, 0, 0.0345]} raycast={() => null} fontSize={0.024} anchorX="center" anchorY="middle" color={canReset ? '#14171c' : '#7d8590'}>
+        <Text font={FONT_URL} position={[0, 0, 0.0345]} raycast={() => null} fontSize={0.024} anchorX="center" anchorY="middle" color={canReset ? '#14171c' : '#8b939f'}>
           RESET
         </Text>
       </group>

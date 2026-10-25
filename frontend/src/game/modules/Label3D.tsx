@@ -77,25 +77,83 @@ export function Label({ children, glyphSize, ...props }: LabelProps) {
   )
 }
 
+/** Rough width of a text line, as a share of the font size (for sizing the plate behind it). */
+const GLYPH_WIDTH = 0.56
+
+type PlateTextProps = {
+  text: string
+  position: [number, number, number]
+  fontSize: number
+  maxWidth?: number
+  anchorX?: 'left' | 'center' | 'right'
+  anchorY?: 'top' | 'middle' | 'bottom'
+  textAlign?: 'left' | 'center' | 'right'
+  color?: string
+}
+
+/**
+ * Text on its own small dark plate, so it reads well whatever the module plate behind it looks
+ * like (the plates range from light metal to mid grey).
+ */
+export function PlateText({
+  text,
+  position,
+  fontSize,
+  maxWidth = 0.8,
+  anchorX = 'center',
+  anchorY = 'middle',
+  textAlign,
+  color = '#f2f4f7',
+}: PlateTextProps) {
+  const pad = Math.max(0.012, fontSize * 0.4)
+  const lineWidth = text.length * fontSize * GLYPH_WIDTH
+  // a bit of slack: word wrapping fills lines less than the raw width suggests
+  const lines = Math.max(1, Math.ceil((lineWidth * 1.15) / maxWidth))
+  const width = Math.min(lineWidth, maxWidth) + pad * 2
+  const height = lines * fontSize * 1.15 + pad * 1.4
+  const [x, y, z] = position
+  const cx = anchorX === 'left' ? x - pad + width / 2 : anchorX === 'right' ? x + pad - width / 2 : x
+  const cy = anchorY === 'top' ? y + pad * 0.7 - height / 2 : anchorY === 'bottom' ? y - pad * 0.7 + height / 2 : y
+  return (
+    <group>
+      <mesh position={[cx, cy, z - 0.003]} raycast={() => null}>
+        <boxGeometry args={[width, height, 0.004]} />
+        {/* unlit, so it stays dark under any light (a lit dark grey turns mid grey on the bright plates) */}
+        <meshBasicMaterial color="#14171c" />
+      </mesh>
+      <Text
+        font={FONT_URL}
+        position={position}
+        fontSize={fontSize}
+        maxWidth={maxWidth}
+        lineHeight={1.15}
+        anchorX={anchorX}
+        anchorY={anchorY}
+        textAlign={textAlign ?? anchorX}
+        color={color}
+        raycast={() => null}
+      >
+        {text}
+      </Text>
+    </group>
+  )
+}
+
 /**
  * The question (or whatever the defuser is told) across the top of a module, in place of the old
  * instructions. Long questions get a smaller font so they stay within two lines.
  */
 export function ModuleHeading({ text }: { text?: string }) {
   if (!text) return null
-  const fontSize = Math.min(0.034, (2 * 0.72) / (Math.max(text.length, 1) * 0.56))
+  const fontSize = Math.min(0.034, (2 * 0.72) / (Math.max(text.length, 1) * GLYPH_WIDTH))
   return (
-    <Text
-      font={FONT_URL}
-      position={[-0.44, 0.37, FACE + 0.012]}
+    <PlateText
+      text={text}
+      position={[-0.43, 0.37, FACE + 0.014]}
       fontSize={fontSize}
-      maxWidth={0.72}
-      lineHeight={1.1}
+      maxWidth={0.7}
       anchorX="left"
-      anchorY="middle"
       color={HINT_COLOR}
-    >
-      {text}
-    </Text>
+    />
   )
 }

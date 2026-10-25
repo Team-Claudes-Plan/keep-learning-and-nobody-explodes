@@ -73,7 +73,7 @@ resent answer is rejected with `stale_turn` and never costs a second strike.
 | `welcome` | `game_id, player_id, token, seat` |
 | `snapshot` | `state`: status, players (+ online), deadline, turn, defuser, expert, strikes, parts with results, `last_sequence` |
 | `event` | `sequence, at, event`: one logged game event, see below |
-| `briefing` | private, per turn: `{ turn, role: "defuser", task }` or `{ turn, role: "expert", question_type, prompt, instruction }` |
+| `briefing` | private, per turn: `{ turn, role: "defuser", task, glyphs? }` or `{ turn, role: "expert", question_type, prompt, instruction, symbols? }` |
 | `presence` | `player_id, online` |
 | `error` | `code, message`: answers a single message, the connection stays open |
 
@@ -81,6 +81,25 @@ The defuser's `task` is the question as in
 [`questions.schema.json`](questions.schema.json) **without `prompt`**, enough
 to render the module. The expert gets the `prompt` and the manual page
 (`instructions.instruction`). That way the players have to talk.
+
+### Symbols
+
+For `single_choice`, `multiple_choice`, `order`, `grouping` and `matching` the
+answers are not shown as text to the defuser but as abstract symbols. The
+server deals them out when the game is created (`parts[].glyphs` in
+`game_created`), so both players see the same bomb and **no symbol appears
+twice in a game**.
+
+- Defuser `briefing`: `glyphs: [g0, g1, …]` and `task` **without** the answer
+  list (`options`, `items` or `right`, depending on the type). Entry `i` of the
+  list is shown as symbol `glyphs[i]`; answers keep referring to list indices.
+- Expert `briefing`: `symbols: [{ glyph, text }, …]` says what each symbol
+  stands for. The players have to describe the shapes to each other.
+- A symbol is an index into the drawings in `frontend/src/game/glyphs.ts`
+  (`GLYPH_COUNT` in `backend/src/session/glyphs.rs` must match their number).
+- A part gets all its symbols or none. When a game needs more symbols than
+  exist, the parts that no longer fit are shown as plain text: no `glyphs` /
+  `symbols`, the list stays in `task`.
 
 Error codes: `bad_message`, `unknown_game`, `game_full`, `invalid_token`,
 `not_your_turn`, `stale_turn`, `invalid_state`, `no_tasks`, `internal`.
@@ -95,7 +114,7 @@ server restart. Clients should ignore events with
 
 | event | payload |
 |---|---|
-| `game_created` | `topics, question_count, time_limit_secs, created_by, parts: [{ position, task_id, question_type }]` |
+| `game_created` | `topics, question_count, time_limit_secs, created_by, parts: [{ position, task_id, question_type, glyphs? }]` |
 | `player_joined` | `player_id, seat, role` (the role they asked for) |
 | `game_started` | `deadline, starting_defuser` |
 | `turn_started` | `turn, defuser, expert` |
@@ -137,9 +156,15 @@ client never sees an event that could be lost on a restart.
 
 ## Content conventions
 
-- `tasks.content` is the question without `id` and `type` (both added by the
-  server); `tasks.solution` has the same shape as the answer value (`AnswerMap`
-  in `frontend/src/api/types.ts`). Exception: `coords` is `{ x, y, radius }` in
-  percent.
+- Stored task JSON is normalized by the backend. `tasks.content` may contain
+  legacy `id`/`type`/`correct_answer` fields, which are stripped before a task
+  is sent to a player. For `text_input`, `number_input` and `coords` the prompt
+  may live in `instructions.instruction` instead of `tasks.content`;
+  `caseSensitive`, `unit` and `image` stay in `tasks.content`.
+- `tasks.solution` may be stored raw or wrapped as `{"correct_answer": ...}`.
+  Both forms are accepted; answer events and the wire protocol always carry the
+  raw answer value (`AnswerMap` in `frontend/src/api/types.ts`).
+- `coords` solutions are `{ x, y, radius }` in percent. If `radius` is omitted,
+  the backend uses a 5 percentage point tolerance.
 - Text answers are trimmed and compared case-insensitively unless the question
   has `caseSensitive: true`. Multiple choice is compared as a set.

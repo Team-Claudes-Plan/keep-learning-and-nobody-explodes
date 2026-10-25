@@ -1,5 +1,6 @@
 import type { Question, QuestionType } from '../api/types'
 import Bomb3D from './Bomb3D'
+import Celebration from './Celebration'
 import type { ModuleDef } from './modules/types'
 import type { PlannedModule } from './plan'
 import { QUESTION_TYPE_LABELS, QUESTION_TYPES } from './questionTypes'
@@ -16,10 +17,19 @@ type BombProps = {
   testBar?: boolean
   /** Practice round (e.g. koop with a question type): no timer, no explosion. */
   practice?: boolean
+  /** Shown in the top left, e.g. the koop code, so both players can check they have the same bomb. */
+  badge?: string
 }
 
 /** Full-screen 3D bomb, nothing else: click a module to zoom in and work on it. */
-export default function Bomb({ modules, plan: fixedPlan, view = 'solo', testBar = false, practice = false }: BombProps) {
+export default function Bomb({
+  modules,
+  plan: fixedPlan,
+  view = 'solo',
+  testBar = false,
+  practice = false,
+  badge,
+}: BombProps) {
   const game = useBombGame({ modules, plan: fixedPlan, view, testBar, practice })
 
   if (game.load.status === 'error') {
@@ -56,6 +66,7 @@ export default function Bomb({ modules, plan: fixedPlan, view = 'solo', testBar 
       >
         {game.card}
       </Bomb3D>
+      {badge && <div className="bomb-badge">{badge}</div>}
       {testBar && (
         <TestBar
           mode={game.mode}
@@ -67,6 +78,7 @@ export default function Bomb({ modules, plan: fixedPlan, view = 'solo', testBar 
         />
       )}
       {game.shown === 0 && <p className="bomb-screen-message">Keine passenden Aufgaben für diese Module.</p>}
+      {game.outcome === 'defused' && <Celebration />}
       {game.outcome && (
         <button className={`bomb-screen-result ${game.outcome === 'boom' ? 'is-bad' : 'is-good'}`} onClick={game.restart}>
           {game.outcome === 'boom' ? '💥 BOOM' : game.outcome === 'defused' ? '✅ Entschärft' : '🧪 Test fertig'}

@@ -2,6 +2,8 @@ use std::net::Ipv4Addr;
 use std::net::SocketAddr;
 use std::process::exit;
 
+pub(crate) mod db;
+pub(crate) mod pipeline;
 pub(crate) mod provider;
 pub(crate) mod service;
 pub(crate) mod worker;
@@ -17,14 +19,20 @@ use tonic::transport::Server;
 use tracing::{error, info};
 use tracing_subscriber::EnvFilter;
 
+use crate::db::Database;
+use crate::pipeline::{AkashaPipeline, ExtractStep, Pipeline, ReviewStep, SchemaStep, Step};
 use crate::provider::Client;
 
 define_config!(AkashaConfig {
     address("ADDRESS"): SocketAddr = SocketAddr::from((Ipv4Addr::UNSPECIFIED, 50051)),
     concurrency("CONCURRENCY"): usize = 8,
+    database_url("DATABASE_URL"): String,
     llm_base_url("LLM_BASE_URL"): String,
     llm_api_key("LLM_API_KEY"): String,
     llm_model("LLM_MODEL"): String,
+    pipeline_max_step_errors("PIPELINE_MAX_STEP_ERRORS"): usize = 3,
+    pipeline_max_questions("PIPELINE_MAX_QUESTIONS"): usize = 10,
+    pipeline_max_transitions("PIPELINE_MAX_TRANSITIONS"): usize = 100,
 });
 
 #[tokio::main]
@@ -46,7 +54,22 @@ async fn init() -> anyhow::Result<()> {
 
     let config = AkashaConfig::init()?;
 
-    let client = Client::new();
+    let database = Database::connect(&config.database_url, 5).await?;
+    let client = Client::new(&config.llm_base_url, &config.llm_api_key, &config.llm_model);
+
+    let pipeline: AkashaPipeline = Pipeline::new(
+        vec![
+            Step::Extract(ExtractStep::new(
+                client.clone(),
+                config.pipeline_max_questions,
+            )),
+            Step::Schema(SchemaStep),
+            Step::Review(ReviewStep::new(client)),
+        ],
+        config.pipeline_max_step_errors,
+        config.pipeline_max_transitions,
+    )?;
+
     let concurrency = config.concurrency;
 
     let storage = VecDequeBackend::new();
@@ -56,7 +79,8 @@ async fn init() -> anyhow::Result<()> {
         WorkerBuilder::new("akasha-llm-worker")
             .backend(worker_storage.clone())
             .concurrency(concurrency)
-            .data(client.clone())
+            .data(pipeline.clone())
+            .data(database.clone())
             .build(process_chronicle)
     });
 
