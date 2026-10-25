@@ -65,7 +65,6 @@ const ENDPOINTS = {
   upload: (islandId: string) => `/upload?island_id=${encodeURIComponent(islandId)}`,
   sessions: '/api/sessions',
   sessionSocket: '/api/sessions/ws',
-  // Not in the backend yet, see BACKEND_MODIFICATIONS.md.
   userSocket: '/api/users/ws',
 }
 
@@ -126,7 +125,7 @@ export function sessionSocketUrl(userId: string): string {
   return socketUrl(ENDPOINTS.sessionSocket, userId)
 }
 
-/** The user's own channel: presence of island partners and game invites (BACKEND_MODIFICATIONS.md). */
+/** The user's own channel: presence of island partners and game invites (schema/user-channel.md). */
 export function userSocketUrl(userId: string): string {
   return socketUrl(ENDPOINTS.userSocket, userId)
 }
