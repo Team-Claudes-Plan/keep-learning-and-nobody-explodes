@@ -5,6 +5,7 @@ import type { SlotStatus } from './Bomb3D'
 import LockButton3D from './modules/LockButton3D'
 import { MODULES } from './modules'
 import { initialValue, isComplete, submitsImmediately, type AnyValue } from './primitives'
+import { useE2eBomb } from './e2eHook'
 import { planTurn, sessionAnswer } from './sessionTask'
 
 /** Shown for parts whose module this player never saw (the bay stays empty, only the LED counts). */
@@ -24,6 +25,8 @@ export function useSessionBomb(client: SessionClient, session: SessionState) {
     () => (defuserBriefing && gameId ? planTurn(defuserBriefing, gameId, MODULES) : null),
     [defuserBriefing, gameId],
   )
+
+  useE2eBomb(client, defuserBriefing ? turn : null, defuserBriefing?.glyphs)
 
   const [work, setWork] = useState<Work | null>(null)
   /** Module shown per turn this player defused, so finished parts keep their look. */
