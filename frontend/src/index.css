@@ -2332,6 +2332,29 @@ canvas {
   color: #2a1a08;
 }
 
+.book-users {
+  display: grid;
+  gap: 0.6em;
+  margin: 0;
+}
+
+.book-users div {
+  padding: 0.4em 0.6em;
+  border: 1px solid #c4a86f;
+  border-radius: 6px;
+  background: #f6ecd0;
+}
+
+.book-users dt {
+  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+  font-weight: 700;
+  color: #4a2a0e;
+}
+
+.book-users dd {
+  margin: 0.15em 0 0;
+}
+
 .book-folio {
   margin-top: 1.4em;
   text-align: center;

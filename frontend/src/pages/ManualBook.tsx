@@ -31,13 +31,19 @@ const PAGE_HEIGHT = 730
  * it bends and curls like real paper (StPageFlip). A click, the buttons or ← → turn it too.
  */
 export default function ManualBook({ seed, typeLabel, plan }: Props) {
+  const users = plan.flatMap((entry) =>
+    entry.manual.user ? [{ user: entry.manual.user, prompt: entry.manual.prompt ?? '' }] : [],
+  )
+  const others = plan.filter((entry) => !entry.manual.user)
   // In reading order. Cover and back cover are hard (they turn stiff), the rest is paper.
   const faces: { node: ReactNode; kind: 'cover' | 'paper' }[] = [
     { node: <Cover seed={seed} typeLabel={typeLabel} modules={plan.length} />, kind: 'cover' },
     { node: <HowTo seed={seed} typeLabel={typeLabel} />, kind: 'paper' },
+    // one page listing every terminal user with their question
+    ...(users.length > 0 ? [{ node: <UsersPage users={users} page={2} />, kind: 'paper' as const }] : []),
     // shuffled (the same for a code), so the page order says nothing about the bomb
-    ...shuffled(plan, seededRandom(seed * 7 + 3)).map((entry, i) => ({
-      node: <ModulePage entry={entry} page={i + 2} />,
+    ...shuffled(others, seededRandom(seed * 7 + 3)).map((entry, i) => ({
+      node: <ModulePage entry={entry} page={i + 2 + (users.length > 0 ? 1 : 0)} />,
       kind: 'paper' as const,
     })),
   ]
@@ -80,7 +86,8 @@ export default function ManualBook({ seed, typeLabel, plan }: Props) {
       maxShadowOpacity: 0.35,
       flippingTime: 900,
       mobileScrollSupport: false,
-      showPageCorners: true,
+      // corners only bend once a page is grabbed, not on hover
+      showPageCorners: false,
       swipeDistance: 20,
     })
     book.loadFromHTML(sheets)
@@ -173,9 +180,6 @@ function Cover({ seed, typeLabel, modules }: { seed: number; typeLabel: string; 
       <div className="book-cover-frame">
         <span className="book-cover-stamp">STRENG GEHEIM</span>
         <h1>Handbuch zur Bomben&shy;entschärfung</h1>
-        <span className="book-cover-icon" aria-hidden>
-          ✦
-        </span>
         <dl className="book-cover-facts">
           <dt>Code</dt>
           <dd>{seed}</dd>
@@ -251,6 +255,27 @@ function ModulePage({ entry, page }: { entry: Briefed; page: number }) {
         </section>
       )}
 
+      <p className="book-folio">– {page} –</p>
+    </article>
+  )
+}
+
+/** All free-text terminals on one page: login name and the question asked there. */
+function UsersPage({ users, page }: { users: { user: string; prompt: string }[]; page: number }) {
+  const sorted = [...users].sort((a, b) => a.user.localeCompare(b.user))
+  return (
+    <article className="book-paper">
+      <section>
+        <h3>Terminal-Zugänge · Passwort vergessen?</h3>
+        <dl className="book-users">
+          {sorted.map(({ user, prompt }) => (
+            <div key={user}>
+              <dt>{user}</dt>
+              <dd>{prompt}</dd>
+            </div>
+          ))}
+        </dl>
+      </section>
       <p className="book-folio">– {page} –</p>
     </article>
   )
