@@ -1,8 +1,9 @@
 import { useMemo } from 'react'
 import type { PresenceStatus, UserSummary } from '../../api/types'
 import { BLOCK_SIZE, SIDEWALK_WIDTH } from '../../data/islandGrid'
+import { previewHeights } from '../../data/houses'
 import type { ResolvedIsland } from '../../data/islands'
-import type { Vec2 } from '../../data/life'
+import type { Obstacle, Vec2 } from '../../data/life'
 import Skyscraper from '../Skyscraper'
 import Animals from './Animals'
 import Avatar from './Avatar'
@@ -48,6 +49,16 @@ export default function IslandScene({ resolved, center, me, presence, storeyDelt
     return sidewalkLoop(front?.center ?? [0, 0])
   }, [fieldBlocks])
 
+  const obstacles = useMemo(
+    (): Obstacle[] =>
+      houses.map((placed) => ({
+        center: placed.position,
+        size: placed.house.footprint,
+        top: previewHeights(placed.house, storeyDelta).reduce((sum, height) => sum + height, 0),
+      })),
+    [houses, storeyDelta],
+  )
+
   return (
     <group position={[center[0], 0, center[1]]}>
       <Island />
@@ -55,7 +66,7 @@ export default function IslandScene({ resolved, center, me, presence, storeyDelt
       <River />
       <Traffic />
       <Animals fieldBlocks={fieldBlocks} />
-      <Birds fieldBlocks={fieldBlocks} />
+      <Birds fieldBlocks={fieldBlocks} obstacles={obstacles} />
 
       {houses.map((placed) => (
         <Skyscraper

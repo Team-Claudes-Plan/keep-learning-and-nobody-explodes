@@ -1,7 +1,6 @@
 import { Suspense, useMemo, useState } from 'react'
 import type { ThreeEvent } from '@react-three/fiber'
-import type { House } from '../data/houses'
-import { KIT_MIDDLE_HEIGHT } from '../data/houseKits'
+import { previewHeights, type House } from '../data/houses'
 import Facade from './facade/Facade'
 import KitFacade from './facade/KitFacade'
 import { isDrag } from './interaction'
@@ -13,12 +12,6 @@ type SkyscraperProps = {
   onClick: (id: string) => void
   /** Preview only: show this many more (or fewer) storeys than the house has. */
   storeyDelta?: number
-}
-
-function previewHeights(house: House, delta: number): number[] {
-  const heights = house.storeys.map((storey) => storey.height)
-  if (delta < 0) return heights.slice(0, Math.max(1, heights.length + delta))
-  return [...heights, ...Array.from({ length: delta }, () => KIT_MIDDLE_HEIGHT)]
 }
 
 export default function Skyscraper({ house, position, onClick, storeyDelta = 0 }: SkyscraperProps) {
