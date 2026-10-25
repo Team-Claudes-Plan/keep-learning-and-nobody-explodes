@@ -12,11 +12,13 @@ use serde_json::Value;
 pub mod error;
 mod prompt;
 pub mod schema;
+pub(crate) mod skill;
 mod steps;
 
 pub use error::{PipelineError, StepError};
 pub use schema::{Question, TopicQuestions};
-pub use steps::{ExtractStep, ReviewStep, SchemaStep, Step};
+pub use skill::{ExistingTopic, TopicSkills};
+pub use steps::{ExtractStep, ReviewStep, SchemaStep, SkillStep, Step};
 
 /// Concrete pipeline used by the Akasha worker.
 pub type AkashaPipeline = Pipeline<Step<crate::provider::Client>>;
@@ -41,6 +43,7 @@ impl fmt::Display for StepId {
 pub const EXTRACT: StepId = StepId::new("extract");
 pub const SCHEMA: StepId = StepId::new("schema");
 pub const REVIEW: StepId = StepId::new("review");
+pub const SKILL: StepId = StepId::new("skill");
 
 /// Input of one pipeline run.
 #[derive(Clone, Debug)]
@@ -51,6 +54,8 @@ pub struct PipelineInput {
     pub island_name: String,
     /// Topics the island already has; the extraction reuses them where they fit.
     pub existing_topics: Vec<String>,
+    /// Those topics with their existing skills, for the classification step.
+    pub existing_skills: Vec<ExistingTopic>,
     pub text: String,
 }
 
@@ -62,8 +67,10 @@ pub struct PipelineContext {
     pub candidate: Option<Value>,
     /// Static and semantic validation result of the schema step.
     pub topics: Option<Vec<TopicQuestions>>,
+    /// Topics with their questions grouped into skills.
+    pub skills: Option<Vec<TopicSkills>>,
     /// Human-readable error of the previous failed step, fed into the next
-    /// extraction attempt.
+    /// attempt.
     pub last_feedback: Option<String>,
 }
 
@@ -73,6 +80,7 @@ impl PipelineContext {
             input,
             candidate: None,
             topics: None,
+            skills: None,
             last_feedback: None,
         }
     }
@@ -161,7 +169,7 @@ impl<S: PipelineStep> Pipeline<S> {
     /// A step failure is counted against the step that produced it. If that
     /// count exceeds `max_step_errors`, the pipeline aborts and reports the
     /// step in [`PipelineError::StepErrorLimit`].
-    pub async fn run(&self, input: PipelineInput) -> Result<Vec<TopicQuestions>, PipelineError> {
+    pub async fn run(&self, input: PipelineInput) -> Result<Vec<TopicSkills>, PipelineError> {
         let mut context = PipelineContext::new(input);
         let mut failures: HashMap<StepId, usize> = HashMap::new();
         let mut index = 0usize;
@@ -182,13 +190,16 @@ impl<S: PipelineStep> Pipeline<S> {
 
             match step.run(&mut context).await {
                 Ok(StepOutcome::Next) => {
+                    context.last_feedback = None;
+
                     if index + 1 == self.steps.len() {
-                        return context.topics.ok_or(PipelineError::MissingOutput);
+                        return context.skills.ok_or(PipelineError::MissingOutput);
                     }
 
                     index += 1;
                 }
                 Ok(StepOutcome::Goto(target)) => {
+                    context.last_feedback = None;
                     index = self.resolve(id, target)?;
                 }
                 Err(failure) => {
@@ -277,6 +288,7 @@ mod tests {
             std::future::ready(match action {
                 Action::Emit => {
                     context.topics = Some(Vec::new());
+                    context.skills = Some(Vec::new());
                     Ok(StepOutcome::Next)
                 }
                 Action::Fail(retry) => Err(StepFailure::new(
@@ -294,6 +306,7 @@ mod tests {
             language: "German".to_owned(),
             island_name: "island".to_owned(),
             existing_topics: Vec::new(),
+            existing_skills: Vec::new(),
             text: "source".to_owned(),
         }
     }
@@ -311,7 +324,7 @@ mod tests {
         .expect("valid pipeline");
 
         let topics = pipeline.run(input()).await.expect("pipeline succeeds");
-        assert_eq!(topics, Vec::<TopicQuestions>::new());
+        assert_eq!(topics, Vec::<TopicSkills>::new());
     }
 
     #[tokio::test]

@@ -1,4 +1,5 @@
-//! Persistence for generated questions and the topics they are filed under.
+//! Persistence for generated questions, their skills and the topics they are
+//! filed under. A topic is a house, a skill is one of its storeys.
 //!
 //! `tasks.content` carries the player-facing question data, `tasks.solution`
 //! wraps the answer under `correct_answer`, and `instructions.instruction`
@@ -9,7 +10,7 @@ use serde_json::{Value, json};
 use sqlx::{PgConnection, PgPool, postgres::PgPoolOptions, types::Json};
 use uuid::Uuid;
 
-use crate::pipeline::{Question, TopicQuestions};
+use crate::pipeline::{ExistingTopic, Question, TopicSkills};
 
 #[derive(Clone, Debug)]
 pub struct Database {
@@ -28,27 +29,54 @@ impl Database {
         Ok(Self { pool })
     }
 
-    /// Names of the topics (houses) of an island, oldest first.
-    pub async fn topic_names(&self, island_id: Uuid) -> Result<Vec<String>, sqlx::Error> {
-        sqlx::query_scalar("SELECT name FROM topics WHERE island_id = $1 ORDER BY created_at, id")
-            .bind(island_id)
-            .fetch_all(&self.pool)
-            .await
+    /// The topics (houses) and skills (storeys) of an island, oldest first.
+    /// Topics without skills are returned with an empty skill list.
+    pub async fn topic_skills(&self, island_id: Uuid) -> Result<Vec<ExistingTopic>, sqlx::Error> {
+        let rows: Vec<(String, Option<String>)> = sqlx::query_as(
+            "SELECT t.name, s.name
+             FROM topics t
+             LEFT JOIN skills s ON s.topic_id = t.id
+             WHERE t.island_id = $1
+             ORDER BY t.created_at, t.id, s.created_at, s.id",
+        )
+        .bind(island_id)
+        .fetch_all(&self.pool)
+        .await?;
+
+        let mut topics: Vec<ExistingTopic> = Vec::new();
+        for (topic, skill) in rows {
+            match topics.last_mut() {
+                Some(last) if last.topic == topic => {
+                    if let Some(skill) = skill {
+                        last.skills.push(skill);
+                    }
+                }
+                _ => topics.push(ExistingTopic {
+                    topic,
+                    skills: skill.into_iter().collect(),
+                }),
+            }
+        }
+
+        Ok(topics)
     }
 
     /// Inserts one task and one instruction per question in a single
     /// transaction, so a failed chronicle never leaves partial task rows.
-    /// Topics are created on `island_id` as needed; a topic whose name only
-    /// differs in case from an existing one is reused.
+    /// Topics and skills are created on `island_id` as needed; names that only
+    /// differ in case from existing ones are reused.
     pub async fn store_questions(
         &self,
         document_id: Uuid,
         island_id: Uuid,
-        topics: &[TopicQuestions],
+        topics: &[TopicSkills],
     ) -> Result<(), sqlx::Error> {
         let mut transaction = self.pool.begin().await?;
 
-        for topic in topics.iter().filter(|topic| !topic.questions.is_empty()) {
+        for topic in topics
+            .iter()
+            .filter(|topic| topic.skills.iter().any(|skill| !skill.questions.is_empty()))
+        {
             // `DO UPDATE` instead of `DO NOTHING`, so the existing row is returned
             let topic_id: Uuid = sqlx::query_scalar(
                 "INSERT INTO topics (island_id, name) VALUES ($1, $2)
@@ -60,8 +88,24 @@ impl Database {
             .fetch_one(&mut *transaction)
             .await?;
 
-            for question in &topic.questions {
-                store_question(&mut transaction, document_id, topic_id, question).await?;
+            for skill in topic
+                .skills
+                .iter()
+                .filter(|skill| !skill.questions.is_empty())
+            {
+                let skill_id: Uuid = sqlx::query_scalar(
+                    "INSERT INTO skills (topic_id, name) VALUES ($1, $2)
+                     ON CONFLICT (topic_id, lower(name)) DO UPDATE SET name = skills.name
+                     RETURNING id",
+                )
+                .bind(topic_id)
+                .bind(skill.skill.trim())
+                .fetch_one(&mut *transaction)
+                .await?;
+
+                for question in &skill.questions {
+                    store_question(&mut transaction, document_id, skill_id, question).await?;
+                }
             }
         }
 
@@ -74,18 +118,18 @@ impl Database {
 async fn store_question(
     connection: &mut PgConnection,
     document_id: Uuid,
-    topic_id: Uuid,
+    skill_id: Uuid,
     question: &Question,
 ) -> Result<(), sqlx::Error> {
     let fields = task_fields(question).map_err(encode_error)?;
 
     let task_id: Uuid = sqlx::query_scalar(
-        "INSERT INTO tasks (document_id, topic_id, question_type, content, solution)
+        "INSERT INTO tasks (document_id, skill_id, question_type, content, solution)
          VALUES ($1, $2, $3, $4, $5)
          RETURNING id",
     )
     .bind(document_id)
-    .bind(topic_id)
+    .bind(skill_id)
     .bind(fields.question_type)
     .bind(Json(fields.content))
     .bind(Json(fields.solution))
@@ -160,8 +204,9 @@ mod tests {
     use serde_json::json;
 
     use super::*;
+    use crate::pipeline::skill::SkillQuestions;
 
-    type StoredRow = (String, Json<Value>, Json<Value>, Json<Value>, Uuid);
+    type StoredRow = (String, Json<Value>, Json<Value>, Json<Value>, Uuid, String);
 
     fn question(value: Value) -> Question {
         serde_json::from_value(value).expect("valid question")
@@ -309,13 +354,20 @@ mod tests {
         .fetch_one(pool)
         .await
         .expect("island");
-        let existing: Uuid = sqlx::query_scalar(
+        let existing_topic: Uuid = sqlx::query_scalar(
             "INSERT INTO topics (island_id, name) VALUES ($1, 'Geografie') RETURNING id",
         )
         .bind(island)
         .fetch_one(pool)
         .await
         .expect("topic");
+        let existing_skill: Uuid = sqlx::query_scalar(
+            "INSERT INTO skills (topic_id, name) VALUES ($1, 'Hauptstädte') RETURNING id",
+        )
+        .bind(existing_topic)
+        .fetch_one(pool)
+        .await
+        .expect("skill");
         let document_id: Uuid = sqlx::query_scalar(
             "INSERT INTO documents (bucket, object_key, island_id) VALUES ('test', $1, $2) RETURNING id",
         )
@@ -326,28 +378,44 @@ mod tests {
         .expect("document");
 
         let topics = vec![
-            TopicQuestions {
+            TopicSkills {
                 topic: "Zahlen".to_owned(),
-                questions: vec![question(json!({
-                    "type": "single_choice",
-                    "prompt": "Welche Zahl ist gerade?",
-                    "options": ["2", "3"],
-                    "correct_answer": 0
-                }))],
+                skills: vec![SkillQuestions {
+                    skill: "Grundrechenarten".to_owned(),
+                    questions: vec![question(json!({
+                        "type": "single_choice",
+                        "prompt": "Welche Zahl ist gerade?",
+                        "options": ["2", "3"],
+                        "correct_answer": 0
+                    }))],
+                }],
             },
-            TopicQuestions {
-                // reuses the existing topic
+            TopicSkills {
+                // reuses the existing topic and, despite the casing, its skill
                 topic: "geografie".to_owned(),
-                questions: vec![question(json!({
-                    "type": "text_input",
-                    "prompt": "Wie heißt die Hauptstadt?",
-                    "caseSensitive": true,
-                    "correct_answer": "Berlin"
-                }))],
+                skills: vec![
+                    SkillQuestions {
+                        skill: "hauptstädte".to_owned(),
+                        questions: vec![question(json!({
+                            "type": "text_input",
+                            "prompt": "Wie heißt die Hauptstadt?",
+                            "caseSensitive": true,
+                            "correct_answer": "Berlin"
+                        }))],
+                    },
+                    SkillQuestions {
+                        skill: "Flüsse".to_owned(),
+                        questions: vec![question(json!({
+                            "type": "text_input",
+                            "prompt": "Wie heißt der Rhein?",
+                            "correct_answer": "Rhein"
+                        }))],
+                    },
+                ],
             },
-            TopicQuestions {
+            TopicSkills {
                 topic: "Leer".to_owned(),
-                questions: Vec::new(),
+                skills: Vec::new(),
             },
         ];
 
@@ -357,24 +425,34 @@ mod tests {
             .expect("store questions");
 
         assert_eq!(
-            database.topic_names(island).await.expect("topic names"),
-            ["Geografie", "Zahlen"],
+            database.topic_skills(island).await.expect("topic skills"),
+            [
+                ExistingTopic {
+                    topic: "Geografie".to_owned(),
+                    skills: vec!["Hauptstädte".to_owned(), "Flüsse".to_owned()],
+                },
+                ExistingTopic {
+                    topic: "Zahlen".to_owned(),
+                    skills: vec!["Grundrechenarten".to_owned()],
+                },
+            ],
             "no duplicate for another casing, no topic without questions"
         );
 
         let rows: Vec<StoredRow> = sqlx::query_as(
-            "SELECT t.question_type, t.content, t.solution, i.instruction, t.topic_id
+            "SELECT t.question_type, t.content, t.solution, i.instruction, s.id, s.name
              FROM tasks t
              JOIN instructions i ON i.task_id = t.id
+             JOIN skills s ON s.id = t.skill_id
              WHERE t.document_id = $1
-             ORDER BY t.question_type",
+             ORDER BY t.question_type, s.name",
         )
         .bind(document_id)
         .fetch_all(pool)
         .await
         .expect("stored tasks");
 
-        assert_eq!(rows.len(), 2);
+        assert_eq!(rows.len(), 3);
         assert_eq!(rows[0].0, "single_choice");
         assert_eq!(
             rows[0].1.0,
@@ -382,15 +460,18 @@ mod tests {
         );
         assert_eq!(rows[0].2.0, json!({ "correct_answer": 0 }));
         assert_eq!(rows[0].3.0, json!({ "options": ["2", "3"] }));
-        assert_ne!(rows[0].4, existing);
+        assert_eq!(rows[0].5, "Grundrechenarten");
         assert_eq!(rows[1].0, "text_input");
-        assert_eq!(rows[1].1.0, json!({ "caseSensitive": true }));
-        assert_eq!(rows[1].2.0, json!({ "correct_answer": "Berlin" }));
+        assert_eq!(rows[1].5, "Flüsse");
+        assert_eq!(rows[2].0, "text_input");
+        assert_eq!(rows[2].1.0, json!({ "caseSensitive": true }));
+        assert_eq!(rows[2].2.0, json!({ "correct_answer": "Berlin" }));
         assert_eq!(
-            rows[1].3.0,
+            rows[2].3.0,
             json!({ "prompt": "Wie heißt die Hauptstadt?" })
         );
-        assert_eq!(rows[1].4, existing);
+        assert_eq!(rows[2].4, existing_skill, "reuses the skill row");
+        assert_eq!(rows[2].5, "Hauptstädte", "keeps the existing spelling");
 
         sqlx::query("DELETE FROM tasks WHERE document_id = $1")
             .bind(document_id)

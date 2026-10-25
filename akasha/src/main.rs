@@ -20,7 +20,9 @@ use tracing::{error, info};
 use tracing_subscriber::EnvFilter;
 
 use crate::db::Database;
-use crate::pipeline::{AkashaPipeline, ExtractStep, Pipeline, ReviewStep, SchemaStep, Step};
+use crate::pipeline::{
+    AkashaPipeline, ExtractStep, Pipeline, ReviewStep, SchemaStep, SkillStep, Step,
+};
 use crate::provider::Client;
 
 define_config!(AkashaConfig {
@@ -64,7 +66,8 @@ async fn init() -> anyhow::Result<()> {
                 config.pipeline_max_questions,
             )),
             Step::Schema(SchemaStep),
-            Step::Review(ReviewStep::new(client)),
+            Step::Review(ReviewStep::new(client.clone())),
+            Step::Skill(SkillStep::new(client)),
         ],
         config.pipeline_max_step_errors,
         config.pipeline_max_transitions,

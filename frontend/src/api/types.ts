@@ -237,9 +237,9 @@ export type LearningGroup = {
 export type IslandHouse = {
   topic_id: string
   name: string
-  /** 0 to MAX_HOUSE_LEVEL: how far every member of the island has learned the topic. */
+  /** 0 to MAX_HOUSE_LEVEL: number of skills every member of the island has learned. */
   level: number
-  /** Whether every member has learned some of it (`level > 0`). */
+  /** Whether every member has learned at least one skill (`level > 0`). */
   unlocked: boolean
 }
 

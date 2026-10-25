@@ -20,6 +20,8 @@ pub enum StepError {
     Schema(#[from] SchemaError),
     #[error("content review failed: {0}")]
     Review(#[from] ReviewError),
+    #[error("skill classification failed: {0}")]
+    Skill(#[from] SkillError),
 }
 
 /// Errors produced by the extraction step.
@@ -125,6 +127,23 @@ pub enum ReviewError {
     Rejected(#[from] ReviewIssues),
 }
 
+/// Errors produced by the skill-classification step.
+#[derive(Debug, Error)]
+pub enum SkillError {
+    #[error("no validated questions available")]
+    MissingQuestions,
+    #[error("LLM call failed: {0}")]
+    Llm(#[from] ProviderError),
+    #[error("LLM returned an empty response")]
+    EmptyResponse,
+    #[error("LLM response is not valid JSON: {0}")]
+    InvalidJson(#[source] serde_json::Error),
+    #[error("failed to serialize questions: {0}")]
+    Serialize(#[source] serde_json::Error),
+    #[error("skill classification is invalid: {0}")]
+    Invalid(#[from] SchemaIssues),
+}
+
 /// Errors of the pipeline runner itself.
 #[derive(Debug, Error)]
 pub enum PipelineError {
@@ -142,6 +161,6 @@ pub enum PipelineError {
     },
     #[error("pipeline exceeded the transition limit of {limit}")]
     TransitionLimitExceeded { limit: usize },
-    #[error("pipeline finished without producing questions")]
+    #[error("pipeline finished without producing skill-grouped questions")]
     MissingOutput,
 }
