@@ -12,8 +12,8 @@ import { KoopBombPage, KoopManualPage, KoopStartPage } from './pages/KoopPages'
 export const router = createBrowserRouter([
   { path: '/', element: <TitlePage /> },
   { path: '/islands/:islandId?', element: <IslandsPage /> },
-  { path: '/islands/:islandId/houses/:houseId', element: <HousePage /> },
-  { path: '/islands/:islandId/houses/:houseId/storeys/:storeyId', element: <StoreyPage /> },
+  { path: '/islands/:islandId/houses/:topicId', element: <HousePage /> },
+  { path: '/islands/:islandId/houses/:topicId/storeys/:storeyId', element: <StoreyPage /> },
   { path: '/city', element: <Navigate to="/islands" replace /> },
   { path: '/minigames', element: <MinigamesPage /> },
   { path: '/minigames/bomb', element: <BombPage /> },

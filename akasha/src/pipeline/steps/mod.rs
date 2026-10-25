@@ -105,11 +105,12 @@ mod tests {
             input: PipelineInput {
                 id: "chronicle".to_owned(),
                 language: "German".to_owned(),
-                topic: "photosynthesis".to_owned(),
+                island_name: "Biologie".to_owned(),
+                existing_topics: vec!["Photosynthese".to_owned()],
                 text: text.to_owned(),
             },
             candidate: None,
-            questions: None,
+            topics: None,
             last_feedback: None,
         }
     }
@@ -117,7 +118,7 @@ mod tests {
     #[tokio::test]
     async fn extract_step_stores_candidate_and_renders_prompt() {
         let llm = FakeLlm::new([
-            r#"[{"type": "text_input", "prompt": "Frage", "correct_answer": "Antwort"}]"#,
+            r#"[{"topic": "Photosynthese", "questions": [{"type": "text_input", "prompt": "Frage", "correct_answer": "Antwort"}]}]"#,
         ]);
         let step = ExtractStep::new(llm.clone(), 5);
         let mut context = context("Pflanzen nutzen Licht.");
@@ -131,6 +132,11 @@ mod tests {
         assert_eq!(calls.len(), 1);
         assert!(calls[0].0.contains("German"));
         assert!(calls[0].0.contains('5'));
+        assert!(
+            calls[0].0.contains("- Photosynthese"),
+            "existing topics are offered"
+        );
+        assert!(calls[0].0.contains("\"Biologie\""));
         assert!(calls[0].1.contains("Pflanzen nutzen Licht."));
     }
 
@@ -188,7 +194,7 @@ mod tests {
         let llm = FakeLlm::new([r#"{"valid": true, "issues": []}"#]);
         let step = ReviewStep::new(llm.clone());
         let mut context = context("source");
-        context.questions = Some(Vec::new());
+        context.topics = Some(Vec::new());
 
         let outcome = step.run(&mut context).await.expect("review succeeds");
 
@@ -207,7 +213,7 @@ mod tests {
         }"#]);
         let step = ReviewStep::new(llm);
         let mut context = context("source");
-        context.questions = Some(Vec::new());
+        context.topics = Some(Vec::new());
 
         let failure = step
             .run(&mut context)

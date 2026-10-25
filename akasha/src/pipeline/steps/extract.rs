@@ -9,7 +9,8 @@ use crate::provider::{Llm, OutputFormat};
 const IMAGE_SECTION: &str = "Only use an image location that is explicitly provided or allowed by the source material. \
      Never invent an image URL.";
 
-/// Renders the extraction prompt and asks the LLM for a JSON question array.
+/// Renders the extraction prompt and asks the LLM for the questions, grouped
+/// by topic.
 #[derive(Clone, Debug)]
 pub struct ExtractStep<L: Llm> {
     llm: L,
@@ -38,10 +39,11 @@ impl<L: Llm> PipelineStep for ExtractStep<L> {
 
         let max_questions = self.max_questions.to_string();
         let allowed_types = TYPES.join(", ");
-        let topic_context = format!(
-            "The source material belongs to the course topic \"{}\".",
-            context.input.topic
+        let island_context = format!(
+            "The source material was uploaded to the learning island \"{}\".",
+            context.input.island_name
         );
+        let existing_topics = existing_topics(&context.input.existing_topics);
         let system = prompt::render(
             prompt::EXTRACTION,
             &[
@@ -49,14 +51,15 @@ impl<L: Llm> PipelineStep for ExtractStep<L> {
                 ("max_questions", max_questions.as_str()),
                 ("allowed_types", allowed_types.as_str()),
                 ("image_section", IMAGE_SECTION),
-                ("topic_context", topic_context.as_str()),
+                ("island_context", island_context.as_str()),
+                ("existing_topics", existing_topics.as_str()),
             ],
         );
 
         let mut user = format!(
-            "Chronicle id: {}\nTopic: {}\nTarget language: {}\n\n\
+            "Chronicle id: {}\nIsland: {}\nTarget language: {}\n\n\
              Source material:\n<<<\n{}\n>>>\n",
-            context.input.id, context.input.topic, context.input.language, context.input.text
+            context.input.id, context.input.island_name, context.input.language, context.input.text
         );
 
         if let Some(feedback) = &context.last_feedback {
@@ -89,4 +92,16 @@ impl<L: Llm> PipelineStep for ExtractStep<L> {
 
         Ok(StepOutcome::Next)
     }
+}
+
+/// The island's topics as a Markdown list for the prompt.
+fn existing_topics(topics: &[String]) -> String {
+    if topics.is_empty() {
+        return "The island has no topics yet.".to_owned();
+    }
+    topics
+        .iter()
+        .map(|topic| format!("- {topic}"))
+        .collect::<Vec<_>>()
+        .join("\n")
 }

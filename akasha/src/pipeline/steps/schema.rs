@@ -28,14 +28,14 @@ fn convert(context: &mut PipelineContext) -> Result<StepOutcome, StepFailure> {
         .clone()
         .ok_or_else(|| StepFailure::new(SchemaError::NoCandidate, EXTRACT))?;
 
-    let questions = schema::convert(&candidate)
+    let topics = schema::convert(&candidate)
         .map_err(|issues| StepFailure::new(SchemaError::Invalid(issues), EXTRACT))?;
 
-    let canonical = serde_json::to_value(&questions)
+    let canonical = serde_json::to_value(&topics)
         .map_err(|error| StepFailure::new(SchemaError::Serialize(error), EXTRACT))?;
 
     context.candidate = Some(canonical);
-    context.questions = Some(questions);
+    context.topics = Some(topics);
 
     Ok(StepOutcome::Next)
 }

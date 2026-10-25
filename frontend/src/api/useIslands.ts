@@ -1,14 +1,17 @@
 import { useEffect, useMemo, useState } from 'react'
-import { fetchIslands, subscribePresence } from './client'
+import { SignedOutError, fetchIslands, subscribePresence } from './client'
 import type { IslandsResponse, PresenceStatus } from './types'
 
 type IslandsState =
   | { status: 'loading' }
   | { status: 'error'; message: string }
+  /** The backend does not know who is asking; see `createUser`. */
+  | { status: 'signed-out' }
   | { status: 'ready'; data: IslandsResponse }
 
 // Shared across pages so going from the islands into a house and back doesn't refetch.
 let cached: Promise<IslandsResponse> | null = null
+const listeners = new Set<() => void>()
 
 function loadIslands(): Promise<IslandsResponse> {
   cached ??= fetchIslands().catch((error: unknown) => {
@@ -18,20 +21,40 @@ function loadIslands(): Promise<IslandsResponse> {
   return cached
 }
 
+/** Fetches the islands again, e.g. after creating one, and updates every page showing them. */
+export function reloadIslands(): Promise<IslandsResponse> {
+  cached = null
+  const loading = loadIslands()
+  for (const listener of listeners) listener()
+  return loading
+}
+
 export function useIslands(): IslandsState {
   const [state, setState] = useState<IslandsState>({ status: 'loading' })
+  const [version, setVersion] = useState(0)
+
+  useEffect(() => {
+    const listener = () => setVersion((current) => current + 1)
+    listeners.add(listener)
+    return () => {
+      listeners.delete(listener)
+    }
+  }, [])
 
   useEffect(() => {
     let alive = true
     loadIslands().then(
       (data) => alive && setState({ status: 'ready', data }),
-      (error: unknown) =>
-        alive && setState({ status: 'error', message: error instanceof Error ? error.message : String(error) }),
+      (error: unknown) => {
+        if (!alive) return
+        if (error instanceof SignedOutError) setState({ status: 'signed-out' })
+        else setState({ status: 'error', message: error instanceof Error ? error.message : String(error) })
+      },
     )
     return () => {
       alive = false
     }
-  }, [])
+  }, [version])
 
   return state
 }

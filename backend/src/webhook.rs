@@ -62,8 +62,8 @@ async fn receive_event(
             key,
             etag: record.s3.object.etag,
         };
-        let Some(topic_id) = job.topic_id() else {
-            tracing::warn!(name: "ocr.skipped", key = %job.key, "object key does not name a topic, ignoring");
+        let Some(island_id) = job.island_id() else {
+            tracing::warn!(name: "ocr.skipped", key = %job.key, "object key does not name an island, ignoring");
             continue;
         };
         // Register the document first: a job must never exist without its row.
@@ -71,7 +71,7 @@ async fn receive_event(
         let document_id = match state
             .db
             .mark_queued(
-                topic_id,
+                island_id,
                 &job.bucket,
                 &job.key,
                 job.etag.as_deref(),
@@ -80,9 +80,9 @@ async fn receive_event(
             .await
         {
             Ok(document_id) => document_id,
-            Err(error) if db::is_unknown_topic(&error) => {
+            Err(error) if db::is_unknown_island(&error) => {
                 // Retrying cannot help, and a failing hook would make RustFS redeliver it.
-                tracing::warn!(name: "ocr.skipped", key = %job.key, topic_id = %topic_id, "topic does not exist, ignoring");
+                tracing::warn!(name: "ocr.skipped", key = %job.key, island_id = %island_id, "island does not exist, ignoring");
                 continue;
             }
             Err(error) => return Err(WebhookError::internal(error)),
@@ -288,7 +288,7 @@ mod tests {
         }
 
         async fn document(db: &Database, key: &str) -> Option<(Uuid, String)> {
-            sqlx::query_as("SELECT topic_id, ocr_status FROM documents WHERE object_key = $1")
+            sqlx::query_as("SELECT island_id, ocr_status FROM documents WHERE object_key = $1")
                 .bind(key)
                 .fetch_optional(db.pool())
                 .await
@@ -297,10 +297,14 @@ mod tests {
 
         #[tokio::test]
         #[ignore = "requires the dev stack (`nix run .#dev`) and its environment"]
-        async fn registers_the_document_in_the_topic() {
+        async fn registers_the_document_in_the_island() {
             let (app, db) = app().await;
-            let topic = db.create_topic("webhook test").await.expect("topic");
-            let key = format!("uploads/{topic}/{}/notes.txt", Uuid::new_v4());
+            let user = db.create_user("webhook test").await.expect("user");
+            let island = db
+                .create_island("webhook test", user, None)
+                .await
+                .expect("island");
+            let key = format!("uploads/{island}/{}/notes.txt", Uuid::new_v4());
 
             assert_eq!(deliver(&app, TOKEN, &key).await, StatusCode::OK);
             // a redelivered event is acknowledged without enqueueing again
@@ -308,13 +312,13 @@ mod tests {
 
             assert_eq!(
                 document(&db, &key).await,
-                Some((topic, "queued".to_owned()))
+                Some((island, "queued".to_owned()))
             );
         }
 
         #[tokio::test]
         #[ignore = "requires the dev stack (`nix run .#dev`) and its environment"]
-        async fn ignores_keys_without_a_topic() {
+        async fn ignores_keys_without_an_island() {
             let (app, db) = app().await;
             let key = format!("uploads/{}/notes.txt", Uuid::new_v4());
 
@@ -325,7 +329,7 @@ mod tests {
 
         #[tokio::test]
         #[ignore = "requires the dev stack (`nix run .#dev`) and its environment"]
-        async fn ignores_unknown_topics() {
+        async fn ignores_unknown_islands() {
             let (app, db) = app().await;
             let key = format!("uploads/{}/{}/notes.txt", Uuid::new_v4(), Uuid::new_v4());
 

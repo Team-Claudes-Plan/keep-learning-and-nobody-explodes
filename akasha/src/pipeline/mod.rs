@@ -15,7 +15,7 @@ pub mod schema;
 mod steps;
 
 pub use error::{PipelineError, StepError};
-pub use schema::Question;
+pub use schema::{Question, TopicQuestions};
 pub use steps::{ExtractStep, ReviewStep, SchemaStep, Step};
 
 /// Concrete pipeline used by the Akasha worker.
@@ -47,7 +47,10 @@ pub const REVIEW: StepId = StepId::new("review");
 pub struct PipelineInput {
     pub id: String,
     pub language: String,
-    pub topic: String,
+    /// Name of the island the document was uploaded to, as context.
+    pub island_name: String,
+    /// Topics the island already has; the extraction reuses them where they fit.
+    pub existing_topics: Vec<String>,
     pub text: String,
 }
 
@@ -58,7 +61,7 @@ pub struct PipelineContext {
     /// JSON emitted by the extraction step.
     pub candidate: Option<Value>,
     /// Static and semantic validation result of the schema step.
-    pub questions: Option<Vec<Question>>,
+    pub topics: Option<Vec<TopicQuestions>>,
     /// Human-readable error of the previous failed step, fed into the next
     /// extraction attempt.
     pub last_feedback: Option<String>,
@@ -69,7 +72,7 @@ impl PipelineContext {
         Self {
             input,
             candidate: None,
-            questions: None,
+            topics: None,
             last_feedback: None,
         }
     }
@@ -158,7 +161,7 @@ impl<S: PipelineStep> Pipeline<S> {
     /// A step failure is counted against the step that produced it. If that
     /// count exceeds `max_step_errors`, the pipeline aborts and reports the
     /// step in [`PipelineError::StepErrorLimit`].
-    pub async fn run(&self, input: PipelineInput) -> Result<Vec<Question>, PipelineError> {
+    pub async fn run(&self, input: PipelineInput) -> Result<Vec<TopicQuestions>, PipelineError> {
         let mut context = PipelineContext::new(input);
         let mut failures: HashMap<StepId, usize> = HashMap::new();
         let mut index = 0usize;
@@ -180,7 +183,7 @@ impl<S: PipelineStep> Pipeline<S> {
             match step.run(&mut context).await {
                 Ok(StepOutcome::Next) => {
                     if index + 1 == self.steps.len() {
-                        return context.questions.ok_or(PipelineError::MissingOutput);
+                        return context.topics.ok_or(PipelineError::MissingOutput);
                     }
 
                     index += 1;
@@ -273,7 +276,7 @@ mod tests {
 
             std::future::ready(match action {
                 Action::Emit => {
-                    context.questions = Some(Vec::new());
+                    context.topics = Some(Vec::new());
                     Ok(StepOutcome::Next)
                 }
                 Action::Fail(retry) => Err(StepFailure::new(
@@ -289,7 +292,8 @@ mod tests {
         PipelineInput {
             id: "chronicle".to_owned(),
             language: "German".to_owned(),
-            topic: "topic".to_owned(),
+            island_name: "island".to_owned(),
+            existing_topics: Vec::new(),
             text: "source".to_owned(),
         }
     }
@@ -306,8 +310,8 @@ mod tests {
         )
         .expect("valid pipeline");
 
-        let questions = pipeline.run(input()).await.expect("pipeline succeeds");
-        assert_eq!(questions, Vec::<Question>::new());
+        let topics = pipeline.run(input()).await.expect("pipeline succeeds");
+        assert_eq!(topics, Vec::<TopicQuestions>::new());
     }
 
     #[tokio::test]

@@ -30,7 +30,7 @@ type IslandSceneProps = {
   me: UserSummary
   presence: Record<string, PresenceStatus>
   storeyDelta: number
-  onHouseClick: (houseId: string) => void
+  onHouseClick: (topicId: string) => void
 }
 
 /** One island with its grid, houses, wildlife and the members of its learning group. */
@@ -59,11 +59,11 @@ export default function IslandScene({ resolved, center, me, presence, storeyDelt
 
       {houses.map((placed) => (
         <Skyscraper
-          key={placed.house.id}
+          key={placed.topicId}
           house={placed.house}
           position={placed.position}
           storeyDelta={storeyDelta}
-          onClick={onHouseClick}
+          onClick={() => onHouseClick(placed.topicId)}
         />
       ))}
 

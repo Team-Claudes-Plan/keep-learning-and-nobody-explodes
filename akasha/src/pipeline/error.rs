@@ -52,6 +52,8 @@ pub enum SchemaError {
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
 pub struct ReviewIssue {
     #[serde(default)]
+    pub topic: Option<usize>,
+    #[serde(default)]
     pub question: Option<usize>,
     #[serde(default)]
     pub field: Option<String>,
@@ -60,6 +62,14 @@ pub struct ReviewIssue {
 
 impl fmt::Display for ReviewIssue {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if let Some(topic) = self.topic {
+            let separator = if self.question.is_none() && self.field.is_none() {
+                ": "
+            } else {
+                " "
+            };
+            write!(f, "topic {topic}{separator}")?;
+        }
         match (self.question, &self.field) {
             (Some(question), Some(field)) => {
                 write!(f, "question {question} `{field}`: {}", self.reason)

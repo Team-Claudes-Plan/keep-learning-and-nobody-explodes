@@ -9,7 +9,9 @@ use crate::pipeline::{AkashaPipeline, PipelineInput};
 pub struct ChronicleJob {
     pub id: String,
     pub language: String,
-    pub topic: String,
+    /// Island that owns the document and receives the generated topics.
+    pub island_id: Uuid,
+    pub island_name: String,
     pub text: String,
 }
 
@@ -25,27 +27,36 @@ pub async fn process_chronicle(
         id = %job.id,
         document_id = %document_id,
         language = %job.language,
-        topic = %job.topic,
+        island_id = %job.island_id,
+        island = %job.island_name,
         characters = job.text.len(),
         "processing chronicle"
     );
 
+    // Loaded as late as possible, so documents processed in parallel see each
+    // other's topics; the store still merges names that only differ in case.
+    let existing_topics = database.topic_names(job.island_id).await?;
+
     let input = PipelineInput {
         id: job.id.clone(),
         language: job.language,
-        topic: job.topic,
+        island_name: job.island_name,
+        existing_topics,
         text: job.text,
     };
 
-    let questions = match pipeline.run(input).await {
-        Ok(questions) => questions,
+    let topics = match pipeline.run(input).await {
+        Ok(topics) => topics,
         Err(error) => {
             tracing::error!(id = %job.id, error = %error, "pipeline aborted");
             return Err(Box::new(error));
         }
     };
 
-    if let Err(error) = database.store_questions(document_id, &questions).await {
+    if let Err(error) = database
+        .store_questions(document_id, job.island_id, &topics)
+        .await
+    {
         tracing::error!(
             document_id = %document_id,
             error = %error,
@@ -57,7 +68,8 @@ pub async fn process_chronicle(
     tracing::info!(
         id = %job.id,
         document_id = %document_id,
-        count = questions.len(),
+        topics = topics.len(),
+        count = topics.iter().map(|topic| topic.questions.len()).sum::<usize>(),
         "stored generated questions"
     );
 
