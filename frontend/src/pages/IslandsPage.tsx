@@ -127,7 +127,7 @@ function IslandsView({ data }: { data: IslandsResponse }) {
         <IslandCamera center={islandCenter(activeIndex)} minZoom={MIN_ZOOM} />
       </SceneCanvas>
 
-      <Hud title={active.island.name}>
+      <Hud title={active.island.name} lowPoly>
         {active.island.origin_id && (
           <div className="hud-note">
             Shares its houses with{' '}
@@ -267,7 +267,7 @@ export default function IslandsPage() {
   if (state.status === 'signed-out') return <WelcomeDialog />
   if (state.status === 'error') {
     return (
-      <Hud title="Islands">
+      <Hud title="Islands" lowPoly>
         <div>⚠️ Could not load your islands: {state.message}</div>
       </Hud>
     )
