@@ -5,9 +5,14 @@ import Hud from '../components/Hud'
 import Bridge from '../components/islands/Bridge'
 import IslandCamera from '../components/islands/IslandCamera'
 import IslandScene from '../components/islands/IslandScene'
-import { IslandPartner, NewIsland, SignIn, You } from '../components/islands/IslandActions'
+import { IslandPartner, NewIsland, You } from '../components/islands/IslandActions'
 import UploadDialog, { UploadIcon } from '../components/islands/UploadDialog'
-import { usePresence, useIslands } from '../api/useIslands'
+import FriendsDialog, { FriendsIcon } from '../components/islands/FriendsDialog'
+import BannerDialog from '../components/islands/BannerDialog'
+import WelcomeDialog from '../components/islands/WelcomeDialog'
+import { DEV_TOOLS } from '../api/client'
+import { contentIslandId, usePresence, useIslands } from '../api/useIslands'
+import { onIslandUpdated } from '../api/invites'
 import type { IslandsResponse } from '../api/types'
 import { bridgeBetween, islandCenter, resolveIsland } from '../data/islands'
 
@@ -18,9 +23,19 @@ function IslandsView({ data }: { data: IslandsResponse }) {
   const { islandId } = useParams()
   const [storeyDelta, setStoreyDelta] = useState(0)
   const [uploadOpen, setUploadOpen] = useState(false)
+  const [friendsOpen, setFriendsOpen] = useState(false)
+  // Content islands I just uploaded to. The backend counts them in `building` only once the
+  // storage webhook registered the files, so this covers the moments in between.
+  const [uploadedTo, setUploadedTo] = useState<ReadonlySet<string>>(() => new Set())
   const { me, islands } = data
 
-  const resolved = useMemo(() => islands.map(resolveIsland), [islands])
+  const resolved = useMemo(
+    () =>
+      islands.map((island) =>
+        resolveIsland(island, Math.max(island.building, uploadedTo.has(contentIslandId(island)) ? 1 : 0)),
+      ),
+    [islands, uploadedTo],
+  )
   const activeIndex = Math.max(0, islands.findIndex((island) => island.id === islandId))
   const active = resolved[activeIndex]
 
@@ -29,6 +44,21 @@ function IslandsView({ data }: { data: IslandsResponse }) {
     [islands],
   )
   const presence = usePresence(memberIds, me.id)
+
+  // An upload finished processing: from now on the backend's `building` count is accurate. The
+  // islands themselves are refetched by useIslands, so the new houses show up in place.
+  useEffect(
+    () =>
+      onIslandUpdated((rootId) =>
+        setUploadedTo((current) => {
+          if (!current.has(rootId)) return current
+          const next = new Set(current)
+          next.delete(rootId)
+          return next
+        }),
+      ),
+    [],
+  )
 
   const open = useCallback((id: string) => navigate(`/islands/${id}`, { replace: true }), [navigate])
 
@@ -42,22 +72,26 @@ function IslandsView({ data }: { data: IslandsResponse }) {
 
   useEffect(() => {
     // The upload is tied to the current island, so stay put while the dialog is open.
-    if (uploadOpen) return
+    // Invites are tied to the current island as well.
+    if (uploadOpen || friendsOpen) return
     const handleKey = (event: KeyboardEvent) => {
       if (event.key === 'ArrowRight') goTo(activeIndex + 1)
       if (event.key === 'ArrowLeft') goTo(activeIndex - 1)
     }
     window.addEventListener('keydown', handleKey)
     return () => window.removeEventListener('keydown', handleKey)
-  }, [activeIndex, goTo, uploadOpen])
+  }, [activeIndex, goTo, uploadOpen, friendsOpen])
 
   if (!active) {
     return (
-      <Hud title="No islands yet">
-        <div>Create an island and upload your documents; their topics become its houses.</div>
-        <NewIsland onCreated={open} open />
-        <You me={me} />
-      </Hud>
+      <BannerDialog
+        title="No islands yet"
+        subtitle={`Hi ${me.name}!`}
+        lead="Create an island and upload your documents; their topics become its houses."
+      >
+        <NewIsland onCreated={open} inline />
+        <You me={me} className="welcome-details" />
+      </BannerDialog>
     )
   }
 
@@ -93,7 +127,7 @@ function IslandsView({ data }: { data: IslandsResponse }) {
         <IslandCamera center={islandCenter(activeIndex)} minZoom={MIN_ZOOM} />
       </SceneCanvas>
 
-      <Hud title={active.island.name}>
+      <Hud title={active.island.name} lowPoly>
         {active.island.origin_id && (
           <div className="hud-note">
             Shares its houses with{' '}
@@ -132,22 +166,29 @@ function IslandsView({ data }: { data: IslandsResponse }) {
         <div>Click a bridge (or ← →) to visit another island</div>
         <div>Click a building to enter</div>
 
-        <div className="hud-section">Preview storeys</div>
-        <div className="hud-buttons">
-          {[-2, -1, 0, 1, 2, 4].map((delta) => (
-            <button
-              key={delta}
-              type="button"
-              className={storeyDelta === delta ? 'active' : ''}
-              onClick={() => setStoreyDelta(delta)}
-            >
-              {delta === 0 ? 'Actual' : delta > 0 ? `+${delta}` : delta}
-            </button>
-          ))}
-        </div>
+        {DEV_TOOLS && (
+          <>
+            <div className="hud-section">Preview storeys</div>
+            <div className="hud-buttons">
+              {[-2, -1, 0, 1, 2, 4].map((delta) => (
+                <button
+                  key={delta}
+                  type="button"
+                  className={storeyDelta === delta ? 'active' : ''}
+                  onClick={() => setStoreyDelta(delta)}
+                >
+                  {delta === 0 ? 'Actual' : delta > 0 ? `+${delta}` : delta}
+                </button>
+              ))}
+            </div>
+          </>
+        )}
 
         <div className="hud-section">Houses</div>
-        {active.island.houses.length === 0 && <div>No houses yet: upload documents to build some.</div>}
+        {active.island.houses.length === 0 && !active.construction && (
+          <div>No houses yet: upload documents to build some.</div>
+        )}
+        {active.construction && <div>🚧 New houses are being built from your upload…</div>}
         <ul className="hud-links">
           {active.houses.map((placed) => (
             <li key={placed.topicId}>
@@ -167,9 +208,28 @@ function IslandsView({ data }: { data: IslandsResponse }) {
 
         <div className="hud-section">Island</div>
         <IslandPartner island={active.island} onForked={open} />
-        <NewIsland onCreated={open} />
-        <You me={me} />
+        {DEV_TOOLS && (
+          <>
+            <NewIsland onCreated={open} />
+            <You me={me} />
+          </>
+        )}
       </Hud>
+
+      <button
+        type="button"
+        className="upload-fab friends-fab"
+        onClick={() => setFriendsOpen(true)}
+        title={`Invite friends to ${active.island.name}`}
+        aria-label={`Invite friends to ${active.island.name}`}
+      >
+        <span className="upload-fab-body chamfer">
+          <span className="upload-fab-face chamfer">
+            <FriendsIcon size={40} className="upload-fab-icon" />
+            <span className="upload-fab-label">Friends</span>
+          </span>
+        </span>
+      </button>
 
       <button
         type="button"
@@ -186,7 +246,16 @@ function IslandsView({ data }: { data: IslandsResponse }) {
         </span>
       </button>
 
-      {uploadOpen && <UploadDialog island={active.island} onClose={() => setUploadOpen(false)} />}
+      {uploadOpen && (
+        <UploadDialog
+          island={active.island}
+          onClose={() => setUploadOpen(false)}
+          onUploaded={(result) => setUploadedTo((current) => new Set(current).add(result.island_id))}
+        />
+      )}
+      {friendsOpen && (
+        <FriendsDialog island={active.island} me={me} onForked={open} onClose={() => setFriendsOpen(false)} />
+      )}
     </>
   )
 }
@@ -195,16 +264,10 @@ export default function IslandsPage() {
   const state = useIslands()
 
   if (state.status === 'loading') return null
-  if (state.status === 'signed-out') {
-    return (
-      <Hud title="Welcome">
-        <SignIn />
-      </Hud>
-    )
-  }
+  if (state.status === 'signed-out') return <WelcomeDialog />
   if (state.status === 'error') {
     return (
-      <Hud title="Islands">
+      <Hud title="Islands" lowPoly>
         <div>⚠️ Could not load your islands: {state.message}</div>
       </Hud>
     )

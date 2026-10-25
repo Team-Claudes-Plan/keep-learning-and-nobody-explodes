@@ -591,10 +591,10 @@ export function useBombContent({
 const BLAST_DISTANCE = 11
 const BLAST_PITCH = 0.5
 /** Seconds between the camera being out of the module and the blast, so it is pulled back by then. */
-const BLAST_DELAY = 0.9
+export const BLAST_DELAY = 0.9
 
 /** Height of the bomb's centre, where the explosion starts. */
-const BOMB_CENTER: [number, number, number] = [0, 1.55, 0]
+export const BOMB_CENTER: [number, number, number] = [0, 1.55, 0]
 
 /** Bomb seen through an orbiting camera: drag to turn the camera around it, click a module to fly in. */
 function BombModel(props: Bomb3DProps) {

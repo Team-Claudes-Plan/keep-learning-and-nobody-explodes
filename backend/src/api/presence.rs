@@ -251,6 +251,61 @@ mod tests {
         }
     }
 
+    /// Serves the api on a free port; returns it and the user channel url of a user.
+    async fn serve(db: Database) -> (axum::Router, impl Fn(Uuid) -> String) {
+        let state = std::sync::Arc::new(GlobalState {
+            sessions: Sessions::new(db.clone()),
+            presence: Hub::new(),
+            db,
+        });
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind");
+        let addr = listener.local_addr().expect("addr");
+        let app = api::routes().with_state(state);
+        let served = app.clone();
+        tokio::spawn(async move { axum::serve(listener, served).await });
+        (app, move |user: Uuid| {
+            format!("ws://{addr}/api/users/ws?user_id={user}")
+        })
+    }
+
+    #[tokio::test]
+    #[ignore = "requires a database (`DATABASE_URL`)"]
+    async fn a_new_member_hears_about_the_island() {
+        let url = std::env::var("DATABASE_URL").expect("DATABASE_URL");
+        let db = Database::connect(&url, 5).await.expect("database");
+        db.migrate().await.expect("migrations");
+        let alex = db.create_user("channel test a").await.expect("user");
+        let leo = db.create_user("channel test c").await.expect("user");
+        let solo = db
+            .create_island("channel test solo", alex, None)
+            .await
+            .expect("island");
+        let (app, channel) = serve(db).await;
+        let (_a, _) = connect_async(channel(alex)).await.expect("connect a");
+
+        // alex adds leo; leo hears it and sees alex online
+        let (mut c, _) = connect_async(channel(leo)).await.expect("connect c");
+        let (status, _) = api::testing::call(
+            &app,
+            axum::http::Method::PUT,
+            &format!("/api/islands/{solo}/members"),
+            Some(alex),
+            Some(json!({ "user_id": leo })),
+        )
+        .await;
+        assert_eq!(status, axum::http::StatusCode::NO_CONTENT);
+        let added = expect(&mut c, "added_to_island").await;
+        assert_eq!(added["island_id"], solo.to_string());
+        assert_eq!(added["by"]["name"], "channel test a");
+        let presence = expect(&mut c, "presence").await;
+        assert_eq!(
+            (&presence["user_id"], &presence["online"]),
+            (&json!(alex), &json!(true))
+        );
+    }
+
     #[tokio::test]
     #[ignore = "requires a database (`DATABASE_URL`)"]
     async fn invites_a_partner_into_a_game() {
@@ -266,17 +321,7 @@ mod tests {
             .expect("island");
 
         let pool = db.pool().clone();
-        let state = std::sync::Arc::new(GlobalState {
-            sessions: Sessions::new(db.clone()),
-            presence: Hub::new(),
-            db,
-        });
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
-            .await
-            .expect("bind");
-        let addr = listener.local_addr().expect("addr");
-        tokio::spawn(async move { axum::serve(listener, api::routes().with_state(state)).await });
-        let channel = |user: Uuid| format!("ws://{addr}/api/users/ws?user_id={user}");
+        let (_, channel) = serve(db).await;
 
         connect_async(channel(Uuid::new_v4()))
             .await

@@ -214,6 +214,12 @@ async fn project(
     at: DateTime<Utc>,
 ) -> Result<(), sqlx::Error> {
     match event {
+        GameEvent::RolesAssigned { .. } => {
+            sqlx::query("UPDATE games SET status = 'ready' WHERE id = $1")
+                .bind(game_id)
+                .execute(&mut *conn)
+                .await?;
+        }
         GameEvent::GameStarted { deadline, .. } => {
             sqlx::query("UPDATE games SET status = 'active', deadline = $2 WHERE id = $1")
                 .bind(game_id)
@@ -255,6 +261,7 @@ async fn project(
         }
         GameEvent::GameCreated { .. }
         | GameEvent::PlayerJoined { .. }
+        | GameEvent::PlayerReady { .. }
         | GameEvent::TurnStarted { .. } => {}
     }
     Ok(())
@@ -470,6 +477,37 @@ impl Database {
             .bind(island_id)
             .fetch_optional(&self.pool)
             .await
+    }
+
+    /// Documents of an island (shared with its origin, if it is a fork) that
+    /// are still being turned into houses.
+    pub async fn pending_documents(&self, island_id: Uuid) -> Result<i64, sqlx::Error> {
+        sqlx::query_scalar(
+            "SELECT count(*)
+             FROM islands i
+             JOIN documents d ON d.island_id = COALESCE(i.origin_id, i.id)
+             WHERE i.id = $1
+               AND d.trials_status = 'pending'
+               AND d.ocr_status <> 'failed'",
+        )
+        .bind(island_id)
+        .fetch_one(&self.pool)
+        .await
+    }
+
+    /// Everyone who sees the content of `island_id`: the members of the
+    /// island that owns it and of all its forks.
+    pub async fn content_audience(&self, island_id: Uuid) -> Result<Vec<Uuid>, sqlx::Error> {
+        sqlx::query_scalar(
+            "SELECT DISTINCT m.user_id
+             FROM islands i
+             JOIN islands c ON COALESCE(c.origin_id, c.id) = COALESCE(i.origin_id, i.id)
+             JOIN island_members m ON m.island_id = c.id
+             WHERE i.id = $1",
+        )
+        .bind(island_id)
+        .fetch_all(&self.pool)
+        .await
     }
 
     /// The islands `user_id` is a member of, oldest first. Members are listed
@@ -928,6 +966,7 @@ impl Database {
              ON CONFLICT (bucket, object_key) DO UPDATE SET
                  ocr_status = 'processing',
                  ocr_error = NULL,
+                 trials_status = 'pending',
                  updated_at = now()",
         )
         .bind(island_id)
@@ -971,6 +1010,18 @@ impl Database {
         .bind(filename)
         .bind(content_type)
         .bind(text)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    /// Records that no houses come from `document_id` because it never
+    /// reached Akasha, so the island stops showing it as under construction.
+    pub async fn mark_trials_failed(&self, document_id: Uuid) -> Result<(), sqlx::Error> {
+        sqlx::query(
+            "UPDATE documents SET trials_status = 'failed', updated_at = now() WHERE id = $1",
+        )
+        .bind(document_id)
         .execute(&self.pool)
         .await?;
         Ok(())

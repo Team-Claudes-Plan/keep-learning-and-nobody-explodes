@@ -12,6 +12,8 @@ type UploadState =
 type UploadDialogProps = {
   island: Island
   onClose: () => void
+  /** Files were stored; they are processed into houses in the background. */
+  onUploaded?: (result: UploadResponse) => void
 }
 
 // Pixel-art document with an up arrow. # outline, w paper, f folded corner, a arrow.
@@ -81,7 +83,7 @@ function formatSize(bytes: number): string {
 const fileKey = (file: File) => `${file.name}:${file.size}:${file.lastModified}`
 
 /** Lets the user add course documents to an island by dropping or picking files. */
-export default function UploadDialog({ island, onClose }: UploadDialogProps) {
+export default function UploadDialog({ island, onClose, onUploaded }: UploadDialogProps) {
   const titleId = useId()
   const inputRef = useRef<HTMLInputElement>(null)
   const abortRef = useRef<AbortController | null>(null)
@@ -135,6 +137,7 @@ export default function UploadDialog({ island, onClose }: UploadDialogProps) {
         onProgress: (progress) => setState({ status: 'uploading', progress }),
       })
       setState({ status: 'done', result })
+      if (result.objects.length > 0) onUploaded?.(result)
       // Keep only what failed so it can be retried.
       const failed = new Set(result.failures.map((failure) => failure.filename))
       setFiles((current) => current.filter((file) => failed.has(file.name)))
@@ -228,7 +231,8 @@ export default function UploadDialog({ island, onClose }: UploadDialogProps) {
           <div className={`upload-message ${state.result.failures.length ? 'is-bad' : 'is-good'}`}>
             {state.result.objects.length > 0 && (
               <div>
-                Uploaded {state.result.objects.length} {state.result.objects.length === 1 ? 'file' : 'files'}.
+                Uploaded {state.result.objects.length} {state.result.objects.length === 1 ? 'file' : 'files'}. The
+                new houses are being built; the island reloads once they are ready.
               </div>
             )}
             {state.result.failures.map((failure, index) => (

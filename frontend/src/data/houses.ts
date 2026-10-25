@@ -14,8 +14,8 @@ export type Storey = {
   concept?: string
   parts?: Partial<HouseParts>
   room: Room
-  /** On an island: the skill this storey teaches, and whether every member passed it. */
-  skill?: { id: string; passed: boolean; tasks: number }
+  /** On an island: the skill this storey teaches, whether every member passed it, and whether it can be played yet. */
+  skill?: { id: string; passed: boolean; unlocked: boolean; tasks: number }
 }
 
 /** A house design (e.g. Mathematics). The same design can stand on several islands at different levels. */
@@ -29,7 +29,7 @@ export type House = {
   kit?: HouseKitId
   parts?: Partial<HouseParts>
   footprint: [number, number]
-  /** The design's own storeys; on an island the house gets one storey per unlocked skill. */
+  /** The design's own storeys; on an island the house gets one storey per skill. */
   storeys: Storey[]
 }
 

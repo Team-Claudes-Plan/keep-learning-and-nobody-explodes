@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link } from 'react-router'
 import type { UserSummary } from '../../api/types'
 import type { InviteFlow } from '../../game/useInviteFlow'
+import { MockReadyCheck, SessionReadyCheck } from './ReadyCheck'
 
 type SessionStartProps = {
   storeyLabel: string
@@ -12,6 +13,8 @@ type SessionStartProps = {
   onStart: () => void
   onCancel: () => void
   onClose: () => void
+  /** Without a backend: both are ready, start the game. */
+  onMockStart: () => void
   /** The room's bomb to practise alone; only without a backend, where nothing is recorded. */
   soloPath?: string
 }
@@ -26,9 +29,11 @@ export default function SessionStart({
   onStart,
   onCancel,
   onClose,
+  onMockStart,
   soloPath,
 }: SessionStartProps) {
   const sent = useFlash(flow.step === 'waiting')
+  const busy = flow.step === 'waiting' || flow.step === 'ready'
 
   return (
     <>
@@ -44,7 +49,7 @@ export default function SessionStart({
             <div className="session-start-storey">{storeyLabel}</div>
             <div className="session-start-concept">{conceptLabel}</div>
           </div>
-          {flow.step !== 'waiting' && (
+          {!busy && (
             <button className="session-start-close" onClick={onClose} aria-label="Schließen">
               ✕
             </button>
@@ -76,9 +81,23 @@ export default function SessionStart({
               </span>
             </p>
             <small>
-              Sobald {flow.partner.name} annimmt, geht es los: du fängst mit der Bombe an, {flow.partner.name} mit dem
-              Handbuch. Danach wechselt ihr euch jede Runde ab.
+              Sobald {flow.partner.name} annimmt, geht es los: du hast die Bombe, {flow.partner.name} das Handbuch –
+              für alle Module.
             </small>
+            <button className="session-chunky is-grey" onClick={onCancel}>
+              Abbrechen
+            </button>
+          </div>
+        ) : flow.step === 'ready' ? (
+          <div className="session-waiting">
+            <p>
+              <strong>{flow.partner.name}</strong> ist dabei!
+            </p>
+            {flow.client ? (
+              <SessionReadyCheck client={flow.client} partnerName={flow.partner.name} />
+            ) : (
+              <MockReadyCheck partnerName={flow.partner.name} onStart={onMockStart} />
+            )}
             <button className="session-chunky is-grey" onClick={onCancel}>
               Abbrechen
             </button>
@@ -101,7 +120,7 @@ export default function SessionStart({
           </>
         )}
 
-        {flow.step !== 'waiting' && soloPath && (
+        {!busy && soloPath && (
           <Link className="session-solo" to={soloPath}>
             Allein üben →
           </Link>

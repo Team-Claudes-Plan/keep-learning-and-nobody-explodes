@@ -78,6 +78,18 @@ impl Database {
     /// differ in case from existing ones are reused. New skills are appended
     /// to the skill tree in the order given (`skills.position` is filled by a
     /// trigger).
+    /// Records that no houses come from `document_id`, so the island stops
+    /// showing it as under construction.
+    pub async fn mark_trials_failed(&self, document_id: Uuid) -> Result<(), sqlx::Error> {
+        sqlx::query(
+            "UPDATE documents SET trials_status = 'failed', updated_at = now() WHERE id = $1",
+        )
+        .bind(document_id)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
     pub async fn store_questions(
         &self,
         document_id: Uuid,
@@ -162,6 +174,14 @@ impl Database {
                 }
             }
         }
+
+        // the backend's trigger on `documents` tells the island's members
+        sqlx::query(
+            "UPDATE documents SET trials_status = 'completed', updated_at = now() WHERE id = $1",
+        )
+        .bind(document_id)
+        .execute(&mut *transaction)
+        .await?;
 
         transaction.commit().await?;
 
@@ -495,6 +515,15 @@ mod tests {
             .store_questions(document_id, island, &topics)
             .await
             .expect("store questions");
+
+        let trials_status = |pool| async move {
+            sqlx::query_scalar::<_, String>("SELECT trials_status FROM documents WHERE id = $1")
+                .bind(document_id)
+                .fetch_one(pool)
+                .await
+                .expect("trials status")
+        };
+        assert_eq!(trials_status(pool).await, "completed");
 
         assert_eq!(
             database.topic_skills(island).await.expect("topic skills"),

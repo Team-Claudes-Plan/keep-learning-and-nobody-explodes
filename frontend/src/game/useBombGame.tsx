@@ -10,6 +10,8 @@ import type { ModuleDef } from './modules/types'
 import { planBomb, planForType, playableTypes, type PlannedModule } from './plan'
 import { initialValue, isComplete, submitsImmediately, type AnyValue } from './primitives'
 
+/** How long a solved module stays open (green LED, "Richtig") before the view zooms out. */
+const SOLVED_ZOOM_OUT_MS = 1100
 const BOMB_SIZE = 5
 const BOMB_SECONDS = 300
 const MAX_STRIKES = 3
@@ -140,8 +142,9 @@ export function useBombGame({
       const result = await submitAnswer(submission)
       const status: SlotStatus =
         result.correct === true ? 'solved' : result.correct === false ? 'failed' : 'submitted'
-      // Stay on this module so the player sees the result.
+      // Stay on this module so the player sees the result; once it is right, zoom back out to the bomb.
       updateSlot(index, { status, submission, result })
+      if (status === 'solved') setTimeout(() => setExpanded((open) => (open === index ? null : open)), SOLVED_ZOOM_OUT_MS)
     } catch (err) {
       updateSlot(index, { status: 'active', error: errorMessage(err) })
     }

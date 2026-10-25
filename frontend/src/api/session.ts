@@ -40,7 +40,7 @@ export type SessionState = {
   playerId: string | null
   /** The game as last seen: a snapshot with every later event applied. */
   game: GameView | null
-  /** What the own role gets to see this turn. */
+  /** What the own role gets to see: the whole bomb or the whole manual. */
   briefing: Briefing | null
   /** The latest judged answer, for feedback. */
   lastAnswer: AnswerEvent | null
@@ -114,7 +114,7 @@ function applyEvent(game: GameView, event: GameEvent, sequence: number): GameVie
         topics: event.topics,
         skill_id: event.skill_id ?? null,
         invited: event.invited ?? null,
-        players: [{ player_id: event.created_by, seat: 0, online: true }],
+        players: [{ player_id: event.created_by, seat: 0, online: true, ready: false }],
         parts: event.parts.map((part) => ({ position: part.position, question_type: part.question_type, result: null })),
       }
     case 'player_joined':
@@ -122,13 +122,25 @@ function applyEvent(game: GameView, event: GameEvent, sequence: number): GameVie
         ...next,
         players: [
           ...game.players.filter((player) => player.player_id !== event.player_id),
-          { player_id: event.player_id, seat: event.seat, online: true },
+          { player_id: event.player_id, seat: event.seat, online: true, ready: false },
         ].sort((a, b) => a.seat - b.seat),
       }
+    case 'roles_assigned':
+      return { ...next, status: 'ready', defuser: event.defuser, expert: event.expert }
+    case 'player_ready':
+      return {
+        ...next,
+        players: game.players.map((player) => (player.player_id === event.player_id ? { ...player, ready: true } : player)),
+      }
     case 'game_started':
-      return { ...next, status: 'active', deadline: event.deadline }
+      return {
+        ...next,
+        status: 'active',
+        deadline: event.deadline,
+        players: game.players.map((player) => ({ ...player, ready: true })),
+      }
     case 'turn_started':
-      return { ...next, turn: event.turn, defuser: event.defuser, expert: event.expert }
+      return { ...next, defuser: event.defuser, expert: event.expert }
     case 'answer_submitted':
       return {
         ...next,
@@ -198,6 +210,11 @@ export class SessionClient {
 
   submitAnswer(turn: number, answer: SessionAnswer): boolean {
     return this.send({ type: 'submit_answer', turn, answer })
+  }
+
+  /** Ready to play; the game starts once both players are. */
+  ready(): boolean {
+    return this.send({ type: 'ready' })
   }
 
   forfeit(): boolean {
@@ -319,14 +336,11 @@ export class SessionClient {
       }
       case 'snapshot': {
         this.enter()
-        const { briefing } = this.state
         const game = message.state
         this.update({
           game,
           gameId: game.game_id,
           playerId: this.state.playerId ?? storedCredentials(game.game_id)?.playerId ?? currentUserId() ?? null,
-          // a briefing of an earlier turn no longer applies
-          briefing: briefing && briefing.turn === game.turn ? briefing : null,
         })
         return
       }
@@ -337,7 +351,6 @@ export class SessionClient {
         if (!game || (game.last_sequence !== null && message.sequence <= game.last_sequence)) return
         const { event } = message
         const patch: Partial<SessionState> = { game: applyEvent(game, event, message.sequence) }
-        if (event.type === 'turn_started' && this.state.briefing?.turn !== event.turn) patch.briefing = null
         if (event.type === 'answer_submitted') patch.lastAnswer = event
         this.update(patch)
         return

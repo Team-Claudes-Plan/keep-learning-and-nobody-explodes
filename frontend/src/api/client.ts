@@ -24,6 +24,9 @@ const API_URL: string | undefined = import.meta.env.VITE_API_URL
 /** Whether the app talks to a real backend rather than the mocks. */
 export const USES_BACKEND = Boolean(API_URL)
 
+/** Shows dev-only tools (storey preview, new island, your id) when VITE_DEV_TOOLS=true. */
+export const DEV_TOOLS = import.meta.env.VITE_DEV_TOOLS === 'true'
+
 const USER_KEY = 'userId'
 
 // There is no login yet: the backend trusts the user id it is sent (`X-User-Id`). The id comes from
@@ -239,6 +242,9 @@ function uploadErrorMessage(xhr: XMLHttpRequest): string {
   return `Upload failed: ${xhr.status}`
 }
 
+/** Fired by the mock upload with the island id, so the mock user channel can report it processed. */
+export const MOCK_UPLOAD_EVENT = 'mock-upload'
+
 async function mockUploadDocuments(
   islandId: string,
   files: File[],
@@ -249,6 +255,7 @@ async function mockUploadDocuments(
     if (signal?.aborted) throw new DOMException('Upload cancelled', 'AbortError')
     onProgress?.(step / 10)
   }
+  window.dispatchEvent(new CustomEvent(MOCK_UPLOAD_EVENT, { detail: islandId }))
   return {
     island_id: islandId,
     objects: files.map((file) => ({

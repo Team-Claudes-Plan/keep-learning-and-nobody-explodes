@@ -1,5 +1,5 @@
 import type { Question, QuestionType } from '../api/types'
-import { tasksFor, type Task } from './adapters'
+import { shuffleTask, tasksFor, type Task } from './adapters'
 import type { ModuleDef } from './modules/types'
 
 export type PlannedModule = {
@@ -48,7 +48,8 @@ export function planBomb(
       modules.filter((m) => m.supports(task.primitive, question.type)).map((module) => ({ task, module })),
     )
     if (options.length === 0) continue
-    plan.push({ question, ...options[Math.floor(random() * options.length)] })
+    const picked = options[Math.floor(random() * options.length)]
+    plan.push({ question, module: picked.module, task: shuffleTask(picked.task, random) })
   }
   return plan
 }
@@ -75,7 +76,7 @@ export function planForType(
         const question = ofType[(plan.length + k) % ofType.length]
         const task = tasksFor(question)[variant]
         if (task && module.supports(task.primitive, question.type)) {
-          plan.push({ question, task, module })
+          plan.push({ question, task: shuffleTask(task, random), module })
           break
         }
       }

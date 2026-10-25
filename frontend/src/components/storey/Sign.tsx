@@ -28,10 +28,13 @@ function random(seed: number) {
   }
 }
 
-/** Transparent overlay: wood grain, a carved border and carved lettering. */
-function makeCarvingTexture(label: string): CanvasTexture {
+/**
+ * Transparent overlay: wood grain, a carved border and carved lettering. Drawn at the sign's
+ * real width-to-height ratio so the lettering isn't stretched when the plank is.
+ */
+function makeCarvingTexture(label: string, aspect: number): CanvasTexture {
   const width = 1024
-  const height = Math.round((width * MODEL_H) / MODEL_W)
+  const height = Math.round(width / aspect)
   const canvas = document.createElement('canvas')
   canvas.width = width
   canvas.height = height
@@ -88,22 +91,38 @@ function makeCarvingTexture(label: string): CanvasTexture {
       context.stroke()
     }, 5)
 
-    // Lettering, shrunk to fit between the nails
+    // Lettering between the nails: one line, shrunk to fit; if it is still too long, two lines.
     const maxWidth = width * (1 - (4 * NAIL_INSET) / MODEL_W) - 40
-    let size = 150
     const font = (px: number) => `bold ${px}px Georgia, "Times New Roman", serif`
+    const measure = (text: string) => context.measureText(text).width
+    const fits = (lines: string[]) => lines.every((line) => measure(line) <= maxWidth)
+    const ellipsize = (text: string) => {
+      while (measure(text) > maxWidth && text.length > 1) text = `${text.slice(0, -2)}…`
+      return text
+    }
+
+    let size = 150
     context.font = font(size)
-    let text = label
-    while (context.measureText(text).width > maxWidth && size > 70) {
-      size -= 4
+    while (!fits([label]) && size > 70) context.font = font((size -= 4))
+    let lines = [label]
+
+    // Split at the space that gives the most even lines.
+    const spaces = [...label.matchAll(/ /g)].map((match) => match.index)
+    if (!fits(lines) && spaces.length > 0) {
+      const splits = spaces.map((at) => [label.slice(0, at), label.slice(at + 1)])
+      const widest = (pair: string[]) => Math.max(...pair.map(measure))
+      lines = splits.reduce((best, pair) => (widest(pair) < widest(best) ? pair : best))
+      size = Math.floor((height - 2 * inset - 30) / 2.1)
       context.font = font(size)
+      while (!fits(lines) && size > 48) context.font = font((size -= 4))
     }
-    while (context.measureText(text).width > maxWidth && text.length > 1) {
-      text = `${text.slice(0, -2)}…`
-    }
+    lines = lines.map(ellipsize)
+
     context.textAlign = 'center'
     context.textBaseline = 'middle'
-    carve(() => context.fillText(text, width / 2, height / 2 + size * 0.06), 1)
+    const lineHeight = size * 1.05
+    const top = height / 2 - ((lines.length - 1) * lineHeight) / 2 + size * 0.06
+    carve(() => lines.forEach((line, i) => context.fillText(line, width / 2, top + i * lineHeight)), 1)
   }
 
   const texture = new CanvasTexture(canvas)
@@ -115,7 +134,8 @@ function makeCarvingTexture(label: string): CanvasTexture {
 
 function SignModel({ label, width, height, glow }: SignProps) {
   const { scene } = useGLTF(SIGN_URL)
-  const texture = useMemo(() => makeCarvingTexture(label), [label])
+  const aspect = width / height
+  const texture = useMemo(() => makeCarvingTexture(label, aspect), [label, aspect])
 
   const { model, materials } = useMemo(() => {
     const model = scene.clone(true)

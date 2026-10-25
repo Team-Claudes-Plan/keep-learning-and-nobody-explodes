@@ -4,8 +4,10 @@
 //! Tasks the players have not solved yet come first, the ones they failed
 //! before the ones they never saw. Solved tasks come back once they rest for
 //! [`REPEAT_DELAY`], the longest resting first, and fill up the bomb when the
-//! skill runs out of fresh tasks. If the skill has fewer tasks than the bomb
-//! has modules, the order repeats.
+//! skill runs out of fresh tasks. Every task is on the bomb at most once: the
+//! players see all modules and the whole manual at the same time, so a repeat
+//! would just be the same question twice. A skill with fewer tasks than the
+//! bomb has modules makes a smaller bomb.
 
 use chrono::{DateTime, TimeDelta, Utc};
 
@@ -32,7 +34,8 @@ fn tier(candidate: &TaskCandidate, now: DateTime<Utc>) -> Tier {
     }
 }
 
-/// Picks `count` tasks out of `candidates`; empty only without candidates.
+/// Picks up to `count` different tasks out of `candidates`; empty only
+/// without candidates.
 /// `random(n)` returns a number below `n` and shuffles tasks of equal rank.
 pub fn pick(
     mut candidates: Vec<TaskCandidate>,
@@ -53,10 +56,9 @@ pub fn pick(
         (tier, rest)
     });
     candidates
-        .iter()
-        .cycle()
-        .take(if candidates.is_empty() { 0 } else { count })
-        .map(|candidate| candidate.task.clone())
+        .into_iter()
+        .take(count)
+        .map(|candidate| candidate.task)
         .collect()
 }
 
@@ -124,12 +126,9 @@ mod tests {
     }
 
     #[test]
-    fn repeats_tasks_when_the_skill_has_too_few() {
+    fn never_repeats_a_task() {
         let candidates = vec![candidate(1, None, None), candidate(2, None, None)];
-        assert_eq!(
-            ids(&pick(candidates, 5, now(), no_shuffle)),
-            [1, 2, 1, 2, 1]
-        );
+        assert_eq!(ids(&pick(candidates, 5, now(), no_shuffle)), [1, 2]);
     }
 
     #[test]

@@ -1,15 +1,15 @@
-import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
-import { createPortal } from 'react-dom'
-import { PageFlip } from 'page-flip'
-import type { Briefed } from '../game/briefing'
+import { useCallback, useEffect, useState, type PointerEvent, type ReactNode, type TransitionEvent } from 'react'
+import type { Manual } from '../game/briefing'
 import GlyphIcon from '../game/GlyphIcon'
 import { seededRandom, type Random } from '../game/plan'
 
 type Props = {
+  /** One entry per module of the bomb. */
+  manuals: Manual[]
+  /** Shuffles the pages; printed on the cover as the code when there is a `typeLabel`. */
   seed: number
   /** "Zufällige Bombe" or "Üben: …", printed on the cover and checked against the bomb. */
-  typeLabel: string
-  plan: Briefed[]
+  typeLabel?: string
 }
 
 function shuffled<T>(items: T[], random: Random): T[] {
@@ -21,88 +21,123 @@ function shuffled<T>(items: T[], random: Random): T[] {
   return copy
 }
 
-/** Pages of the spread, each the size of an A5-ish sheet (StPageFlip stretches them to the space). */
-const PAGE_WIDTH = 520
-const PAGE_HEIGHT = 730
+/**
+ * One physical sheet. `front` faces right before it is turned, `back` faces left after. The two
+ * covers are their own stiff, one-sided board: `back`/`front` is null where there is nothing
+ * printed (the pastedown inside the cover).
+ */
+type Leaf = { front: ReactNode; back: ReactNode | null; hard?: boolean }
+
+/** A turn in progress: grabbed and dragged, or sent all the way by a click, a button or ← →. */
+type Flip = {
+  index: number
+  dir: 1 | -1
+  /** Current hinge rotation in degrees: 0 at rest, ∓180 once fully turned. */
+  angle: number
+  /** Still following the pointer; no transition, so it tracks the finger exactly. */
+  dragging: boolean
+  /** Decided once released (or immediately for a button/key turn): finish the turn, or spring back. */
+  committed: boolean
+  /** Where the grab started and how wide a leaf is, to turn the drag into a fraction turned. */
+  startX: number
+  width: number
+}
+
+const targetAngle = (f: Flip) => (f.committed ? (f.dir === 1 ? -180 : 180) : 0)
+
+/** Below this, a press counts as a click (flips fully) rather than a drag that can be let go of. */
+const CLICK_SLOP = 6
 
 /**
- * The expert's manual as an open book on a velvet table: a leather cover, one page per module (in
- * shuffled order), two pages side by side. Grab a page at its edge or corner and pull it across:
- * it bends and curls like real paper (StPageFlip). A click, the buttons or ← → turn it too.
+ * The expert's manual as a book lying open on a velvet table, built from flat divs and CSS 3D
+ * transforms (no page-flip library, which can only curl from its two top/bottom corners): grab a
+ * leaf anywhere along its edge and it turns from exactly that hinge, following the pointer like a
+ * real sheet of paper would; let go past the middle to finish the turn, short of it to drop it back.
+ * A plain click, the buttons or ← → send a leaf all the way over without having to drag it.
  */
-export default function ManualBook({ seed, typeLabel, plan }: Props) {
-  const users = plan.flatMap((entry) =>
-    entry.manual.user ? [{ user: entry.manual.user, prompt: entry.manual.prompt ?? '' }] : [],
-  )
-  const others = plan.filter((entry) => !entry.manual.user)
-  // In reading order. Cover and back cover are hard (they turn stiff), the rest is paper.
-  const faces: { node: ReactNode; kind: 'cover' | 'paper' }[] = [
-    { node: <Cover seed={seed} typeLabel={typeLabel} modules={plan.length} />, kind: 'cover' },
-    { node: <HowTo seed={seed} typeLabel={typeLabel} />, kind: 'paper' },
-    // one page listing every terminal user with their question
-    ...(users.length > 0 ? [{ node: <UsersPage users={users} page={2} />, kind: 'paper' as const }] : []),
-    // shuffled (the same for a code), so the page order says nothing about the bomb
-    ...shuffled(others, seededRandom(seed * 7 + 3)).map((entry, i) => ({
-      node: <ModulePage entry={entry} page={i + 2 + (users.length > 0 ? 1 : 0)} />,
-      kind: 'paper' as const,
-    })),
+export default function ManualBook({ manuals, seed, typeLabel }: Props) {
+  const users = manuals.flatMap((manual) => (manual.user ? [{ user: manual.user, prompt: manual.prompt ?? '' }] : []))
+  const others = manuals.filter((manual) => !manual.user)
+  const firstModule = users.length > 0 ? 2 : 1
+  const modulePages = shuffled(others, seededRandom(seed * 7 + 3))
+
+  // In reading order. Shuffled (the same for a code), so the page order says nothing about the bomb.
+  const interior: ReactNode[] = [
+    <HowTo key="howto" seed={seed} typeLabel={typeLabel} page={1} />,
+    ...(users.length > 0 ? [<UsersPage key="users" users={users} page={2} />] : []),
+    ...modulePages.map((manual, i) => (
+      <ModulePage key={i} manual={manual} page={i + firstModule + 1} seed={seed * 13 + i} />
+    )),
   ]
-  // the back cover must land on its own, as the last (even-numbered) page
-  if (faces.length % 2 === 0) faces.push({ node: <article className="book-paper" />, kind: 'paper' })
-  faces.push({ node: <BackCover />, kind: 'cover' })
-  const count = faces.length
+  // leaves pair two interior pages front-to-back, so there must be an even number of them
+  if (interior.length % 2 === 1) interior.push(<BlankPage key="filler" />)
 
-  // StPageFlip moves the page elements around itself, so they are made here once and React only
-  // renders the page contents into them (portals).
-  const [sheets] = useState(() =>
-    faces.map(({ kind }) => {
-      const sheet = document.createElement('div')
-      sheet.className = `book-face is-${kind}`
-      if (kind === 'cover') sheet.dataset.density = 'hard'
-      return sheet
-    }),
-  )
-  const host = useRef<HTMLDivElement>(null)
-  const flip = useRef<PageFlip | null>(null)
-  const [page, setPage] = useState(0)
+  const leaves: Leaf[] = [
+    { front: <Cover seed={seed} typeLabel={typeLabel} modules={manuals.length} />, back: null, hard: true },
+    ...Array.from({ length: interior.length / 2 }, (_, i) => ({ front: interior[2 * i], back: interior[2 * i + 1] })),
+    { front: null, back: <BackCover />, hard: true },
+  ]
+  const total = leaves.length
 
+  /** How many leaves have been turned from the right stack onto the left one. */
+  const [turned, setTurned] = useState(0)
+  const [flip, setFlip] = useState<Flip | null>(null)
+
+  // once a flip is sitting at an angle other than where it should end up, move it there a frame
+  // later (so the browser actually animates the change instead of starting there outright); a drag
+  // release re-enters this the same way, just starting from wherever the pointer left it
   useEffect(() => {
-    if (!host.current) return
-    // StPageFlip removes its root element on destroy, so it gets a fresh one each time
-    const root = document.createElement('div')
-    root.className = 'book-host'
-    host.current.appendChild(root)
-    const book = new PageFlip(root, {
-      width: PAGE_WIDTH,
-      height: PAGE_HEIGHT,
-      size: 'stretch',
-      minWidth: 140,
-      maxWidth: 1000,
-      minHeight: 200,
-      maxHeight: 1400,
-      showCover: true,
-      usePortrait: true,
-      drawShadow: true,
-      maxShadowOpacity: 0.35,
-      flippingTime: 900,
-      mobileScrollSupport: false,
-      // corners only bend once a page is grabbed, not on hover
-      showPageCorners: false,
-      swipeDistance: 20,
-    })
-    book.loadFromHTML(sheets)
-    book.on('flip', (e) => setPage(e.data))
-    flip.current = book
-    return () => {
-      flip.current = null
-      book.destroy()
-    }
-  }, [sheets])
+    if (!flip || flip.dragging || flip.angle === targetAngle(flip)) return
+    const id = requestAnimationFrame(() => setFlip((f) => f && { ...f, angle: targetAngle(f) }))
+    return () => cancelAnimationFrame(id)
+  }, [flip])
 
-  const turn = useCallback((dir: 1 | -1) => {
-    if (dir === 1) flip.current?.flipNext()
-    else flip.current?.flipPrev()
-  }, [])
+  const turn = useCallback(
+    (dir: 1 | -1) => {
+      if (flip) return
+      if (dir === 1 ? turned >= total : turned <= 0) return
+      setFlip({ index: dir === 1 ? turned : turned - 1, dir, angle: 0, dragging: false, committed: true, startX: 0, width: 0 })
+    },
+    [flip, turned, total],
+  )
+
+  const grab = (dir: 1 | -1) => (e: PointerEvent<HTMLDivElement>) => {
+    if (flip) return
+    if (dir === 1 ? turned >= total : turned <= 0) return
+    e.currentTarget.setPointerCapture(e.pointerId)
+    setFlip({
+      index: dir === 1 ? turned : turned - 1,
+      dir,
+      angle: 0,
+      dragging: true,
+      committed: false,
+      startX: e.clientX,
+      width: e.currentTarget.getBoundingClientRect().width,
+    })
+  }
+
+  const drag = (e: PointerEvent<HTMLDivElement>) => {
+    if (!flip?.dragging) return
+    const dx = e.clientX - flip.startX
+    const progress = Math.max(0, Math.min(1, (flip.dir === 1 ? -dx : dx) / flip.width))
+    setFlip((f) => f && { ...f, angle: (f.dir === 1 ? -180 : 180) * progress })
+  }
+
+  const release = (e: PointerEvent<HTMLDivElement>) => {
+    if (!flip?.dragging) return
+    const moved = Math.abs(e.clientX - flip.startX) > CLICK_SLOP
+    const progress = Math.abs(flip.angle) / 180
+    const committed = !moved || progress >= 0.5
+    const final = committed ? (flip.dir === 1 ? -180 : 180) : 0
+    // already sitting exactly at the resting angle (dragged all the way before letting go): nothing
+    // left to animate, so settle right away instead of waiting for a transition that never fires
+    if (flip.angle === final) {
+      if (committed) setTurned((t) => t + flip.dir)
+      setFlip(null)
+    } else {
+      setFlip((f) => f && { ...f, dragging: false, committed })
+    }
+  }
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -113,9 +148,18 @@ export default function ManualBook({ seed, typeLabel, plan }: Props) {
     return () => window.removeEventListener('keydown', onKey)
   }, [turn])
 
-  const last = count - 1
-  const label =
-    page === 0 ? 'Cover' : page >= last ? 'Rückseite' : page <= 2 ? 'Anleitung · Seite 2' : `Seite ${page} – ${page + 1}`
+  const settle = (e: TransitionEvent) => {
+    if (e.propertyName !== 'transform' || !flip) return
+    if (flip.committed) setTurned((t) => t + flip.dir)
+    setFlip(null)
+  }
+
+  // the static spread underneath the turning leaf: unaffected side keeps showing what it already
+  // had, the other side reveals the leaf now on top of its stack
+  const rightLeaf = flip?.dir === 1 ? leaves[flip.index + 1] : leaves[turned]
+  const leftLeaf = flip?.dir === -1 ? leaves[flip.index - 1] : leaves[turned - 1]
+
+  const last = total
 
   return (
     <div className="book-screen">
@@ -129,26 +173,61 @@ export default function ManualBook({ seed, typeLabel, plan }: Props) {
             <span className="book-table-gem is-bl" />
             <span className="book-table-gem is-br" />
           </div>
-          {/* closed, the book sits in the middle: the cover is the right half of the spread */}
-          <div className={`book-spread ${page === 0 ? 'is-closed-front' : page >= last ? 'is-closed-back' : ''}`}>
-            <div ref={host} />
+          <div className="book-spread">
+            <div className="book-slot is-left" onPointerDown={grab(-1)} onPointerMove={drag} onPointerUp={release} onPointerCancel={release}>
+              {leftLeaf === undefined ? null : leftLeaf.back ?? <BlankPage />}
+            </div>
+            <div className="book-slot is-right" onPointerDown={grab(1)} onPointerMove={drag} onPointerUp={release} onPointerCancel={release}>
+              {rightLeaf === undefined ? null : rightLeaf.front ?? <BlankPage />}
+            </div>
+            {flip && <TurningLeaf leaf={leaves[flip.index]} dir={flip.dir} angle={flip.angle} dragging={flip.dragging} hard={leaves[flip.index].hard} onSettled={settle} />}
           </div>
         </div>
       </div>
-      {sheets.map((sheet, i) => createPortal(faces[i].node, sheet, `face-${i}`))}
 
       <nav className="book-nav">
-        <button className="mg-button" onClick={() => turn(-1)} disabled={page === 0}>
+        <button className="mg-button" onClick={() => turn(-1)} disabled={turned === 0 || flip !== null}>
           ◀ Zurück
         </button>
-        <span>{label}</span>
-        <button className="mg-button" onClick={() => turn(1)} disabled={page >= last}>
+        <button className="mg-button" onClick={() => turn(1)} disabled={turned === last || flip !== null}>
           Weiter ▶
         </button>
       </nav>
-      <p className="book-help">Seite an Ecke oder Rand greifen und rüberziehen · klicken · ← →</p>
+      <p className="book-help">Seite am Rand greifen und rüberziehen · klicken · ← →</p>
     </div>
   )
+}
+
+/** The leaf mid-turn: a hinge at the spine, front facing one way, back the other. */
+function TurningLeaf({
+  leaf,
+  dir,
+  angle,
+  dragging,
+  hard,
+  onSettled,
+}: {
+  leaf: Leaf
+  dir: 1 | -1
+  angle: number
+  dragging: boolean
+  hard?: boolean
+  onSettled: (e: TransitionEvent) => void
+}) {
+  return (
+    <div
+      className={`book-leaf-turn is-${dir === 1 ? 'right' : 'left'} ${hard ? 'is-hard' : ''} ${dragging ? 'is-dragging' : ''}`}
+      style={{ transform: `rotateY(${angle}deg)` }}
+      onTransitionEnd={onSettled}
+    >
+      <div className="book-leaf-face is-front">{leaf.front ?? <BlankPage />}</div>
+      <div className="book-leaf-face is-back">{leaf.back ?? <BlankPage />}</div>
+    </div>
+  )
+}
+
+function BlankPage() {
+  return <article className="book-paper" aria-hidden />
 }
 
 /** Enchanting-table runes (Standard Galactic Alphabet look) drifting towards the book. */
@@ -174,17 +253,21 @@ function EnchantRunes() {
   )
 }
 
-function Cover({ seed, typeLabel, modules }: { seed: number; typeLabel: string; modules: number }) {
+function Cover({ seed, typeLabel, modules }: { seed: number; typeLabel?: string; modules: number }) {
   return (
     <div className="book-cover">
       <div className="book-cover-frame">
         <span className="book-cover-stamp">STRENG GEHEIM</span>
         <h1>Handbuch zur Bomben&shy;entschärfung</h1>
         <dl className="book-cover-facts">
-          <dt>Code</dt>
-          <dd>{seed}</dd>
-          <dt>Auswahl</dt>
-          <dd>{typeLabel}</dd>
+          {typeLabel && (
+            <>
+              <dt>Code</dt>
+              <dd>{seed}</dd>
+              <dt>Auswahl</dt>
+              <dd>{typeLabel}</dd>
+            </>
+          )}
           <dt>Module</dt>
           <dd>{modules}</dd>
         </dl>
@@ -194,15 +277,17 @@ function Cover({ seed, typeLabel, modules }: { seed: number; typeLabel: string; 
   )
 }
 
-function HowTo({ seed, typeLabel }: { seed: number; typeLabel: string }) {
+function HowTo({ seed, typeLabel, page }: { seed: number; typeLabel?: string; page: number }) {
   return (
     <article className="book-paper">
       <h2>So arbeitest du mit diesem Handbuch</h2>
       <ol>
-        <li>
-          Vergleicht zuerst: Auf der Bombe steht oben links <strong>Code {seed}</strong> und <strong>{typeLabel}</strong>.
-          Stimmt etwas nicht, habt ihr verschiedene Bomben.
-        </li>
+        {typeLabel && (
+          <li>
+            Vergleicht zuerst: Auf der Bombe steht oben links <strong>Code {seed}</strong> und <strong>{typeLabel}</strong>.
+            Stimmt etwas nicht, habt ihr verschiedene Bomben.
+          </li>
+        )}
         <li>
           Jede Seite beschreibt ein Modul der Bombe. Welches gemeint ist, müsst ihr selbst herausfinden: Lass dir
           beschreiben, wie das Modul aussieht und was darauf steht.
@@ -212,13 +297,17 @@ function HowTo({ seed, typeLabel }: { seed: number; typeLabel: string }) {
           beschreiben und sag, was zu tun ist.
         </li>
       </ol>
-      <p className="book-folio">– 1 –</p>
+      <p className="book-folio">– {page} –</p>
     </article>
   )
 }
 
-function ModulePage({ entry, page }: { entry: Briefed; page: number }) {
-  const { manual } = entry
+/** One module's page. It never says which module it is for or what kind of module it is. */
+function ModulePage({ manual, page, seed }: { manual: Manual; page: number; seed: number }) {
+  // symbols in their own random order, not the bomb's, so you have to talk it through; the
+  // statements keep their order, "Aussage n" on the bomb is statement n here
+  const statements = manual.statements?.map((text, i) => ({ text, n: i + 1 }))
+  const glyphs = manual.glyphs && shuffled(manual.glyphs, seededRandom(seed))
   return (
     <article className="book-paper">
       {manual.prompt && (
@@ -228,25 +317,25 @@ function ModulePage({ entry, page }: { entry: Briefed; page: number }) {
         </section>
       )}
 
-      {manual.statements && (
+      {statements && (
         <section>
           <h3>Die Aussagen</h3>
-          <ol className="book-statements">
-            {manual.statements.map((statement, i) => (
-              <li key={i}>
-                <strong>Aussage {i + 1}:</strong> {statement}
+          <ul className="book-statements">
+            {statements.map(({ text, n }) => (
+              <li key={n}>
+                <strong>Aussage {n}:</strong> {text}
               </li>
             ))}
-          </ol>
+          </ul>
         </section>
       )}
 
-      {manual.glyphs && (
+      {glyphs && (
         <section>
           <h3>Bedeutung der Symbole</h3>
           <ul className="book-glyphs">
-            {manual.glyphs.map(({ glyph, text }) => (
-              <li key={glyph}>
+            {glyphs.map(({ glyph, text }) => (
+              <li key={glyph} data-glyph={glyph}>
                 <GlyphIcon index={glyph} size={34} stroke={5} />
                 <span>{text}</span>
               </li>

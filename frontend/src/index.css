@@ -1978,6 +1978,48 @@ canvas {
   100% { background: rgba(255, 80, 20, 0); }
 }
 
+/* The expert's side of the explosion: fireball and sparks over the book, soot left behind */
+.blast-overlay {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+}
+
+.blast-overlay-fire {
+  position: absolute !important;
+  inset: 0;
+}
+
+.blast-overlay-soot {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(ellipse at 50% 50%, rgba(20, 8, 2, 0.15) 0%, rgba(10, 4, 0, 0.6) 75%);
+  animation: blast-soot 1.2s ease-out forwards;
+}
+
+@keyframes blast-soot {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.bomb-screen.is-blasted .book-stage {
+  animation: book-shake 0.7s cubic-bezier(0.36, 0.07, 0.19, 0.97);
+}
+
+@keyframes book-shake {
+  0%, 100% { transform: translate(0, 0) rotate(0); }
+  10% { transform: translate(-18px, 10px) rotate(-1.5deg); }
+  25% { transform: translate(16px, -12px) rotate(1.2deg); }
+  40% { transform: translate(-12px, 8px) rotate(-0.8deg); }
+  55% { transform: translate(9px, -5px) rotate(0.5deg); }
+  70% { transform: translate(-5px, 3px) rotate(-0.3deg); }
+  85% { transform: translate(2px, -1px) rotate(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bomb-screen.is-blasted .book-stage { animation: none; }
+}
+
 /* Defused: confetti, a warm glow and a big banner over the bomb */
 .celebration {
   position: absolute;
@@ -2271,67 +2313,103 @@ canvas {
 
 .book-spread {
   position: relative;
+  display: flex;
   /* two pages side by side; fits width and height of the screen */
   width: min(1060px, calc(100vw - 80px), calc((100dvh - 250px) * 1.42));
-  transition: transform 0.6s cubic-bezier(0.45, 0.05, 0.3, 1);
+  aspect-ratio: 1040 / 730;
+  perspective: 2600px;
+  filter: drop-shadow(0 22px 30px rgba(0, 0, 0, 0.55));
 }
 
-/* closed book: the cover is the right half of the spread, so move it to the middle */
-.book-spread.is-closed-front {
-  transform: translateX(-25%);
-}
-
-.book-spread.is-closed-back {
-  transform: translateX(25%);
-}
-
-.book-host {
-  width: 100%;
-}
-
-/* a page (StPageFlip positions and bends them) */
-.book-face {
+.book-slot {
+  position: relative;
+  flex: 1 1 50%;
+  min-width: 0;
   overflow: hidden;
-  container-type: size;
+  touch-action: none;
   cursor: grab;
+  container-type: size;
 }
 
-/* the library's highlight stripes make paper look like sheet metal: soft shadow only */
-.book-spread .stf__innerShadow {
-  display: none !important;
+/* the fold: baked straight into the page's own background (not a separate overlay on top), so
+   it is literally part of the paper's surface and turns correctly along with it in 3D — a fixed
+   overlay can only ever sit flat at the spine and would visibly disagree with a leaf mid-turn.
+   Covers (a .book-cover, not a .book-paper) stay crisp, no fold. */
+.book-slot.is-left .book-paper,
+.book-leaf-turn.is-right .book-leaf-face.is-back .book-paper,
+.book-leaf-turn.is-left .book-leaf-face.is-back .book-paper {
+  background:
+    linear-gradient(270deg, rgba(20, 10, 2, 0.48) 0%, rgba(60, 35, 10, 0.12) 10%, transparent 20%),
+    radial-gradient(ellipse at 50% 40%, transparent 60%, rgba(120, 80, 30, 0.08) 100%),
+    #faf2dc;
 }
 
-/* the fold: every page darkens towards the spine, with a dark crease right at the edge */
-.book-face.is-paper.--left::after,
-.book-face.is-paper.--right::after {
-  content: '';
+.book-slot.is-right .book-paper,
+.book-leaf-turn.is-right .book-leaf-face.is-front .book-paper,
+.book-leaf-turn.is-left .book-leaf-face.is-front .book-paper {
+  background:
+    linear-gradient(90deg, rgba(20, 10, 2, 0.48) 0%, rgba(60, 35, 10, 0.12) 10%, transparent 20%),
+    radial-gradient(ellipse at 50% 40%, transparent 60%, rgba(120, 80, 30, 0.08) 100%),
+    #faf2dc;
+}
+
+/* the one leaf currently turning: a hinge at the spine, lying flat over whichever slot it starts
+   at and sweeping over to the other one as it rotates past 90deg. No shadow here on purpose: the
+   baked-in page crease already carries the fold's shadow, and filter: drop-shadow would force
+   preserve-3d to flatten, hiding both faces once the leaf turns past 90deg. */
+.book-leaf-turn {
   position: absolute;
   top: 0;
   bottom: 0;
-  width: 16%;
-  pointer-events: none;
+  width: 50%;
+  z-index: 5;
+  transform-style: preserve-3d;
+  transition: transform 0.55s cubic-bezier(0.4, 0.1, 0.2, 1);
+  cursor: grabbing;
 }
 
-.book-face.is-paper.--left::after {
-  right: 0;
-  background: linear-gradient(
-    270deg,
-    rgba(40, 22, 6, 0.55) 0%,
-    rgba(60, 35, 10, 0.28) 18%,
-    rgba(60, 35, 10, 0.1) 50%,
-    transparent 100%
-  );
+.book-leaf-turn.is-right {
+  left: 50%;
+  transform-origin: left center;
 }
 
-.book-face.is-paper.--right::after {
-  left: 0;
-  background: linear-gradient(
-    90deg,
-    rgba(40, 22, 6, 0.55) 0%,
-    rgba(60, 35, 10, 0.28) 18%,
-    rgba(60, 35, 10, 0.1) 50%,
-    transparent 100%
-  );
+.book-leaf-turn.is-left {
+  right: 50%;
+  transform-origin: right center;
+}
+
+/* covers are stiff boards: slower, stiffer than a paper leaf */
+.book-leaf-turn.is-hard {
+  transition-duration: 0.85s;
+  transition-timing-function: cubic-bezier(0.3, 0.6, 0.15, 1);
+}
+
+/* while actually held under the pointer: no easing, it must track the finger exactly, and lifts
+   a little higher off the page underneath */
+.book-leaf-turn.is-dragging {
+  transition: none;
+}
+
+.book-leaf-face {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  backface-visibility: hidden;
+  container-type: size;
+}
+
+/* which face is "up" at rest vs. once fully turned depends on which slot the leaf started in */
+.book-leaf-turn.is-right .book-leaf-face.is-front {
+  transform: rotateY(0deg);
+}
+.book-leaf-turn.is-right .book-leaf-face.is-back {
+  transform: rotateY(180deg);
+}
+.book-leaf-turn.is-left .book-leaf-face.is-front {
+  transform: rotateY(180deg);
+}
+.book-leaf-turn.is-left .book-leaf-face.is-back {
+  transform: rotateY(0deg);
 }
 
 /* cover: brown leather book with a pixel border, like the one on the enchanting table */
@@ -2421,19 +2499,27 @@ canvas {
   opacity: 0.7;
 }
 
+/* the back cover always lies in the left slot, so its outer (rounded) corner is on the left */
+.book-cover.is-back {
+  border-radius: 6px 0 0 6px;
+}
+
 .book-cover.is-back .book-cover-frame {
   font-family: Georgia, 'Times New Roman', serif;
   font-size: clamp(13px, 4.4cqw, 22px);
 }
 
-/* parchment pages */
+/* parchment pages; a column so the folio can be pinned to the bottom regardless of text length */
 .book-paper {
+  position: relative;
   height: 100%;
+  display: flex;
+  flex-direction: column;
   overflow: hidden;
   padding: 7cqw 7cqw 5cqw;
   background:
-    radial-gradient(ellipse at 50% 40%, transparent 60%, rgba(120, 80, 30, 0.18) 100%),
-    #ecdcb0;
+    radial-gradient(ellipse at 50% 40%, transparent 60%, rgba(120, 80, 30, 0.08) 100%),
+    #faf2dc;
   font-family: Georgia, 'Times New Roman', serif;
   /* text scales with the page, so the spread works on small screens too */
   font-size: clamp(10px, 3.8cqw, 18px);
@@ -2480,6 +2566,12 @@ canvas {
 
 .book-statements {
   margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.book-statements li + li {
+  margin-top: 0.4em;
 }
 
 .book-glyphs {
@@ -2530,7 +2622,9 @@ canvas {
 }
 
 .book-folio {
-  margin-top: 1.4em;
+  /* pinned to the bottom of the page, not right after the text */
+  margin: auto 0 0;
+  padding-top: 1.4em;
   text-align: center;
   font-size: 0.8em;
   color: #8a6a3c;
@@ -2925,11 +3019,316 @@ canvas {
   margin-top: 18px;
 }
 
+/* Invite friends: a second button stacked on the upload button, and its dialog. */
+
+.upload-fab.friends-fab {
+  bottom: 148px;
+}
+
+.friends-fab .upload-fab-face {
+  color: #e2457a;
+  background:
+    linear-gradient(160deg, rgba(255, 255, 255, 0.5) 0 20%, transparent 20%),
+    linear-gradient(32deg, rgba(0, 60, 40, 0.22) 0 26%, transparent 26%),
+    linear-gradient(115deg, #8ee6b0 0 44%, #5fd394 44% 70%, #3bb877 70%);
+}
+
+.friends-fab .upload-fab-icon {
+  animation-delay: 0.6s;
+}
+
+.friends-section {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 3px dashed rgba(27, 16, 48, 0.18);
+}
+
+.upload-header + .friends-section {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: none;
+}
+
+.friends-section-title {
+  margin-bottom: 4px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.friends-dialog .hud-note {
+  margin-bottom: 8px;
+  color: #6b5f80;
+}
+
+.friends-dialog .welcome-form:has(input + input) {
+  flex-direction: column;
+}
+
+.friends-dialog .upload-message {
+  margin-top: 0;
+}
+
+.friends-id-row {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.friends-id {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  padding: 6px 8px;
+  border: 2px dashed rgba(27, 16, 48, 0.3);
+  background: #ffffff;
+  font-size: 12px;
+}
+
+/* Islands HUD: the top-left panel in the low-poly dialog look. */
+
+.hud.hud-lowpoly {
+  max-width: 280px;
+  max-height: none;
+  overflow: visible;
+  padding: 0;
+  border: none;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+  backdrop-filter: none;
+  color: #1b1030;
+  filter: drop-shadow(0 7px 0 #1b1030) drop-shadow(0 14px 14px rgba(20, 0, 40, 0.35));
+}
+
+.hud-lowpoly-body {
+  --cut: 16px;
+  padding: 4px;
+  background: #1b1030;
+}
+
+.hud-lowpoly-face {
+  --cut: 13px;
+  max-height: calc(100vh - 64px);
+  overflow-y: auto;
+  padding: 12px 14px;
+  background: #fff8ea;
+  pointer-events: auto;
+}
+
+.hud-lowpoly .hud-title {
+  font-size: 16px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.hud-lowpoly .hud-section {
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 3px dashed rgba(27, 16, 48, 0.18);
+  color: #1b1030;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.hud-lowpoly .hud-note,
+.hud-lowpoly .hud-concept,
+.hud-lowpoly .hud-island-count {
+  color: #6b5f80;
+}
+
+.hud-lowpoly a,
+.hud-lowpoly strong,
+.hud-lowpoly .hud-details summary {
+  color: #2f6bd9;
+}
+
+.hud-lowpoly .hud-buttons {
+  gap: 6px;
+  margin: 6px 0 4px;
+}
+
+.hud-lowpoly .hud-buttons button,
+.hud-lowpoly .hud-form button {
+  padding: 3px 10px;
+  border: 3px solid #1b1030;
+  border-radius: 4px;
+  background: #ffffff;
+  color: #1b1030;
+  font: 700 12px / 1.2 system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  box-shadow:
+    inset 0 -3px 0 rgba(0, 0, 0, 0.12),
+    0 3px 0 #1b1030;
+  transition:
+    transform 60ms,
+    box-shadow 60ms;
+}
+
+.hud-lowpoly .hud-buttons button:hover:not(:disabled),
+.hud-lowpoly .hud-form button:hover:not(:disabled) {
+  border-color: #1b1030;
+  background-color: #f2f6ff;
+}
+
+.hud-lowpoly .hud-buttons button:active:not(:disabled),
+.hud-lowpoly .hud-form button:active:not(:disabled) {
+  transform: translateY(3px);
+  box-shadow:
+    inset 0 -3px 0 rgba(0, 0, 0, 0.12),
+    0 0 0 #1b1030;
+}
+
+.hud-lowpoly .hud-buttons button.active,
+.hud-lowpoly .hud-form button.is-primary,
+.hud-lowpoly .hud-form button[type='submit'] {
+  color: #ffffff;
+  text-shadow: 0 2px 0 #2f6b12;
+  background: linear-gradient(180deg, #b8f05a 0%, #7ed321 48%, #5aa816 52%, #4c9a10 100%);
+}
+
+.hud-lowpoly .hud-form input {
+  padding: 5px 8px;
+  border: 2px solid #1b1030;
+  border-radius: 4px;
+  background: #ffffff;
+  color: #1b1030;
+}
+
+.hud-lowpoly .hud-id {
+  padding: 4px 6px;
+  border: 2px dashed rgba(27, 16, 48, 0.3);
+  background: #ffffff;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .upload-fab-icon,
   .upload-dropzone-icon {
     animation: none;
   }
+}
+
+/* Islands: welcome / sign-in dialog. Reuses the upload dialog shell above. */
+
+.welcome-backdrop {
+  background:
+    linear-gradient(160deg, rgba(255, 255, 255, 0.18) 0 30%, transparent 30%),
+    linear-gradient(110deg, #7cc4f2 0 45%, #5aaee8 45% 75%, #3f95d6 75%);
+}
+
+.upload-dialog.welcome-dialog {
+  width: min(400px, 100%);
+  filter: drop-shadow(0 7px 0 #1b1030) drop-shadow(0 14px 14px rgba(20, 0, 40, 0.35));
+}
+
+.welcome-banner {
+  --cut: 14px;
+  padding: 4px;
+  background: #1b1030;
+}
+
+.welcome-banner-face {
+  --cut: 11px;
+  padding: 20px 16px 18px;
+  text-align: center;
+  background:
+    linear-gradient(160deg, rgba(255, 255, 255, 0.5) 0 20%, transparent 20%),
+    linear-gradient(32deg, rgba(120, 40, 0, 0.22) 0 26%, transparent 26%),
+    linear-gradient(115deg, #ffd65e 0 44%, #ffb43b 44% 70%, #f39324 70%);
+}
+
+.welcome-banner-title {
+  font: 800 28px / 1.1 system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #ffffff;
+  text-shadow:
+    0 3px 0 #1b1030,
+    2px 0 0 #1b1030,
+    -2px 0 0 #1b1030,
+    0 -2px 0 #1b1030;
+}
+
+.welcome-banner-subtitle {
+  margin-top: 6px;
+  color: #1b1030;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.welcome-lead {
+  margin: 16px 0 10px;
+  font-weight: 600;
+}
+
+.welcome-form {
+  display: flex;
+  gap: 10px;
+  align-items: stretch;
+}
+
+.welcome-form input {
+  flex: 1;
+  min-width: 0;
+  padding: 7px 10px;
+  border: 3px solid #1b1030;
+  border-radius: 4px;
+  background: #ffffff;
+  color: #1b1030;
+  font: 600 14px / 1.2 system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  box-shadow: inset 0 3px 0 rgba(0, 0, 0, 0.08);
+}
+
+.welcome-form input:focus {
+  outline: 3px solid #ffd23f;
+  outline-offset: 2px;
+}
+
+.welcome-form .hud-error {
+  flex-basis: 100%;
+  padding: 6px 8px;
+  border: 3px solid currentColor;
+  background: #fde4e4;
+  color: #9b1c1f;
+  font-weight: 600;
+}
+
+.welcome-form:has(.hud-error) {
+  flex-wrap: wrap;
+}
+
+.welcome-details {
+  margin-top: 14px;
+}
+
+.welcome-details .hud-note {
+  margin-top: 6px;
+  color: #6b5f80;
+}
+
+.welcome-details .hud-id {
+  margin: 4px 0 8px;
+  padding: 6px 8px;
+  border: 2px dashed rgba(27, 16, 48, 0.3);
+  background: #ffffff;
+  font-size: 12px;
+}
+
+.welcome-details .hud-buttons {
+  gap: 10px;
+}
+
+.welcome-details summary {
+  cursor: pointer;
+  color: #2f6bd9;
+  font-weight: 700;
+}
+
+.welcome-details .welcome-form {
+  margin-top: 8px;
 }
 
 /* Koop over the game session (pages/SessionPages.tsx) */
@@ -3043,22 +3442,6 @@ canvas {
 
 .session-toast.is-bad {
   background: #ff6b6b;
-}
-
-/* one manual page for the current turn; book-paper sizes its text by the container */
-.session-manual {
-  container-type: inline-size;
-  width: min(560px, calc(100vw - 32px));
-  max-height: calc(100vh - 120px);
-  margin: 80px auto 0;
-  overflow-y: auto;
-  border-radius: 6px;
-  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.45);
-}
-
-.session-manual .book-paper {
-  height: auto;
-  overflow: visible;
 }
 
 /* ---- Session start from a storey, and game invites ---- */
@@ -3389,4 +3772,177 @@ canvas {
   .session-dots span {
     animation: none;
   }
+}
+
+/* Before the start: both players press "Bereit" */
+
+.session-ready {
+  position: fixed;
+  left: 50%;
+  bottom: 12vh;
+  transform: translateX(-50%);
+  z-index: 4;
+  display: grid;
+  justify-items: center;
+  max-width: calc(100% - 32px);
+  pointer-events: none;
+}
+
+.session-ready-button {
+  pointer-events: auto;
+  display: block;
+  width: min(340px, 80vw);
+  aspect-ratio: 17 / 11;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  animation: session-ready-in 0.3s ease-out both;
+}
+
+.session-ready-button:disabled {
+  cursor: default;
+}
+
+.session-ready-button:focus-visible {
+  outline: 3px solid #2fbf68;
+  outline-offset: 4px;
+  border-radius: 24px;
+}
+
+.session-ready-canvas {
+  pointer-events: none;
+}
+
+.session-ready-wait {
+  margin: 0;
+  padding: 10px 18px;
+  border-radius: 10px;
+  background: rgba(13, 15, 19, 0.75);
+  color: #e6e9ef;
+  font-size: 16px;
+  text-align: center;
+}
+
+@keyframes session-ready-in {
+  from {
+    opacity: 0;
+    transform: scale(0.85);
+  }
+}
+
+/* "Bereit" inside the start panel and the invite card, before the game page opens */
+.ready-check {
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+  text-align: center;
+}
+
+.ready-check .session-ready-button {
+  width: min(240px, 100%);
+}
+
+.ready-check .session-ready-button:disabled:not([aria-pressed='true']) {
+  opacity: 0.55;
+  filter: grayscale(0.6);
+}
+
+.ready-check-players {
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ready-check-players li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border: 2px solid #1f2937;
+  border-radius: 6px;
+  background: #e5e7eb;
+  font-weight: 700;
+}
+
+.ready-check-players li.is-ready {
+  background: #22c55e;
+  color: #fff;
+  text-shadow: 0 1px 0 #15803d;
+}
+
+.ready-check-mark {
+  font-weight: 900;
+}
+
+.ready-check small {
+  color: #6b7280;
+}
+
+/* Koop: end of a game. Same low-poly dialog as the islands' dialogs, over a faceted backdrop. */
+
+.session-end-backdrop {
+  z-index: 20;
+  animation: session-end-in 0.35s ease-out both;
+}
+
+.session-end-backdrop.is-lost {
+  background:
+    linear-gradient(160deg, rgba(255, 255, 255, 0.14) 0 30%, transparent 30%),
+    linear-gradient(32deg, rgba(60, 0, 0, 0.28) 0 22%, transparent 22%),
+    linear-gradient(110deg, #f0524a 0 45%, #d93a35 45% 75%, #b8282a 75%);
+}
+
+.session-end-backdrop.is-won {
+  background:
+    linear-gradient(160deg, rgba(255, 255, 255, 0.14) 0 30%, transparent 30%),
+    linear-gradient(110deg, rgba(110, 214, 120, 0.85) 0 45%, rgba(72, 184, 92, 0.85) 45% 75%, rgba(48, 150, 72, 0.85) 75%);
+}
+
+.session-end-backdrop.is-abandoned {
+  background:
+    linear-gradient(160deg, rgba(255, 255, 255, 0.14) 0 30%, transparent 30%),
+    linear-gradient(110deg, #8a93a8 0 45%, #737c93 45% 75%, #5d657b 75%);
+}
+
+.session-end .welcome-banner-title {
+  font-size: 34px;
+}
+
+.session-end-backdrop.is-lost .session-end-banner {
+  background:
+    linear-gradient(160deg, rgba(255, 255, 255, 0.45) 0 20%, transparent 20%),
+    linear-gradient(32deg, rgba(90, 0, 0, 0.25) 0 26%, transparent 26%),
+    linear-gradient(115deg, #ff8a5c 0 44%, #f2563a 44% 70%, #d63a2a 70%);
+}
+
+.session-end-backdrop.is-lost .session-end-banner .welcome-banner-subtitle {
+  color: #ffffff;
+  text-shadow: 0 2px 0 #1b1030;
+}
+
+.session-end-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 10px;
+  margin-top: 18px;
+}
+
+.session-end-actions button {
+  flex: 1 1 140px;
+  padding: 10px 16px;
+  font-size: 15px;
+}
+
+@keyframes session-end-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .session-end-backdrop { animation: none; }
 }

@@ -65,7 +65,7 @@ export type PlacedHouse = {
   unlocked: boolean
   /** Storeys in the topic's skill tree, built or not. */
   totalStoreys: number
-  /** The design the topic is drawn with, named after the topic, one storey per unlocked skill. */
+  /** The design the topic is drawn with, named after the topic, one storey per skill. */
   house: House
   cell: GridCell
   position: Vec2
@@ -76,6 +76,8 @@ export type ResolvedIsland = {
   houses: PlacedHouse[]
   /** Topics without a free cell left; they are only listed. */
   unplaced: IslandHouse[]
+  /** Where new houses are being built while uploads are processed; `null` if nothing is pending or no cell is free. */
+  construction: { cell: GridCell; position: Vec2 } | null
   fieldBlocks: GridBlock[]
 }
 
@@ -108,22 +110,25 @@ function pickDesign(topicId: string, used: Set<string>): House {
 }
 
 /**
- * The storeys a house shows: every passed skill and the next one, labelled with the skill and
- * keyed by its id. A topic without skills still shows its ground floor, with nothing to play.
+ * The storeys a house shows: one per skill of the topic, ground floor first, labelled with the
+ * skill and keyed by its id. A topic without skills still shows its ground floor, with nothing to play.
  */
 export function skillStoreys(design: House, skills: HouseSkill[]): Storey[] {
-  const unlocked = [...skills].sort((a, b) => a.position - b.position).filter((skill) => skill.unlocked)
-  if (unlocked.length === 0) return [designStorey(design, 0)]
-  return unlocked.map((skill, index) => ({
+  const sorted = [...skills].sort((a, b) => a.position - b.position)
+  if (sorted.length === 0) return [designStorey(design, 0)]
+  return sorted.map((skill, index) => ({
     ...designStorey(design, index),
     id: skill.skill_id,
     label: skill.name,
-    skill: { id: skill.skill_id, passed: skill.passed, tasks: skill.tasks },
+    skill: { id: skill.skill_id, passed: skill.passed, unlocked: skill.unlocked, tasks: skill.tasks },
   }))
 }
 
-/** Places an island's topics as houses on its grid, in the order the backend lists them. */
-export function resolveIsland(island: Island): ResolvedIsland {
+/**
+ * Places an island's topics as houses on its grid, in the order the backend lists them. While
+ * `building` uploads are processed, the next free house cell shows a construction site.
+ */
+export function resolveIsland(island: Island, building = island.building): ResolvedIsland {
   const used = new Set<string>()
   const houses = island.houses.slice(0, HOUSE_CELLS.length).map((topic, index): PlacedHouse => {
     const design = pickDesign(topic.topic_id, used)
@@ -140,10 +145,15 @@ export function resolveIsland(island: Island): ResolvedIsland {
       position: blockCenter(cell.i, cell.j),
     }
   })
+  const siteCell = building > 0 ? HOUSE_CELLS[houses.length] : undefined
+  const construction = siteCell ? { cell: siteCell, position: blockCenter(siteCell.i, siteCell.j) } : null
+  const occupied = houses.map((placed) => placed.cell)
+  if (construction) occupied.push(construction.cell)
   return {
     island,
     houses,
     unplaced: island.houses.slice(HOUSE_CELLS.length),
-    fieldBlocks: freeBlocks(houses.map((placed) => placed.cell)),
+    construction,
+    fieldBlocks: freeBlocks(occupied),
   }
 }

@@ -183,5 +183,5 @@ export function KoopManualPage() {
       </div>
     )
   }
-  return <ManualBook key={`${seed}-${type}`} seed={seed} typeLabel={typeLabel(type)} plan={plan} />
+  return <ManualBook key={`${seed}-${type}`} seed={seed} typeLabel={typeLabel(type)} manuals={plan.map((entry) => entry.manual)} />
 }

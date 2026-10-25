@@ -230,7 +230,7 @@ async fn enter(
                 last_sequence,
             });
         }
-        ClientMessage::SubmitAnswer { .. } | ClientMessage::Forfeit => {
+        ClientMessage::Ready | ClientMessage::SubmitAnswer { .. } | ClientMessage::Forfeit => {
             return Err(SessionError::new(
                 ErrorCode::InvalidState,
                 "send create, join or resume first",
@@ -274,6 +274,7 @@ async fn play(
                     Incoming::Message(ClientMessage::SubmitAnswer { turn, answer }) => {
                         sessions.submit(game_id, player, turn, answer).await
                     }
+                    Incoming::Message(ClientMessage::Ready) => sessions.ready(game_id, player).await,
                     Incoming::Message(ClientMessage::Forfeit) => sessions.forfeit(game_id, player).await,
                     Incoming::Message(
                         ClientMessage::Create { .. } | ClientMessage::Join { .. } | ClientMessage::Resume { .. },

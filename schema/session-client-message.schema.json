@@ -6,12 +6,13 @@
   "type": "object",
   "required": ["type"],
   "properties": {
-    "type": { "enum": ["create", "join", "resume", "submit_answer", "forfeit"] }
+    "type": { "enum": ["create", "join", "resume", "ready", "submit_answer", "forfeit"] }
   },
   "oneOf": [
     { "$ref": "#/$defs/create" },
     { "$ref": "#/$defs/join" },
     { "$ref": "#/$defs/resume" },
+    { "$ref": "#/$defs/ready" },
     { "$ref": "#/$defs/submit_answer" },
     { "$ref": "#/$defs/forfeit" }
   ],
@@ -36,7 +37,7 @@
       }
     },
     "join": {
-      "description": "Takes the free seat of a waiting game and starts it. role only counts if the creator picked none.",
+      "description": "Takes the free seat of a waiting game; the roles are dealt and the game waits for both players to send ready. role only counts if the creator picked none.",
       "type": "object",
       "required": ["type", "game_id"],
       "additionalProperties": false,
@@ -59,15 +60,15 @@
       }
     },
     "submit_answer": {
-      "description": "Only the defuser of the current turn may answer, once per turn.",
+      "description": "Only the defuser may answer, once per part, in any order.",
       "type": "object",
       "required": ["type", "turn", "answer"],
       "additionalProperties": false,
       "properties": {
         "type": { "const": "submit_answer" },
-        "turn": { "type": "integer", "minimum": 0 },
+        "turn": { "description": "The position of the part.", "type": "integer", "minimum": 0 },
         "answer": {
-          "description": "An AnswerSubmission (answer-submission.schema.json) where questionId may be omitted, the turn identifies the question.",
+          "description": "An AnswerSubmission (answer-submission.schema.json) where questionId may be omitted, the part's position (turn) identifies the question.",
           "type": "object",
           "required": ["type", "answer"],
           "properties": {
@@ -77,6 +78,13 @@
           }
         }
       }
+    },
+    "ready": {
+      "description": "The sender is ready to play. Once both players are, the clock starts and every module is open. Repeated or late ready messages change nothing.",
+      "type": "object",
+      "required": ["type"],
+      "additionalProperties": false,
+      "properties": { "type": { "const": "ready" } }
     },
     "forfeit": {
       "description": "Ends the game as aborted.",

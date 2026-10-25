@@ -21,7 +21,7 @@
     "time": { "type": "string", "format": "date-time" },
     "role": { "enum": ["defuser", "expert"] },
     "seat": { "enum": [0, 1] },
-    "turn": { "type": "integer", "minimum": 0 },
+    "turn": { "description": "The position of a part on the bomb.", "type": "integer", "minimum": 0 },
     "question_type": { "$ref": "answer-submission.schema.json#/properties/type" },
     "end_reason": { "enum": ["all_resolved", "strikes", "timeout", "forfeit"] },
 
@@ -50,24 +50,24 @@
       "required": ["game_id", "status", "topics", "players", "strikes", "max_strikes", "parts"],
       "properties": {
         "game_id": { "$ref": "#/$defs/uuid" },
-        "status": { "enum": ["waiting", "active", "won", "lost", "aborted"] },
+        "status": { "enum": ["waiting", "ready", "active", "won", "lost", "aborted"] },
         "topics": { "type": "array", "items": { "$ref": "#/$defs/uuid" } },
         "players": {
           "type": "array",
           "items": {
             "type": "object",
-            "required": ["player_id", "seat", "online"],
+            "required": ["player_id", "seat", "online", "ready"],
             "properties": {
               "player_id": { "$ref": "#/$defs/uuid" },
               "seat": { "$ref": "#/$defs/seat" },
-              "online": { "type": "boolean" }
+              "online": { "type": "boolean" },
+              "ready": { "description": "Sent ready (always true once the game started).", "type": "boolean" }
             }
           }
         },
         "skill_id": { "description": "The storey (skill) of a storey game.", "oneOf": [{ "$ref": "#/$defs/uuid" }, { "type": "null" }] },
         "invited": { "description": "The only user who may join.", "oneOf": [{ "$ref": "#/$defs/uuid" }, { "type": "null" }] },
         "deadline": { "oneOf": [{ "$ref": "#/$defs/time" }, { "type": "null" }] },
-        "turn": { "oneOf": [{ "$ref": "#/$defs/turn" }, { "type": "null" }] },
         "defuser": { "oneOf": [{ "$ref": "#/$defs/uuid" }, { "type": "null" }] },
         "expert": { "oneOf": [{ "$ref": "#/$defs/uuid" }, { "type": "null" }] },
         "strikes": { "type": "integer", "minimum": 0 },
@@ -142,6 +142,22 @@
           "required": ["type", "player_id", "seat"]
         },
         {
+          "description": "Both seats are taken: the roles for the whole game. The game waits for both players to be ready.",
+          "properties": {
+            "type": { "const": "roles_assigned" },
+            "defuser": { "$ref": "#/$defs/uuid" },
+            "expert": { "$ref": "#/$defs/uuid" }
+          },
+          "required": ["type", "defuser", "expert"]
+        },
+        {
+          "properties": {
+            "type": { "const": "player_ready" },
+            "player_id": { "$ref": "#/$defs/uuid" }
+          },
+          "required": ["type", "player_id"]
+        },
+        {
           "properties": {
             "type": { "const": "game_started" },
             "deadline": { "$ref": "#/$defs/time" },
@@ -151,6 +167,7 @@
         },
         {
           "properties": {
+            "description": "Only in games from before all modules were open at once; no longer logged.",
             "type": { "const": "turn_started" },
             "turn": { "$ref": "#/$defs/turn" },
             "defuser": { "$ref": "#/$defs/uuid" },
@@ -189,49 +206,71 @@
       ]
     },
     "briefing": {
-      "description": "Private to one player, sent when a turn starts and after connecting.",
+      "description": "Private to one player: the whole bomb or the whole manual. Sent when the game starts and after connecting while it is active. See session-protocol.md#briefings for what each question type shows on which side.",
       "type": "object",
-      "required": ["type", "turn", "role"],
+      "required": ["type", "role"],
       "oneOf": [
         {
           "properties": {
             "type": { "const": "briefing" },
-            "turn": { "$ref": "#/$defs/turn" },
             "role": { "const": "defuser" },
-            "task": {
-              "description": "The question as in questions.schema.json, without prompt. With glyphs, the answer list (options, items or right) is missing.",
-              "type": "object"
-            },
-            "glyphs": {
-              "description": "Symbol shown for each entry of the missing answer list, in order. Missing if the answers are plain text.",
-              "type": "array",
-              "items": { "type": "integer", "minimum": 0 }
-            }
-          },
-          "required": ["task"]
-        },
-        {
-          "properties": {
-            "type": { "const": "briefing" },
-            "turn": { "$ref": "#/$defs/turn" },
-            "role": { "const": "expert" },
-            "question_type": { "$ref": "#/$defs/question_type" },
-            "prompt": { "description": "The question's prompt, null for types without one." },
-            "instruction": { "description": "The manual page for the module.", "type": "object" },
-            "symbols": {
-              "description": "What each symbol on the defuser's module stands for. Missing if the answers are plain text.",
+            "parts": {
+              "description": "Every module on the bomb.",
               "type": "array",
               "items": {
                 "type": "object",
-                "required": ["glyph", "text"],
+                "required": ["position", "task"],
                 "properties": {
-                  "glyph": { "type": "integer", "minimum": 0 },
-                  "text": { "type": "string" }
+                  "position": { "$ref": "#/$defs/turn" },
+                  "task": {
+                    "description": "The question as in questions.schema.json plus id and type, reduced to the defuser's half: with glyphs, the answer list (options, items or right) is missing; prompt only for single_choice, multiple_choice and order shown as symbols; true_false has statementCount instead of statements; text_input carries the terminal's user.",
+                    "type": "object",
+                    "properties": {
+                      "statementCount": { "type": "integer", "minimum": 0 },
+                      "user": { "type": "string" }
+                    }
+                  },
+                  "glyphs": {
+                    "description": "Symbol shown for each entry of the missing answer list, in order. Missing if the answers are plain text.",
+                    "type": "array",
+                    "items": { "type": "integer", "minimum": 0 }
+                  }
                 }
               }
             }
           },
-          "required": ["question_type", "instruction"]
+          "required": ["parts"]
+        },
+        {
+          "properties": {
+            "type": { "const": "briefing" },
+            "role": { "const": "expert" },
+            "pages": {
+              "description": "One page per module, in a random order. A page never says which module it is for.",
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "prompt": { "description": "The question, when only the expert has it." },
+                  "user": { "description": "Free-text terminals: the user logged in on the defuser's terminal.", "type": "string" },
+                  "statements": { "description": "True/false: statement i is \"Aussage i + 1\" on the bomb.", "type": "array" },
+                  "symbols": {
+                    "description": "What each symbol on the defuser's module stands for, in a random order.",
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "required": ["glyph", "text"],
+                      "properties": {
+                        "glyph": { "type": "integer", "minimum": 0 },
+                        "text": { "type": "string" }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "required": ["pages"]
         }
       ]
     },

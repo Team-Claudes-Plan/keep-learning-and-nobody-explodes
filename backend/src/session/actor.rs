@@ -48,6 +48,10 @@ pub enum Request {
         answer: Answer,
         reply: oneshot::Sender<Result<(), SessionError>>,
     },
+    Ready {
+        player: Uuid,
+        reply: oneshot::Sender<Result<(), SessionError>>,
+    },
     Forfeit {
         player: Uuid,
         reply: oneshot::Sender<Result<(), SessionError>>,
@@ -195,6 +199,9 @@ impl Actor {
                     .await;
                 let _ = reply.send(result);
             }
+            Request::Ready { player, reply } => {
+                let _ = reply.send(self.execute(Command::Ready { player }).await);
+            }
             Request::Forfeit { player, reply } => {
                 let _ = reply.send(self.execute(Command::Forfeit { player }).await);
             }
@@ -250,14 +257,15 @@ impl Actor {
     }
 
     fn publish(&mut self, stored: Vec<StoredEvent>) {
-        let mut turn_started = false;
+        let mut started = false;
         for event in stored {
             self.state.apply(event.sequence, &event.event);
-            turn_started |= matches!(event.event, GameEvent::TurnStarted { .. });
+            started |= matches!(event.event, GameEvent::GameStarted { .. });
             self.broadcast(None, event_message(&event));
             self.log.push(event);
         }
-        if turn_started {
+        // the whole bomb and the whole manual, once, when the clock starts
+        if started {
             for player in self.state.players() {
                 if let Some(briefing) = self.state.briefing(player, &self.details) {
                     self.broadcast(Some(player), briefing);

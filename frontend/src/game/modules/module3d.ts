@@ -16,7 +16,7 @@ export const HINT_COLOR = '#ffb547'
 /** Area below the instruction line that rows of controls are spread over. */
 export const ROWS_TOP = 0.24
 /** Leaves the bottom strip free for the lock-in button. */
-export const ROWS_BOTTOM = -0.33
+export const ROWS_BOTTOM = -0.28
 
 /** Evenly spaced rows between ROWS_TOP and ROWS_BOTTOM, at most `maxStep` apart and centred. */
 export function rowLayout(count: number, maxStep = 0.13) {
