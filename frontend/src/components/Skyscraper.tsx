@@ -4,6 +4,7 @@ import type { House } from '../data/houses'
 import { KIT_MIDDLE_HEIGHT } from '../data/houseKits'
 import Facade from './facade/Facade'
 import KitFacade from './facade/KitFacade'
+import { isDrag } from './interaction'
 
 type SkyscraperProps = {
   /** The house as built on its island (see houseAtLevel). */
@@ -28,6 +29,7 @@ export default function Skyscraper({ house, position, onClick, storeyDelta = 0 }
   const [x, z] = position
 
   const handleClick = (event: ThreeEvent<MouseEvent>) => {
+    if (isDrag(event)) return
     event.stopPropagation()
     onClick(house.id)
   }

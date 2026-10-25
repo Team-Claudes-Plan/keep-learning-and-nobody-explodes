@@ -262,3 +262,24 @@ export type Presence = {
   userId: string
   status: PresenceStatus
 }
+
+/** A file the backend stored for an island. */
+export type StoredDocument = {
+  key: string
+  filename: string
+  content_type: string
+  size: number
+}
+
+/** A file the backend could not store. `filename` is missing when the request broke off early. */
+export type FailedDocument = {
+  filename?: string
+  message: string
+}
+
+/** Response of `POST /upload`. */
+export type UploadResponse = {
+  island_id: string
+  objects: StoredDocument[]
+  failures: FailedDocument[]
+}

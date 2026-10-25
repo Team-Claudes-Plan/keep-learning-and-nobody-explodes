@@ -1,7 +1,9 @@
 import { Euler, Matrix4, Vector3 } from 'three'
 
 export const ISO_CAMERA = {
-  position: [10, 10, 10] as [number, number, number],
+  // Far back along the view line: the camera is orthographic, so distance only decides what the
+  // near plane cuts. At 10 it sliced through tall front houses once the view panned back.
+  position: [40, 40, 40] as [number, number, number],
   zoom: 60,
 }
 
