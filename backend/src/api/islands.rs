@@ -68,7 +68,8 @@ pub struct Group {
 pub struct House {
     topic_id: Uuid,
     name: String,
-    /// How far every member of the island knows the topic, `0..=MAX_LEVEL`.
+    /// Number of skills (storeys) every member of the island has learned,
+    /// `0..=MAX_LEVEL`.
     level: u8,
     unlocked: bool,
 }
@@ -225,12 +226,10 @@ fn island(summary: IslandSummary, topics: &[TopicProgress]) -> Island {
 }
 
 fn house(topic: &TopicProgress) -> House {
-    let level = knowledge::house_level(
-        topic
-            .members
-            .iter()
-            .map(|member| knowledge::level(member.solved, topic.tasks)),
-    );
+    let level =
+        knowledge::house_level(topic.skills.iter().map(|skill| {
+            knowledge::skill_learned(skill.members.iter().map(|member| member.solved))
+        }));
     House {
         topic_id: topic.id,
         name: topic.name.clone(),
@@ -247,14 +246,14 @@ mod tests {
     use super::*;
     use crate::{
         api::testing::{app, call},
-        db::MemberProgress,
+        db::{MemberProgress, SkillProgress},
     };
 
-    fn topic(tasks: u32, solved: &[u32]) -> TopicProgress {
-        TopicProgress {
-            id: Uuid::from_u128(1),
-            name: "Cells".to_owned(),
-            tasks,
+    fn skill(id: u128, solved: &[u32]) -> SkillProgress {
+        SkillProgress {
+            id: Uuid::from_u128(id),
+            name: format!("skill {id}"),
+            tasks: 1,
             members: (0..)
                 .zip(solved)
                 .map(|(user, &solved)| MemberProgress {
@@ -265,17 +264,34 @@ mod tests {
         }
     }
 
+    fn topic(skills: Vec<SkillProgress>) -> TopicProgress {
+        TopicProgress {
+            id: Uuid::from_u128(100),
+            name: "Cells".to_owned(),
+            skills,
+        }
+    }
+
     #[test]
     fn house_is_built_as_far_as_both_members_know_it() {
-        assert_eq!(house(&topic(4, &[4, 2])).level, 2);
-        let house = house(&topic(4, &[4, 0]));
-        assert_eq!((house.level, house.unlocked), (0, false));
+        let house = house(&topic(vec![
+            skill(1, &[1, 2]),
+            skill(2, &[1, 1]),
+            skill(3, &[3, 0]),
+        ]));
+        assert_eq!((house.level, house.unlocked), (2, true));
     }
 
     #[test]
     fn house_of_a_solo_island_follows_its_member() {
-        let house = house(&topic(4, &[1]));
+        let house = house(&topic(vec![skill(1, &[1])]));
         assert_eq!((house.level, house.unlocked), (1, true));
+    }
+
+    #[test]
+    fn house_level_is_capped_at_the_drawable_storeys() {
+        let house = house(&topic((0..6).map(|id| skill(id, &[1, 1])).collect()));
+        assert_eq!(house.level, knowledge::MAX_LEVEL);
     }
 
     async fn user(db: &Database, name: &str) -> Uuid {
@@ -326,12 +342,21 @@ mod tests {
             .expect("player");
         }
         for position in 0..tasks {
+            // one skill per task, so `solved` tasks also means `solved` skills
+            let skill: Uuid = sqlx::query_scalar(
+                "INSERT INTO skills (topic_id, name) VALUES ($1, $2) RETURNING id",
+            )
+            .bind(topic)
+            .bind(format!("skill {}", Uuid::new_v4()))
+            .fetch_one(pool)
+            .await
+            .expect("skill");
             let task: Uuid = sqlx::query_scalar(
-                "INSERT INTO tasks (document_id, topic_id, question_type, solution)
+                "INSERT INTO tasks (document_id, skill_id, question_type, solution)
                  VALUES ($1, $2, 'text_input', '\"x\"') RETURNING id",
             )
             .bind(document)
-            .bind(topic)
+            .bind(skill)
             .fetch_one(pool)
             .await
             .expect("task");

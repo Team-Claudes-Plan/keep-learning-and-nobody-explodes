@@ -62,7 +62,7 @@ export type PlacedHouse = {
   topicId: string
   /** The topic's name. */
   name: string
-  /** 0 to MAX_HOUSE_LEVEL, how far every member knows the topic. */
+  /** 0 to MAX_HOUSE_LEVEL, the number of skills every member has learned. */
   level: number
   unlocked: boolean
   /** The design the topic is drawn with, named after the topic and cut down to its level. */

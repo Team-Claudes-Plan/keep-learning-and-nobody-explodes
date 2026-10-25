@@ -26,22 +26,30 @@ pub struct IslandSummary {
     pub members: Vec<UserSummary>,
 }
 
-/// How much of a topic one member of an island has learned.
+/// How much of a skill one member of an island has learned.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct MemberProgress {
     pub user_id: Uuid,
-    /// Distinct tasks of the topic the member solved in any game.
+    /// Distinct tasks of the skill the member solved in any game.
     pub solved: u32,
 }
 
-/// A topic (house) of an island and what its members know of it.
+/// A skill (storey) of a topic and what its members know of it.
+#[derive(Debug)]
+pub struct SkillProgress {
+    pub id: Uuid,
+    pub name: String,
+    /// Tasks the skill has in total.
+    pub tasks: u32,
+    pub members: Vec<MemberProgress>,
+}
+
+/// A topic (house) of an island with its skills (storeys).
 #[derive(Debug)]
 pub struct TopicProgress {
     pub id: Uuid,
     pub name: String,
-    /// Tasks the topic has in total.
-    pub tasks: u32,
-    pub members: Vec<MemberProgress>,
+    pub skills: Vec<SkillProgress>,
 }
 
 /// Result of [`Database::add_island_member`].
@@ -480,41 +488,61 @@ impl Database {
             .collect())
     }
 
-    /// The topics of an island (shared with its origin, if it is a fork) and
-    /// how many of their tasks each member of the island has solved.
+    /// The topics of an island (shared with its origin, if it is a fork) with
+    /// their skills and how many tasks of each skill every member has solved.
+    /// Topics without skills are returned with an empty skill list.
     pub async fn island_topics(&self, island_id: Uuid) -> Result<Vec<TopicProgress>, sqlx::Error> {
-        let rows: Vec<(Uuid, String, i64, Uuid, i64)> = sqlx::query_as(
-            "SELECT t.id, t.name,
-                    (SELECT count(*) FROM tasks k WHERE k.topic_id = t.id),
+        type Row = (Uuid, String, Option<Uuid>, Option<String>, i64, Uuid, i64);
+
+        let rows: Vec<Row> = sqlx::query_as(
+            "SELECT t.id, t.name, s.id, s.name,
+                    COALESCE((SELECT count(*) FROM tasks k WHERE k.skill_id = s.id), 0),
                     m.user_id,
-                    (SELECT count(DISTINCT gp.task_id)
+                    COALESCE((SELECT count(DISTINCT gp.task_id)
                      FROM game_parts gp
                      JOIN game_players p ON p.game_id = gp.game_id
                      JOIN tasks k ON k.id = gp.task_id
                      WHERE p.player_id = m.user_id
-                       AND k.topic_id = t.id
-                       AND gp.solved_at IS NOT NULL)
+                       AND k.skill_id = s.id
+                       AND gp.solved_at IS NOT NULL), 0)
              FROM islands i
              JOIN topics t ON t.island_id = COALESCE(i.origin_id, i.id)
+             LEFT JOIN skills s ON s.topic_id = t.id
              JOIN island_members m ON m.island_id = i.id
              WHERE i.id = $1
-             ORDER BY t.created_at, t.id, m.user_id",
+             ORDER BY t.created_at, t.id, s.created_at, s.id, m.user_id",
         )
         .bind(island_id)
         .fetch_all(&self.pool)
         .await?;
 
         let mut topics: Vec<TopicProgress> = Vec::new();
-        for (id, name, tasks, user_id, solved) in rows {
+        for (topic_id, topic_name, skill_id, skill_name, tasks, user_id, solved) in rows {
+            let topic = match topics.last_mut() {
+                Some(topic) if topic.id == topic_id => topic,
+                _ => {
+                    topics.push(TopicProgress {
+                        id: topic_id,
+                        name: topic_name,
+                        skills: Vec::new(),
+                    });
+                    topics.last_mut().expect("topic was just pushed")
+                }
+            };
+
+            let (Some(skill_id), Some(skill_name)) = (skill_id, skill_name) else {
+                continue;
+            };
+
             let member = MemberProgress {
                 user_id,
                 solved: u32::try_from(solved).map_err(decode_error)?,
             };
-            match topics.last_mut() {
-                Some(topic) if topic.id == id => topic.members.push(member),
-                _ => topics.push(TopicProgress {
-                    id,
-                    name,
+            match topic.skills.last_mut() {
+                Some(skill) if skill.id == skill_id => skill.members.push(member),
+                _ => topic.skills.push(SkillProgress {
+                    id: skill_id,
+                    name: skill_name,
                     tasks: u32::try_from(tasks).map_err(decode_error)?,
                     members: vec![member],
                 }),
@@ -523,22 +551,33 @@ impl Database {
         Ok(topics)
     }
 
-    /// Draws `count` random tasks (each with an instruction) from the topics (houses).
+    /// Draws `count` random tasks (each with an instruction) from the topics
+    /// (houses). Each round takes one task per skill, so a game spreads over the
+    /// skills of the chosen topics instead of filling up from one skill.
     pub async fn pick_tasks(
         &self,
         topics: &[Uuid],
         count: u16,
     ) -> Result<Vec<PickedTask>, sqlx::Error> {
         let rows: Vec<(Uuid, Uuid, String, Json<Value>)> = sqlx::query_as(
-            "SELECT task_id, instruction_id, question_type, content FROM (
+            "WITH candidates AS (
                  SELECT DISTINCT ON (t.id) t.id AS task_id, i.id AS instruction_id,
-                        t.question_type, t.content
+                        s.id AS skill_id, t.question_type, t.content,
+                        random() AS task_random
                  FROM tasks t
+                 JOIN skills s ON s.id = t.skill_id
                  JOIN instructions i ON i.task_id = t.id
-                 WHERE t.topic_id = ANY($1)
+                 WHERE s.topic_id = ANY($1)
                  ORDER BY t.id, random()
-             ) picked
-             ORDER BY random()
+             ), ranked AS (
+                 SELECT task_id, instruction_id, question_type, content,
+                        row_number() OVER (PARTITION BY skill_id ORDER BY task_random)
+                            AS skill_rank
+                 FROM candidates
+             )
+             SELECT task_id, instruction_id, question_type, content
+             FROM ranked
+             ORDER BY skill_rank, task_random
              LIMIT $2",
         )
         .bind(topics)
@@ -826,5 +865,99 @@ impl Database {
         .execute(&self.pool)
         .await?;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashSet;
+
+    use serde_json::json;
+
+    use super::*;
+
+    #[tokio::test]
+    #[ignore = "requires the dev stack (`nix run .#dev`) and its environment"]
+    async fn pick_tasks_spreads_over_the_skills_of_a_topic() {
+        let url = std::env::var("DATABASE_URL").expect("DATABASE_URL");
+        let db = Database::connect(&url, 2).await.expect("database");
+        db.migrate().await.expect("migrations");
+        let pool = db.pool();
+
+        let user = db.create_user("pick tasks test").await.expect("user");
+        let island = db
+            .create_island("pick tasks test", user, None)
+            .await
+            .expect("island");
+        let topic: Uuid = sqlx::query_scalar(
+            "INSERT INTO topics (island_id, name) VALUES ($1, 'Mathe') RETURNING id",
+        )
+        .bind(island)
+        .fetch_one(pool)
+        .await
+        .expect("topic");
+        let document: Uuid = sqlx::query_scalar(
+            "INSERT INTO documents (bucket, object_key, island_id)
+             VALUES ('test', $1, $2) RETURNING id",
+        )
+        .bind(Uuid::new_v4().to_string())
+        .bind(island)
+        .fetch_one(pool)
+        .await
+        .expect("document");
+
+        for (index, tasks) in [3_usize, 1, 1].into_iter().enumerate() {
+            let skill: Uuid = sqlx::query_scalar(
+                "INSERT INTO skills (topic_id, name) VALUES ($1, $2) RETURNING id",
+            )
+            .bind(topic)
+            .bind(format!("skill {index}"))
+            .fetch_one(pool)
+            .await
+            .expect("skill");
+            for _ in 0..tasks {
+                let task: Uuid = sqlx::query_scalar(
+                    "INSERT INTO tasks (document_id, skill_id, question_type, solution)
+                     VALUES ($1, $2, 'text_input', $3) RETURNING id",
+                )
+                .bind(document)
+                .bind(skill)
+                .bind(Json(json!({ "correct_answer": "x" })))
+                .fetch_one(pool)
+                .await
+                .expect("task");
+                sqlx::query("INSERT INTO instructions (task_id) VALUES ($1)")
+                    .bind(task)
+                    .execute(pool)
+                    .await
+                    .expect("instruction");
+            }
+        }
+
+        let picked = db.pick_tasks(&[topic], 3).await.expect("picked tasks");
+        assert_eq!(picked.len(), 3);
+
+        let task_ids = picked.iter().map(|task| task.task_id).collect::<Vec<_>>();
+        let skills: Vec<Uuid> = sqlx::query_scalar("SELECT skill_id FROM tasks WHERE id = ANY($1)")
+            .bind(task_ids)
+            .fetch_all(pool)
+            .await
+            .expect("task skills");
+        assert_eq!(
+            skills.into_iter().collect::<HashSet<_>>().len(),
+            3,
+            "one task from each skill is picked before a skill repeats"
+        );
+
+        sqlx::query("DELETE FROM islands WHERE id = $1")
+            .bind(island)
+            .execute(pool)
+            .await
+            .expect("cleanup island");
+        sqlx::query("DELETE FROM users WHERE id = $1")
+            .bind(user)
+            .execute(pool)
+            .await
+            .expect("cleanup user");
     }
 }

@@ -1,32 +1,32 @@
 //! How far the houses (topics) of an island are built.
 //!
-//! A member's level of a topic follows from the share of its tasks they ever
-//! solved, in any game on any island. Topics are shared between an island and
-//! its forks, so what someone learned carries over to every island with them.
-//! A house is only built as far as **every** member of the island knows the
-//! topic: on a fork with a new partner, exactly the houses both already know
-//! are unlocked.
+//! A skill is a storey of a house and the unit of knowledge: it is learned by a
+//! member once they solved at least one of its tasks. Topics are shared between
+//! an island and its forks, so what someone learned carries over to every
+//! island with them. A house is only built as far as **every** member of the
+//! island knows its skills: on a fork with a new partner, exactly the storeys
+//! both already know are unlocked.
 
 /// Highest level of a house; matches the storeys the frontend can draw.
 pub const MAX_LEVEL: u8 = 4;
 
-/// Level of one learner: the share of `tasks` they solved, rounded up to the
-/// next of [`MAX_LEVEL`] steps, so any solved task unlocks the first level.
+/// A skill is learned when every member solved at least one of its tasks.
+/// An island without members has learned nothing.
 #[must_use]
-pub fn level(solved: u32, tasks: u32) -> u8 {
-    if tasks == 0 {
-        return 0;
-    }
-    let solved = u64::from(solved.min(tasks));
-    let steps = (u64::from(MAX_LEVEL) * solved).div_ceil(u64::from(tasks));
-    u8::try_from(steps).unwrap_or(MAX_LEVEL)
+pub fn skill_learned(member_solved: impl IntoIterator<Item = u32>) -> bool {
+    let mut member_solved = member_solved.into_iter();
+    let Some(first) = member_solved.next() else {
+        return false;
+    };
+    first > 0 && member_solved.all(|solved| solved > 0)
 }
 
-/// Level of a house: what all members know, i.e. the lowest member level.
-/// An island without members has nothing built.
+/// Level of a house: the number of skills every member learned, capped at the
+/// storeys the frontend can draw.
 #[must_use]
-pub fn house_level(member_levels: impl IntoIterator<Item = u8>) -> u8 {
-    member_levels.into_iter().min().unwrap_or(0)
+pub fn house_level(learned: impl IntoIterator<Item = bool>) -> u8 {
+    let learned = learned.into_iter().filter(|learned| *learned).count();
+    u8::try_from(learned).unwrap_or(MAX_LEVEL).min(MAX_LEVEL)
 }
 
 #[cfg(test)]
@@ -34,37 +34,25 @@ mod tests {
     use super::*;
 
     #[test]
-    fn level_rounds_up_to_the_next_step() {
-        assert_eq!(level(0, 10), 0);
-        assert_eq!(level(1, 10), 1);
-        assert_eq!(level(3, 10), 2);
-        assert_eq!(level(5, 10), 2);
-        assert_eq!(level(6, 10), 3);
-        assert_eq!(level(10, 10), MAX_LEVEL);
+    fn a_skill_needs_every_member() {
+        assert!(skill_learned([1]));
+        assert!(skill_learned([1, 3]));
+        assert!(!skill_learned([1, 0]), "one member has not started it");
+        assert!(
+            !skill_learned([]),
+            "an island without members learned nothing"
+        );
     }
 
     #[test]
-    fn level_of_an_empty_topic_is_zero() {
-        assert_eq!(level(0, 0), 0);
-        assert_eq!(level(3, 0), 0);
-    }
-
-    #[test]
-    fn level_is_capped() {
-        // tasks can be deleted after they were solved
-        assert_eq!(level(12, 10), MAX_LEVEL);
-    }
-
-    #[test]
-    fn house_needs_every_member() {
-        assert_eq!(house_level([3, 1]), 1);
-        assert_eq!(house_level([2, 0]), 0, "one member has not learned it");
-        assert_eq!(house_level([4, 4]), 4);
-    }
-
-    #[test]
-    fn single_member_builds_alone() {
-        assert_eq!(house_level([2]), 2);
+    fn house_level_counts_learned_skills() {
         assert_eq!(house_level([]), 0);
+        assert_eq!(house_level([false, true, true]), 2);
+        assert_eq!(house_level([true, false, true, true]), 3);
+    }
+
+    #[test]
+    fn house_level_is_capped() {
+        assert_eq!(house_level([true; 6]), MAX_LEVEL);
     }
 }

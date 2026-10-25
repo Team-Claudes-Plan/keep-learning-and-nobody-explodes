@@ -4,6 +4,7 @@ use serde_json::Value;
 
 pub const EXTRACTION: &str = include_str!("prompt/system.md");
 pub const REVIEW: &str = include_str!("prompt/review.md");
+pub const SKILL: &str = include_str!("prompt/skill.md");
 
 /// Replaces `{{name}}` placeholders. Unknown placeholders are left untouched so
 /// a prompt bug is visible in the rendered request.
@@ -91,6 +92,13 @@ mod tests {
     #[test]
     fn review_template_has_no_missing_placeholders() {
         let rendered = render(REVIEW, &[("language", "German")]);
+
+        assert!(!rendered.contains("{{"), "unrendered placeholder in prompt");
+    }
+
+    #[test]
+    fn skill_template_has_no_missing_placeholders() {
+        let rendered = render(SKILL, &[("language", "German"), ("max_skill_chars", "60")]);
 
         assert!(!rendered.contains("{{"), "unrendered placeholder in prompt");
     }

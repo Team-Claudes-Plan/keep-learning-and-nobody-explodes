@@ -48,13 +48,19 @@ async fn seed_topic(db: &Database, tasks: usize) -> Seed {
     .fetch_one(db.pool())
     .await
     .expect("document");
+    let skill: Uuid =
+        sqlx::query_scalar("INSERT INTO skills (topic_id, name) VALUES ($1, 'Bits') RETURNING id")
+            .bind(topic)
+            .fetch_one(db.pool())
+            .await
+            .expect("skill");
     for _ in 0..tasks {
         let task: Uuid = sqlx::query_scalar(
-            "INSERT INTO tasks (document_id, topic_id, question_type, content, solution)
+            "INSERT INTO tasks (document_id, skill_id, question_type, content, solution)
              VALUES ($1, $2, 'single_choice', $3, $4) RETURNING id",
         )
         .bind(document)
-        .bind(topic)
+        .bind(skill)
         .bind(json!({ "prompt": "Wie viele Bits hat ein Byte?", "options": ["4", "8"] }))
         .bind(json!({ "correct_answer": 1 }))
         .fetch_one(db.pool())

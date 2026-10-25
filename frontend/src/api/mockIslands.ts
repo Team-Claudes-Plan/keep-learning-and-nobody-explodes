@@ -1,8 +1,8 @@
 import type { Island, IslandHouse, IslandsResponse, Presence, UploadResponse, UserSummary } from './types'
 
 // An in-memory stand-in for the backend's islands, following the same rules (backend/src/api/islands.rs):
-// topics live on the original island and are shared with its forks, knowledge is per user and topic,
-// and a house is built as far as every member of the island knows its topic.
+// topics live on the original island and are shared with its forks, knowledge is per user and topic
+// (the mock keeps the old topic-level numbers), and a house is built as far as every member knows it.
 
 const ME: UserSummary = { id: 'user-me', name: 'Alex' }
 const MIA: UserSummary = { id: 'user-mia', name: 'Mia' }

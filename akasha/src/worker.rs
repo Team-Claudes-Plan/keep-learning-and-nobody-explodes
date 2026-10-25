@@ -33,15 +33,21 @@ pub async fn process_chronicle(
         "processing chronicle"
     );
 
-    // Loaded as late as possible, so documents processed in parallel see each
-    // other's topics; the store still merges names that only differ in case.
-    let existing_topics = database.topic_names(job.island_id).await?;
+    // TODO: Implement some sort of lock so if multiple process jobs run in parallel,
+    //  which might result in same skill names in different wordings, they can be written
+    //  to the db without duplication
+    let existing = database.topic_skills(job.island_id).await?;
+    let existing_topics = existing
+        .iter()
+        .map(|topic| topic.topic.clone())
+        .collect::<Vec<_>>();
 
     let input = PipelineInput {
         id: job.id.clone(),
         language: job.language,
         island_name: job.island_name,
         existing_topics,
+        existing_skills: existing,
         text: job.text,
     };
 
@@ -69,7 +75,15 @@ pub async fn process_chronicle(
         id = %job.id,
         document_id = %document_id,
         topics = topics.len(),
-        count = topics.iter().map(|topic| topic.questions.len()).sum::<usize>(),
+        skills = topics
+            .iter()
+            .map(|topic| topic.skills.len())
+            .sum::<usize>(),
+        count = topics
+            .iter()
+            .flat_map(|topic| &topic.skills)
+            .map(|skill| skill.questions.len())
+            .sum::<usize>(),
         "stored generated questions"
     );
 

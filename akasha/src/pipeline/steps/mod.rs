@@ -6,10 +6,12 @@
 mod extract;
 mod review;
 mod schema;
+mod skill;
 
 pub use extract::ExtractStep;
 pub use review::ReviewStep;
 pub use schema::SchemaStep;
+pub use skill::SkillStep;
 
 use crate::provider::Llm;
 
@@ -22,6 +24,7 @@ pub enum Step<L: Llm> {
     Extract(ExtractStep<L>),
     Schema(SchemaStep),
     Review(ReviewStep<L>),
+    Skill(SkillStep<L>),
 }
 
 impl<L: Llm> PipelineStep for Step<L> {
@@ -30,6 +33,7 @@ impl<L: Llm> PipelineStep for Step<L> {
             Self::Extract(step) => step.id(),
             Self::Schema(step) => step.id(),
             Self::Review(step) => step.id(),
+            Self::Skill(step) => step.id(),
         }
     }
 
@@ -41,6 +45,7 @@ impl<L: Llm> PipelineStep for Step<L> {
             Self::Extract(step) => step.run(context).await,
             Self::Schema(step) => step.run(context).await,
             Self::Review(step) => step.run(context).await,
+            Self::Skill(step) => step.run(context).await,
         }
     }
 }
@@ -51,8 +56,8 @@ mod tests {
     use std::sync::{Arc, Mutex};
 
     use super::*;
-    use crate::pipeline::error::{ExtractError, ReviewError, StepError};
-    use crate::pipeline::{EXTRACT, PipelineInput};
+    use crate::pipeline::error::{ExtractError, ReviewError, SkillError, StepError};
+    use crate::pipeline::{EXTRACT, ExistingTopic, PipelineInput, Question, SKILL, TopicQuestions};
     use crate::provider::{OutputFormat, ProviderError};
 
     #[derive(Clone, Debug)]
@@ -106,13 +111,27 @@ mod tests {
                 id: "chronicle".to_owned(),
                 language: "German".to_owned(),
                 island_name: "Biologie".to_owned(),
-                existing_topics: vec!["Photosynthese".to_owned()],
+                existing_topics: vec!["Mathe".to_owned()],
+                existing_skills: vec![ExistingTopic {
+                    topic: "Mathe".to_owned(),
+                    skills: vec!["Multiplikation".to_owned()],
+                }],
                 text: text.to_owned(),
             },
             candidate: None,
             topics: None,
+            skills: None,
             last_feedback: None,
         }
+    }
+
+    fn text_question(prompt: &str) -> Question {
+        serde_json::from_value(serde_json::json!({
+            "type": "text_input",
+            "prompt": prompt,
+            "correct_answer": "x"
+        }))
+        .expect("valid question")
     }
 
     #[tokio::test]
@@ -133,7 +152,7 @@ mod tests {
         assert!(calls[0].0.contains("German"));
         assert!(calls[0].0.contains('5'));
         assert!(
-            calls[0].0.contains("- Photosynthese"),
+            calls[0].0.contains("- Mathe"),
             "existing topics are offered"
         );
         assert!(calls[0].0.contains("\"Biologie\""));
@@ -228,5 +247,70 @@ mod tests {
             }
             other => panic!("unexpected error: {other}"),
         }
+    }
+
+    #[tokio::test]
+    async fn skill_step_reuses_existing_skills_and_groups_questions() {
+        let llm = FakeLlm::new([r#"[
+            {"topic": 0, "question": 0, "skill": "multiplikation"},
+            {"topic": 0, "question": 1, "skill": "Division"},
+            {"topic": 1, "question": 0, "skill": "Kräfte"}
+        ]"#]);
+        let step = SkillStep::new(llm.clone());
+        let mut context = context("source");
+        context.topics = Some(vec![
+            TopicQuestions {
+                topic: "Mathe".to_owned(),
+                questions: vec![text_question("2 * 3?"), text_question("6 / 3?")],
+            },
+            TopicQuestions {
+                topic: "Physik".to_owned(),
+                questions: vec![text_question("Kraft?")],
+            },
+        ]);
+        context.input.existing_skills.push(ExistingTopic {
+            topic: "Physik".to_owned(),
+            skills: Vec::new(),
+        });
+
+        let outcome = step
+            .run(&mut context)
+            .await
+            .expect("classification succeeds");
+
+        assert_eq!(outcome, StepOutcome::Next);
+        let skills = context.skills.expect("classified topics");
+        assert_eq!(skills.len(), 2);
+        assert_eq!(skills[0].skills[0].skill, "Multiplikation");
+        assert_eq!(skills[0].skills[0].questions.len(), 1);
+        assert_eq!(skills[0].skills[1].skill, "Division");
+        assert_eq!(skills[1].skills[0].skill, "Kräfte");
+
+        let calls = llm.calls();
+        assert!(calls[0].0.contains("German"));
+        assert!(calls[0].1.contains("- Multiplikation"));
+        assert!(calls[0].1.contains("\"Mathe\""));
+    }
+
+    #[tokio::test]
+    async fn skill_step_retries_only_itself_on_invalid_assignments() {
+        let llm = FakeLlm::new(["[]"]);
+        let step = SkillStep::new(llm);
+        let mut context = context("source");
+        context.topics = Some(vec![TopicQuestions {
+            topic: "Mathe".to_owned(),
+            questions: vec![text_question("2 * 3?")],
+        }]);
+
+        let failure = step
+            .run(&mut context)
+            .await
+            .expect_err("missing assignment is rejected");
+
+        assert_eq!(failure.retry, SKILL);
+        assert!(matches!(
+            *failure.error,
+            StepError::Skill(SkillError::Invalid(_))
+        ));
     }
 }
