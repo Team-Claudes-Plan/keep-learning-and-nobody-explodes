@@ -457,6 +457,7 @@ mod websocket {
 
         let state = Arc::new(GlobalState {
             sessions: Sessions::new(db.clone()),
+            presence: crate::presence::Hub::new(),
             db,
         });
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0")

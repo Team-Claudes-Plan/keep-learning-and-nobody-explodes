@@ -9,6 +9,7 @@ use crate::GlobalState;
 
 pub mod error;
 pub mod islands;
+pub mod presence;
 pub mod session;
 pub mod user;
 pub mod users;
@@ -18,6 +19,7 @@ pub fn routes() -> Router<Arc<GlobalState>> {
         .route("/api/sessions", get(session::session_list))
         .route("/api/sessions/ws", get(session::session_socket))
         .route("/api/users/create", put(users::users_create))
+        .route("/api/users/ws", get(presence::user_socket))
         .route("/api/islands", get(islands::islands_list))
         .route("/api/islands/create", put(islands::islands_create))
         .route(
@@ -48,7 +50,7 @@ pub(crate) mod testing {
     use uuid::Uuid;
 
     use super::user::USER_HEADER;
-    use crate::{GlobalState, config::Config, db::Database, session::Sessions};
+    use crate::{GlobalState, config::Config, db::Database, presence::Hub, session::Sessions};
 
     pub async fn app() -> (Router, Database) {
         let config = Config::from_env().expect("dev environment should be set");
@@ -59,6 +61,7 @@ pub(crate) mod testing {
         let state = Arc::new(GlobalState {
             db: db.clone(),
             sessions: Sessions::new(db.clone()),
+            presence: Hub::new(),
         });
         (super::routes().with_state(state), db)
     }

@@ -8,6 +8,7 @@ mod api;
 mod config;
 mod db;
 mod knowledge;
+mod presence;
 mod session;
 mod upload;
 mod webhook;
@@ -27,6 +28,7 @@ static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 pub struct GlobalState {
     pub db: Database,
     pub sessions: session::Sessions,
+    pub presence: presence::Hub,
 }
 
 #[tokio::main]
@@ -49,6 +51,7 @@ async fn main() -> Result<()> {
     let state = Arc::new(GlobalState {
         db: db.clone(),
         sessions: session::Sessions::new(db.clone()),
+        presence: presence::Hub::new(),
     });
 
     let app = Router::new()
