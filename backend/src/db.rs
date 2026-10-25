@@ -570,7 +570,7 @@ impl Database {
                  WHERE s.topic_id = ANY($1)
                  ORDER BY t.id, random()
              ), ranked AS (
-                 SELECT task_id, instruction_id, question_type, content,
+                 SELECT task_id, instruction_id, question_type, content, task_random,
                         row_number() OVER (PARTITION BY skill_id ORDER BY task_random)
                             AS skill_rank
                  FROM candidates
@@ -948,16 +948,5 @@ mod tests {
             3,
             "one task from each skill is picked before a skill repeats"
         );
-
-        sqlx::query("DELETE FROM islands WHERE id = $1")
-            .bind(island)
-            .execute(pool)
-            .await
-            .expect("cleanup island");
-        sqlx::query("DELETE FROM users WHERE id = $1")
-            .bind(user)
-            .execute(pool)
-            .await
-            .expect("cleanup user");
     }
 }
