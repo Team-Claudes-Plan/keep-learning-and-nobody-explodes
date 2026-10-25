@@ -6,6 +6,7 @@ import StoreyPage from './pages/StoreyPage'
 import NotFoundPage from './pages/NotFoundPage'
 import MinigamesPage from './pages/MinigamesPage'
 import BombPage from './pages/BombPage'
+import ArDemoPage from './pages/ArDemoPage'
 import { KoopBombPage, KoopManualPage, KoopStartPage } from './pages/KoopPages'
 
 export const router = createBrowserRouter([
@@ -17,6 +18,7 @@ export const router = createBrowserRouter([
   { path: '/minigames', element: <MinigamesPage /> },
   { path: '/minigames/bomb', element: <BombPage /> },
   { path: '/minigames/modules/:moduleId', element: <BombPage /> },
+  { path: '/ar-demo', element: <ArDemoPage /> },
   { path: '/koop', element: <KoopStartPage /> },
   { path: '/koop/:seed/bombe', element: <KoopBombPage /> },
   { path: '/koop/:seed/handbuch', element: <KoopManualPage /> },

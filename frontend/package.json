@@ -8,6 +8,7 @@
     "build": "tsc -b && vite build",
     "lint": "oxlint",
     "gen:textures": "node scripts/generate-textures.mjs",
+    "cert": "bash scripts/generate-dev-cert.sh",
     "preview": "vite preview"
   },
   "dependencies": {

@@ -14,6 +14,11 @@ export default function MinigamesPage() {
           <span className="mg-tile-name">Bombe entschärfen</span>
           <span className="mg-muted">Alle Module, zufällige Fragen, 3 Fehler erlaubt.</span>
         </Link>
+        <Link to="/ar-demo" className="mg-tile">
+          <span className="mg-tile-icon">📱</span>
+          <span className="mg-tile-name">Bombe in AR</span>
+          <span className="mg-muted">Alle Level als 3D-Objekt ansehen und mit 8th Wall im Raum platzieren.</span>
+        </Link>
         {MODULES.map((module) => (
           <Link key={module.id} to={`/minigames/modules/${module.id}`} className="mg-tile">
             <span className="mg-tile-icon">{module.icon}</span>

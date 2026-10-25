@@ -36,7 +36,65 @@ bun run preview   # serve the production build
   are visible from outside. Clicking a storey opens that room.
 - `/houses/:houseId/storeys/:storeyId` — a single storey in the isometric
   view. Room items are clickable and can be selected/highlighted.
+- `/ar-demo` — the bomb with all learning levels as an AR object, placed in the
+  room with 8th Wall (see below).
 - `*` — not found page.
+
+## AR demo (`/ar-demo`)
+
+A small 8th Wall demo that turns the bomb into a room-scale AR object:
+
+- Pick one of the six learning levels (Foundations … Analysis) or the bomb with all
+  eleven module types. Every level fills all eleven module slots.
+- The 3D turntable preview runs anywhere, including the desktop; drag to turn the
+  bomb, scroll/pinch to zoom.
+- "AR starten" loads the free/open-source 8th Wall engine from jsDelivr
+  (`@8thwall/engine-binary`, world-tracking `slam` chunk), opens the camera, shows
+  a reticle and places the bomb on the first surface tap. After placement, drag to
+  turn it, pinch or use the buttons to scale it, and switch levels live.
+
+The level presets live in `src/ar/levels.ts`, the three.js scene and 8th Wall
+integration in `src/ar/ArBombExperience.ts`, and the UI in
+`src/pages/ArDemoPage.tsx`.
+
+### HTTPS for testing on a phone
+
+The camera and 8th Wall need HTTPS. The repo includes a small script that
+creates a local development CA and a server certificate valid for `localhost`,
+the machine's `.local`/`.fritz.box` names and all current IPv4 addresses:
+
+```bash
+npm run cert
+npm run dev
+```
+
+`certs/` is gitignored; private keys never belong in a commit.
+
+**Install the CA once on the phone** (AirDrop or email the file to yourself):
+
+- **iOS (recommended):** `certs/keep-learning-local-ca.mobileconfig`
+  Install the profile under *Settings → General → VPN & Device Management*,
+  then enable full trust under
+  *Settings → General → About → Certificate Trust Settings*.
+- **iOS / Android:** alternatively `certs/keep-learning-local-ca.crt`.
+  On Android install it under *Settings → Security → Encryption & credentials →
+  Install a certificate → CA certificate*.
+
+Then open the dev server on the phone, e.g.
+`https://192.168.178.26:5173/ar-demo` (the exact addresses are printed by
+`npm run cert` and `npm run dev`). The phone must be on the same network, and the
+macOS firewall must allow incoming connections for `node`.
+
+After a network change, run `npm run cert` again so the server certificate
+contains the new IP. Use only the CA certificate/profile on the phone — never
+send `ca.key` or `server.key`. Remove the profile from the phone when you are
+done testing.
+
+On the Mac itself you can optionally trust the CA to avoid the browser warning:
+
+```bash
+security add-trusted-cert -d -r trustRoot -k ~/Library/Keychains/login.keychain-db certs/keep-learning-local-ca.crt
+```
 
 ## Data & structure
 
