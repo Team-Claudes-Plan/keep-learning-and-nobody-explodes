@@ -46,10 +46,19 @@ type BombProps = {
   testBar?: boolean
   /** Practice round (e.g. koop with a question type): no timer, no explosion. */
   practice?: boolean
+  /** Shown in the top left, e.g. the koop code, so both players can check they have the same bomb. */
+  badge?: string
 }
 
 /** Full-screen 3D bomb, nothing else: click a module to zoom in and work on it. */
-export default function Bomb({ modules, plan: fixedPlan, view = 'solo', testBar = false, practice = false }: BombProps) {
+export default function Bomb({
+  modules,
+  plan: fixedPlan,
+  view = 'solo',
+  testBar = false,
+  practice = false,
+  badge,
+}: BombProps) {
   const [round, setRound] = useState(0)
   const [load, setLoad] = useState<Load>({ status: 'loading' })
   const [slots, setSlots] = useState<Slot[]>([])
@@ -261,6 +270,7 @@ export default function Bomb({ modules, plan: fixedPlan, view = 'solo', testBar 
       >
         {card}
       </Bomb3D>
+      {badge && <div className="bomb-badge">{badge}</div>}
       {testBar && (
         <TestBar
           mode={mode}

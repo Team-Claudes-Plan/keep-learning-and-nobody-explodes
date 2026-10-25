@@ -3,7 +3,7 @@ import { useFrame, type ThreeEvent } from '@react-three/fiber'
 import { Text } from '@react-three/drei'
 import type * as THREE from 'three'
 import { FACE, FONT_URL } from './module3d'
-import { Label, ModuleHeading } from './Label3D'
+import { Label, ModuleHeading, PlateText } from './Label3D'
 import type { ModuleProps } from './types'
 
 const ACTIVE = '#ffb547'
@@ -126,10 +126,15 @@ export default function SorterModule3D({ primitive, value, onChange, disabled, h
             </Label>
           </group>
         )}
-        {/* above the belt on the left (the status LED sits top right), so a long part never covers it */}
-        <Text font={FONT_URL} position={[-PLATE_WIDTH / 2 + 0.01, 0.075, 0.012]} fontSize={0.024} anchorX="left" anchorY="bottom" color="#9aa3b2">
-          {remaining} übrig
-        </Text>
+        {/* above the belt, left of the status LED, so a long part never covers it */}
+        <PlateText
+          text={`${remaining} übrig`}
+          position={[PLATE_WIDTH / 2 - 0.13, 0.065, 0.014]}
+          fontSize={0.026}
+          anchorX="right"
+          anchorY="bottom"
+          color="#d4d8de"
+        />
       </group>
 
       {primitive.targets.map((target, t) => {

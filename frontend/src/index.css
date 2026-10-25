@@ -1803,6 +1803,20 @@ canvas {
   100% { background: rgba(255, 80, 20, 0); }
 }
 
+/* Koop: code and practice type over the bomb, to check both players have the same bomb */
+.bomb-badge {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  background: rgba(13, 15, 19, 0.75);
+  color: #e6e9ef;
+  font-size: 14px;
+  font-weight: 600;
+  pointer-events: none;
+}
+
 /* Test bar: pick a question type, top left over the bomb */
 .bomb-testbar {
   position: absolute;
@@ -1848,6 +1862,424 @@ canvas {
   gap: 12px;
   padding: 0;
   list-style: none;
+}
+
+.koop-links p {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 6px 0;
+}
+
+.koop-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.koop-link code {
+  overflow-wrap: anywhere;
+  font-size: 13px;
+}
+
+.glyph-icon {
+  flex: none;
+  width: 1.9em;
+  height: 1.9em;
+}
+
+/* line symbols only: the page-turn library's styles must not fill them */
+.glyph-icon path {
+  fill: none !important;
+}
+
+.book-glyphs li span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Manual as an old spellbook on a velvet-covered table: leather with gold tooling, parchment,
+   gold corner fittings and faint runes drifting up into the book */
+.book-screen {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  grid-template-rows: 1fr auto auto;
+  justify-items: center;
+  align-items: center;
+  gap: 10px;
+  padding: 16px 16px 18px;
+  background:
+    radial-gradient(ellipse at 50% 55%, rgba(120, 60, 200, 0.28) 0%, transparent 55%),
+    radial-gradient(ellipse at 50% 45%, #1d1530 0%, #0c0914 70%, #050409 100%);
+  color: #3b2a14;
+  overflow: hidden;
+  /* turning pages must never select text (Safari still needs the prefix) */
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+  font-family: Georgia, 'Times New Roman', serif;
+}
+
+.book-loading {
+  grid-row: 1 / -1;
+  color: #d9c8ff;
+  font-family: Georgia, 'Times New Roman', serif;
+  font-size: 20px;
+}
+
+/* runes floating up into the book, glowing like the enchanting table's */
+.enchant-runes {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.enchant-runes span {
+  position: absolute;
+  font-size: 20px;
+  color: #d8c7ff;
+  text-shadow: 0 0 8px rgba(143, 92, 255, 0.8);
+  opacity: 0;
+  animation: rune-drift 6s linear infinite;
+}
+
+@keyframes rune-drift {
+  0% { opacity: 0; transform: translate(0, 0) scale(0.8); }
+  20% { opacity: 0.45; }
+  80% { opacity: 0.3; }
+  100% { opacity: 0; transform: translate(calc((50vw - 50%) * 0.15), -38vh) scale(0.5); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .enchant-runes span { animation: none; opacity: 0.4; }
+}
+
+/* the open book, seen from a little above: pages lie on a tilted spread */
+.book-stage {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  perspective: 2200px;
+}
+
+.book-tilt {
+  position: relative;
+  transform: rotateX(8deg);
+  transform-origin: 50% 70%;
+}
+
+/* the table: dark wood rim, deep red velvet, gold fittings on the corners, a faint magic glow */
+.book-table {
+  position: absolute;
+  inset: -8% -6% -11%;
+  border: 12px solid #2b1a10;
+  border-radius: 10px;
+  box-shadow:
+    inset 0 0 0 2px rgba(201, 154, 74, 0.35),
+    inset 0 0 60px rgba(0, 0, 0, 0.6),
+    0 40px 60px rgba(0, 0, 0, 0.7),
+    0 0 90px rgba(120, 60, 220, 0.25);
+  background: radial-gradient(ellipse at 50% 40%, #8a1f27 0%, #5e121a 70%, #430b12 100%);
+}
+
+.book-table-gem {
+  position: absolute;
+  width: 30px;
+  height: 30px;
+  border-radius: 4px;
+  background: linear-gradient(135deg, #f2d48a, #a8782e);
+  box-shadow: inset 0 0 0 2px #6e4b17, 0 2px 4px rgba(0, 0, 0, 0.5);
+}
+
+.book-table-gem.is-tl { top: -20px; left: -20px; }
+.book-table-gem.is-tr { top: -20px; right: -20px; }
+.book-table-gem.is-bl { bottom: -20px; left: -20px; }
+.book-table-gem.is-br { bottom: -20px; right: -20px; }
+
+.book-spread {
+  position: relative;
+  /* two pages side by side; fits width and height of the screen */
+  width: min(1060px, calc(100vw - 80px), calc((100dvh - 250px) * 1.42));
+  transition: transform 0.6s cubic-bezier(0.45, 0.05, 0.3, 1);
+}
+
+/* closed book: the cover is the right half of the spread, so move it to the middle */
+.book-spread.is-closed-front {
+  transform: translateX(-25%);
+}
+
+.book-spread.is-closed-back {
+  transform: translateX(25%);
+}
+
+.book-host {
+  width: 100%;
+}
+
+/* a page (StPageFlip positions and bends them) */
+.book-face {
+  overflow: hidden;
+  container-type: size;
+  cursor: grab;
+}
+
+/* the library's highlight stripes make paper look like sheet metal: soft shadow only */
+.book-spread .stf__innerShadow {
+  display: none !important;
+}
+
+/* the fold: every page darkens towards the spine, with a dark crease right at the edge */
+.book-face.is-paper.--left::after,
+.book-face.is-paper.--right::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 16%;
+  pointer-events: none;
+}
+
+.book-face.is-paper.--left::after {
+  right: 0;
+  background: linear-gradient(
+    270deg,
+    rgba(40, 22, 6, 0.55) 0%,
+    rgba(60, 35, 10, 0.28) 18%,
+    rgba(60, 35, 10, 0.1) 50%,
+    transparent 100%
+  );
+}
+
+.book-face.is-paper.--right::after {
+  left: 0;
+  background: linear-gradient(
+    90deg,
+    rgba(40, 22, 6, 0.55) 0%,
+    rgba(60, 35, 10, 0.28) 18%,
+    rgba(60, 35, 10, 0.1) 50%,
+    transparent 100%
+  );
+}
+
+/* cover: brown leather book with a pixel border, like the one on the enchanting table */
+.book-cover {
+  height: 100%;
+  padding: 4cqw;
+  border-radius: 0 6px 6px 0;
+  background:
+    radial-gradient(ellipse at 30% 20%, rgba(255, 255, 255, 0.1), transparent 60%),
+    linear-gradient(90deg, #4a2c14 0 5%, #7a4a24 5%);
+  box-shadow: inset 0 0 40px rgba(0, 0, 0, 0.5);
+  color: #f3e2b6;
+}
+
+.book-cover-frame {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4cqh;
+  height: 100%;
+  padding: 5cqw;
+  border: 2px solid #c99a4a;
+  outline: 1px solid rgba(201, 154, 74, 0.5);
+  outline-offset: -8px;
+  border-radius: 6px;
+  text-align: center;
+}
+
+.book-cover h1 {
+  margin: 0;
+  font-family: Georgia, 'Times New Roman', serif;
+  font-size: clamp(16px, 8cqw, 40px);
+  line-height: 1.15;
+  color: #f3d58e;
+  text-shadow: 0 2px 0 rgba(0, 0, 0, 0.45);
+}
+
+.book-cover-stamp {
+  padding: 0.5em 0.8em;
+  border: 2px solid #d9584a;
+  border-radius: 4px;
+  color: #ff8f7f;
+  letter-spacing: 0.15em;
+  font-weight: 700;
+  font-family: Georgia, 'Times New Roman', serif;
+  font-size: clamp(9px, 2.8cqw, 14px);
+  transform: rotate(-5deg);
+}
+
+.book-cover-icon {
+  font-size: clamp(28px, 12cqw, 64px);
+  color: #e8d9ff;
+  text-shadow: 0 0 12px rgba(143, 92, 255, 0.9);
+  animation: cover-glow 2.4s ease-in-out infinite alternate;
+}
+
+@keyframes cover-glow {
+  from { opacity: 0.6; }
+  to { opacity: 1; }
+}
+
+.book-cover-facts {
+  display: grid;
+  grid-template-columns: auto auto;
+  gap: 0.2em 0.8em;
+  margin: 0;
+  font-family: Georgia, 'Times New Roman', serif;
+  font-size: clamp(12px, 4cqw, 20px);
+}
+
+.book-cover-facts dt {
+  text-align: right;
+  opacity: 0.75;
+}
+
+.book-cover-facts dd {
+  margin: 0;
+  text-align: left;
+  font-weight: 700;
+  color: #ffe7ad;
+}
+
+.book-cover-hint {
+  font-family: Georgia, 'Times New Roman', serif;
+  font-size: clamp(11px, 3.2cqw, 15px);
+  opacity: 0.7;
+}
+
+.book-cover.is-back .book-cover-frame {
+  font-family: Georgia, 'Times New Roman', serif;
+  font-size: clamp(13px, 4.4cqw, 22px);
+}
+
+/* parchment pages */
+.book-paper {
+  height: 100%;
+  overflow: hidden;
+  padding: 7cqw 7cqw 5cqw;
+  background:
+    radial-gradient(ellipse at 50% 40%, transparent 60%, rgba(120, 80, 30, 0.18) 100%),
+    #ecdcb0;
+  font-family: Georgia, 'Times New Roman', serif;
+  /* text scales with the page, so the spread works on small screens too */
+  font-size: clamp(10px, 3.8cqw, 18px);
+  line-height: 1.4;
+  color: #3b2a14;
+}
+
+.book-paper h2 {
+  margin: 0 0 0.8em;
+  font-family: Georgia, 'Times New Roman', serif;
+  font-size: 1.35em;
+  line-height: 1.2;
+  color: #4a2a0e;
+}
+
+.book-paper h3 {
+  margin: 0 0 0.6em;
+  font-family: Georgia, 'Times New Roman', serif;
+  font-family: system-ui, sans-serif;
+  font-size: 0.7em;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #7a5228;
+}
+
+.book-paper section + section {
+  margin-top: 1.2em;
+}
+
+.book-paper ol {
+  margin: 0;
+  padding-left: 1.2em;
+}
+
+.book-paper ol li + li {
+  margin-top: 0.4em;
+}
+
+.book-question {
+  margin: 0;
+  font-size: 1.3em;
+  color: #2a1a08;
+}
+
+.book-statements {
+  margin: 0;
+}
+
+.book-glyphs {
+  display: grid;
+  /* all answer boxes the same size: equal columns, equal rows */
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-auto-rows: 2.8em;
+  gap: 0.45em;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.book-glyphs li {
+  display: flex;
+  align-items: center;
+  gap: 0.5em;
+  min-width: 0;
+  margin: 0;
+  padding: 0.3em 0.45em;
+  border: 1px solid #c4a86f;
+  border-radius: 6px;
+  background: #f6ecd0;
+  color: #2a1a08;
+}
+
+.book-folio {
+  margin-top: 1.4em;
+  text-align: center;
+  font-size: 0.8em;
+  color: #8a6a3c;
+}
+
+.book-help {
+  position: relative;
+  z-index: 2;
+  margin: 0;
+  font-size: 13px;
+  color: rgba(217, 200, 255, 0.55);
+}
+
+.book-nav {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  color: #eadfc8;
+  font-size: 15px;
+}
+
+/* warm leather-like buttons under the book */
+.book-nav .mg-button {
+  padding: 6px 16px;
+  border: 1px solid #c99a4a;
+  border-radius: 8px;
+  background: #3a2414;
+  color: #f3e2b6;
+}
+
+.book-nav .mg-button:hover:not(:disabled) {
+  border-color: #f3d58e;
+  background: #4a2e18;
+}
+
+.book-nav .mg-button:disabled {
+  opacity: 0.4;
 }
 
 /* 3D modules: off-screen input that only receives keystrokes */
