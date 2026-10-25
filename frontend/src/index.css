@@ -2929,3 +2929,82 @@ canvas {
   stroke-linecap: round;
   stroke-width: 1.9;
 }
+
+/* Sound test page */
+
+.sound-test-link {
+  margin-top: 22px;
+  text-align: center;
+}
+
+.sound-group {
+  margin-top: 26px;
+}
+
+.sound-group-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 12px;
+  margin-bottom: 10px;
+}
+
+.sound-group-head h2 {
+  margin: 0;
+  font-size: 15px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #374151;
+}
+
+.sound-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  gap: 8px;
+}
+
+.sound-button {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: 9px 11px;
+  border: 1px solid var(--mg-border, rgba(13, 42, 80, 0.12));
+  border-radius: 8px;
+  background: var(--mg-panel, rgba(255, 255, 255, 0.82));
+  color: var(--mg-text, #1f2937);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    background 100ms,
+    border-color 100ms,
+    box-shadow 100ms,
+    transform 100ms;
+}
+
+.sound-button:hover {
+  border-color: var(--mg-accent, #2563eb);
+  background: var(--mg-panel-solid, #ffffff);
+  transform: translateY(-1px);
+}
+
+.sound-button:active {
+  transform: translateY(0);
+}
+
+.sound-button.is-playing {
+  border-color: var(--mg-accent, #2563eb);
+  background: var(--mg-accent-bg, rgba(37, 99, 235, 0.1));
+  box-shadow: 0 0 0 2px var(--mg-accent-border, rgba(37, 99, 235, 0.45));
+}
+
+.sound-button-label {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.sound-button code {
+  font-size: 11px;
+  color: var(--mg-muted, #6b7280);
+}

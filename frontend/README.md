@@ -45,6 +45,9 @@ when a handler plays its own sound, or `data-sfx="whoosh"` (any name from
 `SoundName`) to pick a specific effect. Module cards opt out as a group because
 their value changes already play the matching mechanical sound.
 
+Open `/soundtest` (also linked from the Minigames page) to hear every effect
+individually or play the whole library in sequence.
+
 ## Routes
 
 - `/` → redirects to `/city`.

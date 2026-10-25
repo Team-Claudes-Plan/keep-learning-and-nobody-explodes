@@ -22,6 +22,9 @@ export default function MinigamesPage() {
           </Link>
         ))}
       </div>
+      <p className="sound-test-link">
+        <Link to="/soundtest">🔊 Alle Sounds anhören</Link>
+      </p>
     </div>
   )
 }
