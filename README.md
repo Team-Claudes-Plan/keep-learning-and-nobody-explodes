@@ -110,6 +110,7 @@ The server is the single authority over every game: clients only render what the
 | [`common/`](common/) | Shared configuration crate and gRPC/protobuf definitions (`akasha.proto`) |
 | [`schema/`](schema/) | JSON schemas for questions, answers and session messages, plus protocol documentation |
 | [`flake.nix`](flake.nix) | Reproducible dev environment and one-command local stack |
+| [`docker-compose.yml`](docker-compose.yml), [`deploy/`](deploy/) | Container stack for running the complete app, plus storage setup and an example nginx config |
 
 ## Technologies
 
@@ -161,7 +162,50 @@ AI tools were part of our everyday workflow during the hackathon:
 - **Prompt engineering** — Akasha's prompts ([`akasha/src/pipeline/prompt/`](akasha/src/pipeline/prompt/)) are versioned alongside the code and were developed iteratively by testing them against real course material.
 - **Guardrails** — To keep AI-assisted code maintainable, we rely on strict tooling: Conventional Commits, the Pragmatic Rust Guidelines, clippy with pedantic lints as errors, unit and database tests in CI, and Playwright end-to-end tests that play full two-player sessions.
 
-## Getting started
+## Quick start (Docker Compose)
+
+Requirements: Docker with Compose and an API key for an OpenAI-compatible LLM
+endpoint (e.g. [OpenRouter](https://openrouter.ai/)).
+
+1. Create a `.env` file in the repository root (or `cp .env.example .env`):
+
+   ```bash
+   export LLM_API_KEY=<your key>
+   export LLM_BASE_URL=https://openrouter.ai/api/v1
+   export LLM_MODEL=deepseek/deepseek-v4.1-flash-1017
+   export DATABASE_URL=postgres://postgres@localhost:5432/upload  # only used by the Nix dev stack
+   ```
+
+   The `LLM_*` variables are required. Everything else has working defaults;
+   see [`.env.example`](.env.example) for the optional settings (port, question
+   language, internal passwords).
+
+2. Build and start the stack:
+
+   ```bash
+   docker compose up -d --build
+   ```
+
+3. Open <http://127.0.0.1:8080>.
+
+The first build takes a while, because it compiles the Rust services including
+Tesseract. Only the frontend container publishes a port, and only on
+`127.0.0.1:8080` over plain HTTP. It proxies `/backend/*`, including the
+websockets, to the backend. PostgreSQL, RustFS and Akasha are reachable only
+inside the compose networks.
+
+To serve the app under a domain, point a reverse proxy at `127.0.0.1:8080` and
+pass the websocket upgrade through.
+[`deploy/nginx.example.conf`](deploy/nginx.example.conf) is a ready-made nginx
+config; add TLS with `certbot --nginx`. NixOS hosts can use the module in
+[`nix/`](nix/) instead, which also sets up nginx and ACME.
+
+```bash
+docker compose logs -f backend akasha   # follow OCR and question generation
+docker compose down                     # stop (add -v to delete all data)
+```
+
+## Getting started (development)
 
 Requirements: [Nix](https://nixos.org/) with flakes enabled (optionally direnv).
 
