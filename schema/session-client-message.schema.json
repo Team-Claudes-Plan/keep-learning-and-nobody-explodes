@@ -19,13 +19,17 @@
     "uuid": { "type": "string", "format": "uuid" },
     "role": { "enum": ["defuser", "expert"] },
     "create": {
-      "description": "Opens a lobby. Without role, the joiner's wish or a coin decides who defuses first.",
+      "description": "Opens a lobby. Without role, the joiner's wish or a coin decides who defuses first. With skill_id and island_id it is a storey game: the questions come from that skill, topics is ignored. Otherwise topics must not be empty.",
       "type": "object",
-      "required": ["type", "topics", "question_count"],
+      "required": ["type", "question_count"],
       "additionalProperties": false,
+      "dependentRequired": { "skill_id": ["island_id"], "island_id": ["skill_id"] },
       "properties": {
         "type": { "const": "create" },
-        "topics": { "description": "Ids of the houses (topics) to draw the questions from.", "type": "array", "items": { "$ref": "#/$defs/uuid" }, "minItems": 1 },
+        "topics": { "description": "Ids of the houses (topics) to draw the questions from.", "type": "array", "items": { "$ref": "#/$defs/uuid" }, "default": [] },
+        "skill_id": { "description": "The storey (skill) to play; it must be unlocked for the island.", "$ref": "#/$defs/uuid" },
+        "island_id": { "description": "The island the storey is played on; both players must be members.", "$ref": "#/$defs/uuid" },
+        "invited": { "description": "The only user who may join; the game is not listed in the lobby.", "$ref": "#/$defs/uuid" },
         "question_count": { "type": "integer", "minimum": 1, "maximum": 11 },
         "role": { "$ref": "#/$defs/role" },
         "time_limit_secs": { "type": "integer", "minimum": 30, "maximum": 3600, "default": 300 }

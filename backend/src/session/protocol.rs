@@ -107,11 +107,20 @@ impl Answer {
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ClientMessage {
     /// Opens a lobby; the sender takes seat 0.
+    ///
+    /// With `skill_id` (and the `island_id` it is played on) the bomb is a
+    /// storey of a house: its tasks come from that skill only, `topics` is
+    /// ignored and winning passes the storey. With `invited` only that user
+    /// may join and the game is not listed in the lobby.
     Create {
+        #[serde(default)]
         topics: Vec<Uuid>,
         question_count: u16,
         role: Option<Role>,
         time_limit_secs: Option<u32>,
+        skill_id: Option<Uuid>,
+        island_id: Option<Uuid>,
+        invited: Option<Uuid>,
     },
     /// Takes seat 1 of a waiting game, which starts it.
     Join {
@@ -143,6 +152,12 @@ pub enum GameEvent {
         time_limit_secs: u32,
         created_by: Uuid,
         parts: Vec<PartInfo>,
+        /// The storey (skill) the bomb is played on.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        skill_id: Option<Uuid>,
+        /// The only user who may join.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        invited: Option<Uuid>,
     },
     PlayerJoined {
         player_id: Uuid,
@@ -277,6 +292,8 @@ pub struct GameView {
     pub game_id: Uuid,
     pub status: Status,
     pub topics: Vec<Uuid>,
+    pub skill_id: Option<Uuid>,
+    pub invited: Option<Uuid>,
     pub players: Vec<PlayerView>,
     pub deadline: Option<DateTime<Utc>>,
     pub turn: Option<u32>,
@@ -334,5 +351,11 @@ pub enum ErrorCode {
     StaleTurn,
     InvalidState,
     NoTasks,
+    /// The storey is not unlocked for the island yet.
+    SkillLocked,
+    /// The creator is not a member of the island, or the skill is not on it.
+    NotIslandMember,
+    /// The game is private to another user.
+    NotInvited,
     Internal,
 }

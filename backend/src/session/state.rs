@@ -46,6 +46,8 @@ pub struct GameState {
     pub id: Uuid,
     pub status: Status,
     pub topics: Vec<Uuid>,
+    pub skill_id: Option<Uuid>,
+    pub invited: Option<Uuid>,
     pub time_limit_secs: u32,
     players: Vec<Player>,
     parts: Vec<(PartInfo, Option<PartResult>)>,
@@ -64,6 +66,8 @@ impl GameState {
             id,
             status: Status::Waiting,
             topics: Vec::new(),
+            skill_id: None,
+            invited: None,
             time_limit_secs: 0,
             players: Vec::new(),
             parts: Vec::new(),
@@ -172,6 +176,12 @@ impl GameState {
             return Err(SessionError::new(
                 ErrorCode::InvalidState,
                 "already in this game",
+            ));
+        }
+        if self.invited.is_some_and(|invited| invited != player) {
+            return Err(SessionError::new(
+                ErrorCode::NotInvited,
+                "this game is private to another player",
             ));
         }
 
@@ -291,9 +301,13 @@ impl GameState {
                 topics,
                 time_limit_secs,
                 parts,
+                skill_id,
+                invited,
                 ..
             } => {
                 self.topics.clone_from(topics);
+                self.skill_id = *skill_id;
+                self.invited = *invited;
                 self.time_limit_secs = *time_limit_secs;
                 self.parts = parts.iter().map(|p| (p.clone(), None)).collect();
             }
@@ -346,6 +360,8 @@ impl GameState {
             game_id: self.id,
             status: self.status,
             topics: self.topics.clone(),
+            skill_id: self.skill_id,
+            invited: self.invited,
             players: self
                 .players
                 .iter()
@@ -459,6 +475,10 @@ mod tests {
 
     impl Game {
         fn new(parts: u32, creator_role: Option<Role>) -> Self {
+            Self::create(parts, creator_role, None)
+        }
+
+        fn create(parts: u32, creator_role: Option<Role>, invited: Option<Uuid>) -> Self {
             let mut game = Self {
                 state: GameState::new(Uuid::from_u128(99)),
                 log: Vec::new(),
@@ -482,6 +502,8 @@ mod tests {
                                 .collect(),
                         })
                         .collect(),
+                    skill_id: Some(Uuid::from_u128(8)),
+                    invited,
                 },
                 GameEvent::PlayerJoined {
                     player_id: CREATOR,
@@ -844,5 +866,40 @@ mod tests {
             serde_json::to_value(replayed.view(|_| true)).expect("serialize"),
             live
         );
+    }
+
+    #[test]
+    fn only_the_invited_player_joins_a_private_game() {
+        let mut game = Game::create(3, None, Some(JOINER));
+        let stranger = Uuid::from_u128(3);
+        assert_eq!(
+            code(game.run(Command::Join {
+                player: stranger,
+                role: None,
+                coin: false,
+            })),
+            ErrorCode::NotInvited
+        );
+        assert_eq!(game.state.status, Status::Waiting);
+        game.join(None, false);
+        assert_eq!(game.state.status, Status::Active);
+        let view = game.state.view(|_| true);
+        assert_eq!(view.invited, Some(JOINER));
+        assert_eq!(view.skill_id, Some(Uuid::from_u128(8)));
+    }
+
+    #[test]
+    fn games_created_before_skills_still_replay() {
+        let legacy: GameEvent = serde_json::from_value(json!({
+            "type": "game_created",
+            "topics": [Uuid::from_u128(7)],
+            "question_count": 1,
+            "time_limit_secs": 300,
+            "created_by": CREATOR,
+            "parts": [{ "position": 0, "task_id": Uuid::from_u128(100), "question_type": "single_choice" }]
+        }))
+        .expect("an event without skill_id and invited");
+        let state = GameState::replay(Uuid::from_u128(99), [(0, &legacy)]);
+        assert_eq!((state.skill_id, state.invited), (None, None));
     }
 }
