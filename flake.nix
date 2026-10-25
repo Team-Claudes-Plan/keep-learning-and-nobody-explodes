@@ -297,6 +297,7 @@
               akasha = {
                 description = "Akasha question extraction gRPC service (cargo watch)";
                 command = akasha-run;
+                depends_on.backend.condition = "process_healthy";
               };
 
               notifications = {
