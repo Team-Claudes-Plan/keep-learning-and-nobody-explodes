@@ -7,10 +7,10 @@ use serde_json::Value;
 use uuid::Uuid;
 
 use super::{
-    SessionError, judge,
+    SessionError, glyphs, judge,
     protocol::{
         Answer, Brief, EndReason, ErrorCode, GameEvent, GameView, MAX_STRIKES, Outcome, PartInfo,
-        PartResult, PartView, PlayerView, Role, ServerMessage, Status,
+        PartResult, PartView, PlayerView, Role, ServerMessage, Status, Symbol,
     },
 };
 use crate::db::PartDetails;
@@ -390,15 +390,30 @@ impl GameState {
             let mut task = part.content.clone();
             if let Value::Object(fields) = &mut task {
                 fields.remove("prompt");
+                if !info.glyphs.is_empty()
+                    && let Some(field) = glyphs::symbol_field(&part.question_type)
+                {
+                    fields.remove(field);
+                }
                 fields.insert("id".to_owned(), info.task_id.to_string().into());
                 fields.insert("type".to_owned(), part.question_type.clone().into());
             }
-            Brief::Defuser { task }
+            Brief::Defuser {
+                task,
+                glyphs: info.glyphs.clone(),
+            }
         } else if player == expert {
+            let symbols = info
+                .glyphs
+                .iter()
+                .zip(glyphs::symbol_texts(&part.question_type, &part.content))
+                .map(|(&glyph, text)| Symbol { glyph, text })
+                .collect();
             Brief::Expert {
                 question_type: part.question_type.clone(),
                 prompt: part.content.get("prompt").cloned(),
                 instruction: part.instruction.clone(),
+                symbols,
             }
         } else {
             return None;
@@ -453,6 +468,10 @@ mod tests {
                             position,
                             task_id: Uuid::from_u128(u128::from(position) + 100),
                             question_type: "single_choice".to_owned(),
+                            glyphs: vec![position * 2, position * 2 + 1]
+                                .into_iter()
+                                .map(|glyph| u8::try_from(glyph).expect("small"))
+                                .collect(),
                         })
                         .collect(),
                 },
@@ -642,7 +661,7 @@ mod tests {
         let mut game = Game::new(2, Some(Role::Expert));
         game.join(None, false);
         let Some(ServerMessage::Briefing {
-            brief: Brief::Defuser { task },
+            brief: Brief::Defuser { task, glyphs },
             ..
         }) = game.state.briefing(JOINER, &game.details)
         else {
@@ -650,13 +669,66 @@ mod tests {
         };
         assert!(task.get("prompt").is_none());
         assert_eq!(task["type"], "single_choice");
-        assert!(matches!(
-            game.state.briefing(CREATOR, &game.details),
-            Some(ServerMessage::Briefing {
-                brief: Brief::Expert { .. },
-                ..
-            })
-        ));
+        // the answers only exist as symbols for the defuser
+        assert!(task.get("options").is_none());
+        assert_eq!(glyphs, [0, 1]);
+
+        let Some(ServerMessage::Briefing {
+            brief: Brief::Expert { symbols, .. },
+            ..
+        }) = game.state.briefing(CREATOR, &game.details)
+        else {
+            panic!("creator is the expert");
+        };
+        assert_eq!(
+            symbols,
+            [
+                Symbol {
+                    glyph: 0,
+                    text: json!("a")
+                },
+                Symbol {
+                    glyph: 1,
+                    text: json!("b")
+                }
+            ]
+        );
+    }
+
+    #[test]
+    fn parts_without_symbols_stay_text() {
+        let mut game = Game::new(1, Some(Role::Expert));
+        game.join(None, false);
+        // as if the game had run out of symbols
+        game.state.parts[0].0.glyphs.clear();
+        let Some(ServerMessage::Briefing {
+            brief: Brief::Defuser { task, glyphs },
+            ..
+        }) = game.state.briefing(JOINER, &game.details)
+        else {
+            panic!("joiner defuses turn 0");
+        };
+        assert_eq!(glyphs, Vec::<u8>::new());
+        assert_eq!(task["options"], json!(["a", "b"]));
+        let Some(ServerMessage::Briefing {
+            brief: Brief::Expert { symbols, .. },
+            ..
+        }) = game.state.briefing(CREATOR, &game.details)
+        else {
+            panic!("creator is the expert");
+        };
+        assert_eq!(symbols, Vec::<Symbol>::new());
+    }
+
+    #[test]
+    fn events_without_glyphs_still_decode() {
+        let part: PartInfo = serde_json::from_value(json!({
+            "position": 0,
+            "task_id": Uuid::from_u128(1),
+            "question_type": "order",
+        }))
+        .expect("old event");
+        assert_eq!(part.glyphs, Vec::<u8>::new());
     }
 
     #[test]

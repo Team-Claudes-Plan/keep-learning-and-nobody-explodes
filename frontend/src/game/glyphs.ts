@@ -2,6 +2,8 @@
 // expert's manual says what it stands for, so the two have to describe the shapes to each other.
 // Each glyph is an SVG path in a 100×100 box, drawn as a line (no fill), the same on the bomb (3D,
 // see Label3D.tsx) and in the manual (GlyphIcon.tsx).
+// In a session the backend deals them out per game, by index into this list, and never uses one
+// twice (backend/src/session/glyphs.rs): keep GLYPH_COUNT there equal to the length of GLYPHS.
 
 export const GLYPHS: string[] = [
   // ring with a dot in the middle

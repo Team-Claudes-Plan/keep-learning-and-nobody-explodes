@@ -5,6 +5,7 @@
 //! connected players. [`Sessions`] finds or restores the actor of a game.
 
 mod actor;
+mod glyphs;
 mod judge;
 pub mod protocol;
 mod state;
@@ -170,6 +171,13 @@ impl Sessions {
             ));
         }
 
+        // every symbol is used at most once per game
+        let demands: Vec<usize> = tasks
+            .iter()
+            .map(|task| glyphs::symbol_texts(&task.question_type, &task.content).len())
+            .collect();
+        let part_glyphs = glyphs::assign(&demands, glyphs::random_below);
+
         let seat = Seat {
             game_id: Uuid::new_v4(),
             player_id: Uuid::new_v4(),
@@ -184,10 +192,12 @@ impl Sessions {
                 created_by: seat.player_id,
                 parts: (0..)
                     .zip(&tasks)
-                    .map(|(position, task)| PartInfo {
+                    .zip(part_glyphs)
+                    .map(|((position, task), glyphs)| PartInfo {
                         position,
                         task_id: task.task_id,
                         question_type: task.question_type.clone(),
+                        glyphs,
                     })
                     .collect(),
             },
