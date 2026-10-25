@@ -27,7 +27,7 @@ export default function StoreyWallDressing({
   const doorX = -width / 2 + 0.16 + doorW / 2
   const doorY = -height / 2 + 0.02 + doorH / 2
 
-  const signW = Math.min(0.62, width * 0.26)
+  const signW = Math.min(0.74, width * 0.3)
   const signH = 0.2
   const signX = doorX + doorW / 2 + 0.12 + signW / 2
   const signY = doorY + doorH / 2 - signH / 2
