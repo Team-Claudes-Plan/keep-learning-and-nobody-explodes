@@ -1,54 +1,54 @@
 [
   {
     "type": "single_choice",
-    "id": "questionid11117",
     "prompt": "What is the correct answer?",
-    "options": ["This one", "No, this one", "Nope, its this", "... or this"]
+    "options": ["This one", "No, this one", "Nope, its this", "... or this"],
+	"correct_answer": 0
   },
   {
     "type": "multiple_choice",
-    "id": "questionid11118",
     "prompt": "What are the correct answers?",
-    "options": ["This one", "No, this one", "Also, its this", "... and this"]
+    "options": ["This one", "No, this one", "Also, its this", "... and this"],
+	"correct_answer": [0, 2]
   },
   {
     "type": "true_false",
-    "id": "questionid11119",
-    "statements": ["This sentence is false.", "Trees are humans.", "Water is blue.", "Hallo"]
+    "statements": ["This sentence is false.", "Trees are humans.", "Water is blue.", "Hallo"],
+	"correct_answer": [true, true, false, true]
   },
   {
     "type": "text_input",
-    "id": "questionid11120",
-    "prompt": "What is my last name?"
+    "prompt": "What is my last name?",
+	"correct_answer": "Sagichdirnicht"
   },
   {
     "type": "number_input",
-    "id": "questionid11121",
     "prompt": "2+2",
-    "unit": null
+    "unit": null,
+	"correct_answer": 4
   },
   {
     "type": "matching",
-    "id": "questionid11122",
     "left": ["Begriff 1", "Begriff 2", "Begriff 3"],
-    "right": ["Definition 1", "Definition 2", "Definition 3"]
+    "right": ["Definition 2", "Definition 3", "Definition 1"],
+	"correct_answer": [2, 0, 1]
   },
   {
     "type": "grouping",
-    "id": "questionid11123",
     "categories": ["Gruppe 1", "Gruppe 2"],
-    "items": ["Ding 1", "Ding 2", "Ding 3", "Ding 4", "Ding 5"]
+    "items": ["Ding 1", "Ding 2", "Ding 3", "Ding 4", "Ding 5"],
+	"correct_answer": [0, 0, 1, 0, 1, 1]
   },
   {
     "type": "coords",
-    "id": "questionid11124",
     "prompt": "Wo ist X?",
-    "image": "https://server/image.png"
+    "image": "https://server/image.png",
+	"correct_answer": {"x": 58.7, "y": 5.99}
   },
   {
     "type": "order",
-    "id": "questionid11125",
     "prompt": "Order these items",
-    "items": ["Ding 1", "Ding 2", "Ding 3"]
+    "items": ["Ding 2", "Ding 1", "Ding 3"],
+	"correct_answer": [1, 0, 2]
   }
 ]

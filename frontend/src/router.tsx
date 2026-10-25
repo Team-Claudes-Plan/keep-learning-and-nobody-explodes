@@ -1,4 +1,5 @@
-import { createBrowserRouter, Navigate } from 'react-router'
+import { createBrowserRouter } from 'react-router'
+import TitlePage from './pages/TitlePage'
 import CityPage from './pages/CityPage'
 import HousePage from './pages/HousePage'
 import StoreyPage from './pages/StoreyPage'
@@ -8,7 +9,7 @@ import BombPage from './pages/BombPage'
 import { KoopBombPage, KoopManualPage, KoopStartPage } from './pages/KoopPages'
 
 export const router = createBrowserRouter([
-  { path: '/', element: <Navigate to="/city" replace /> },
+  { path: '/', element: <TitlePage /> },
   { path: '/city', element: <CityPage /> },
   { path: '/houses/:houseId', element: <HousePage /> },
   { path: '/houses/:houseId/storeys/:storeyId', element: <StoreyPage /> },

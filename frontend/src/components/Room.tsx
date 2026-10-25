@@ -1,8 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { ThreeEvent } from '@react-three/fiber'
 import { MeshStandardMaterial, type Material } from 'three'
-import type { RoomItem } from '../data/houses'
-import ItemBox from './ItemBox'
 import { isDrag } from './interaction'
 import { ALL_WALLS, type Walls } from './roomWalls'
 import { createTiledMaterial, disposeMaterials, type SurfaceSpec } from './surfaces'
@@ -12,10 +10,6 @@ export type RoomProps = {
   floorColor: string
   wallColor: string
   walls?: Walls
-  items?: RoomItem[]
-  selectedItemId?: string | null
-  onSelectItem?: (id: string) => void
-  interactiveItems?: boolean
   position?: [number, number, number]
   highlighted?: boolean
   onClick?: () => void
@@ -49,10 +43,6 @@ export default function Room({
   floorColor,
   wallColor,
   walls = ALL_WALLS,
-  items = [],
-  selectedItemId = null,
-  onSelectItem,
-  interactiveItems = true,
   position = [0, 0, 0],
   highlighted = false,
   onClick,
@@ -173,16 +163,6 @@ export default function Room({
 
       {walls.ceiling && <Slab position={[0, h, 0]} size={[w, t, d]} material={surfaces.ceiling} />}
 
-      {items.map((item) => (
-        <ItemBox
-          key={item.id}
-          position={item.position}
-          color={item.color}
-          selected={item.id === selectedItemId}
-          interactive={interactiveItems && Boolean(onSelectItem)}
-          onClick={onSelectItem ? () => onSelectItem(item.id) : undefined}
-        />
-      ))}
     </group>
   )
 }
