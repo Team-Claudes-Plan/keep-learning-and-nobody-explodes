@@ -2063,7 +2063,7 @@ canvas {
 
 .book-tilt {
   position: relative;
-  transform: rotateX(13deg);
+  transform: rotateX(8deg);
   transform-origin: 50% 70%;
 }
 
@@ -2097,129 +2097,103 @@ canvas {
 
 .book-spread {
   position: relative;
+  display: flex;
   /* two pages side by side; fits width and height of the screen */
   width: min(1060px, calc(100vw - 80px), calc((100dvh - 250px) * 1.42));
-  transition: transform 0.6s cubic-bezier(0.45, 0.05, 0.3, 1);
+  aspect-ratio: 1040 / 730;
+  perspective: 2600px;
+  filter: drop-shadow(0 22px 30px rgba(0, 0, 0, 0.55));
 }
 
-/* closed book: the cover is the right half of the spread, so move it to the middle */
-.book-spread.is-closed-front {
-  transform: translateX(-25%);
-}
-
-.book-spread.is-closed-back {
-  transform: translateX(25%);
-}
-
-.book-host {
-  width: 100%;
-}
-
-.book-pages {
+.book-slot {
   position: relative;
-  z-index: 1;
-}
-
-/* the paper stack: page edges as fine lines, peeking out below and at the outer edge */
-.book-stack {
-  position: absolute;
-  top: calc(var(--stack) * 0.6);
-  bottom: calc(var(--stack) * -1);
-  width: 50%;
-  background:
-    linear-gradient(180deg, transparent calc(100% - var(--stack)), rgba(60, 35, 10, 0.25) 100%),
-    repeating-linear-gradient(0deg, #eadbb4 0 2px, #c9b386 2px 3px);
-  box-shadow: 0 10px 18px rgba(0, 0, 0, 0.45);
-}
-
-.book-stack.is-left {
-  left: calc(var(--stack) * -1);
-  right: 50%;
-  border-radius: 6px 0 0 6px;
-  background:
-    linear-gradient(180deg, transparent calc(100% - var(--stack)), rgba(60, 35, 10, 0.25) 100%),
-    repeating-linear-gradient(90deg, #eadbb4 0 2px, #c9b386 2px 3px);
-}
-
-.book-stack.is-right {
-  left: 50%;
-  right: calc(var(--stack) * -1);
-  border-radius: 0 6px 6px 0;
-  background:
-    linear-gradient(180deg, transparent calc(100% - var(--stack)), rgba(60, 35, 10, 0.25) 100%),
-    repeating-linear-gradient(90deg, #eadbb4 0 2px, #c9b386 2px 3px);
-}
-
-/* horizontal page lines along the bottom edge */
-.book-stack::after {
-  content: '';
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  height: var(--stack);
-  background: repeating-linear-gradient(0deg, #e4d3a9 0 2px, #b9a172 2px 3px);
-  border-radius: 0 0 4px 4px;
-}
-
-/* a page (StPageFlip positions and bends them) */
-.book-face {
+  flex: 1 1 50%;
+  min-width: 0;
   overflow: hidden;
-  container-type: size;
+  touch-action: none;
   cursor: grab;
+  container-type: size;
 }
 
-/* the cover boards are a little larger than the pages, so closing the book covers the paper stack */
-.book-face.is-cover {
-  overflow: visible;
+/* the fold: baked straight into the page's own background (not a separate overlay on top), so
+   it is literally part of the paper's surface and turns correctly along with it in 3D — a fixed
+   overlay can only ever sit flat at the spine and would visibly disagree with a leaf mid-turn.
+   Covers (a .book-cover, not a .book-paper) stay crisp, no fold. */
+.book-slot.is-left .book-paper,
+.book-leaf-turn.is-right .book-leaf-face.is-back .book-paper,
+.book-leaf-turn.is-left .book-leaf-face.is-back .book-paper {
+  background:
+    linear-gradient(270deg, rgba(20, 10, 2, 0.48) 0%, rgba(60, 35, 10, 0.12) 10%, transparent 20%),
+    radial-gradient(ellipse at 50% 40%, transparent 60%, rgba(120, 80, 30, 0.08) 100%),
+    #faf2dc;
 }
 
-.book-face.is-cover .book-cover {
-  position: relative;
-  height: calc(100% + 22px);
-  margin: -8px -14px -14px -2px;
+.book-slot.is-right .book-paper,
+.book-leaf-turn.is-right .book-leaf-face.is-front .book-paper,
+.book-leaf-turn.is-left .book-leaf-face.is-front .book-paper {
+  background:
+    linear-gradient(90deg, rgba(20, 10, 2, 0.48) 0%, rgba(60, 35, 10, 0.12) 10%, transparent 20%),
+    radial-gradient(ellipse at 50% 40%, transparent 60%, rgba(120, 80, 30, 0.08) 100%),
+    #faf2dc;
 }
 
-.book-face.is-cover.--left .book-cover {
-  margin: -8px -2px -14px -14px;
-}
-
-/* the library's highlight stripes make paper look like sheet metal: soft shadow only */
-.book-spread .stf__innerShadow {
-  display: none !important;
-}
-
-/* the fold: every page darkens towards the spine, with a dark crease right at the edge */
-.book-face.is-paper.--left::after,
-.book-face.is-paper.--right::after {
-  content: '';
+/* the one leaf currently turning: a hinge at the spine, lying flat over whichever slot it starts
+   at and sweeping over to the other one as it rotates past 90deg. No shadow here on purpose: the
+   baked-in page crease already carries the fold's shadow, and filter: drop-shadow would force
+   preserve-3d to flatten, hiding both faces once the leaf turns past 90deg. */
+.book-leaf-turn {
   position: absolute;
   top: 0;
   bottom: 0;
-  width: 16%;
-  pointer-events: none;
+  width: 50%;
+  z-index: 5;
+  transform-style: preserve-3d;
+  transition: transform 0.55s cubic-bezier(0.4, 0.1, 0.2, 1);
+  cursor: grabbing;
 }
 
-.book-face.is-paper.--left::after {
-  right: 0;
-  background: linear-gradient(
-    270deg,
-    rgba(40, 22, 6, 0.55) 0%,
-    rgba(60, 35, 10, 0.28) 18%,
-    rgba(60, 35, 10, 0.1) 50%,
-    transparent 100%
-  );
+.book-leaf-turn.is-right {
+  left: 50%;
+  transform-origin: left center;
 }
 
-.book-face.is-paper.--right::after {
-  left: 0;
-  background: linear-gradient(
-    90deg,
-    rgba(40, 22, 6, 0.55) 0%,
-    rgba(60, 35, 10, 0.28) 18%,
-    rgba(60, 35, 10, 0.1) 50%,
-    transparent 100%
-  );
+.book-leaf-turn.is-left {
+  right: 50%;
+  transform-origin: right center;
+}
+
+/* covers are stiff boards: slower, stiffer than a paper leaf */
+.book-leaf-turn.is-hard {
+  transition-duration: 0.85s;
+  transition-timing-function: cubic-bezier(0.3, 0.6, 0.15, 1);
+}
+
+/* while actually held under the pointer: no easing, it must track the finger exactly, and lifts
+   a little higher off the page underneath */
+.book-leaf-turn.is-dragging {
+  transition: none;
+}
+
+.book-leaf-face {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  backface-visibility: hidden;
+  container-type: size;
+}
+
+/* which face is "up" at rest vs. once fully turned depends on which slot the leaf started in */
+.book-leaf-turn.is-right .book-leaf-face.is-front {
+  transform: rotateY(0deg);
+}
+.book-leaf-turn.is-right .book-leaf-face.is-back {
+  transform: rotateY(180deg);
+}
+.book-leaf-turn.is-left .book-leaf-face.is-front {
+  transform: rotateY(180deg);
+}
+.book-leaf-turn.is-left .book-leaf-face.is-back {
+  transform: rotateY(0deg);
 }
 
 /* cover: brown leather book with a pixel border, like the one on the enchanting table */
@@ -2309,19 +2283,27 @@ canvas {
   opacity: 0.7;
 }
 
+/* the back cover always lies in the left slot, so its outer (rounded) corner is on the left */
+.book-cover.is-back {
+  border-radius: 6px 0 0 6px;
+}
+
 .book-cover.is-back .book-cover-frame {
   font-family: Georgia, 'Times New Roman', serif;
   font-size: clamp(13px, 4.4cqw, 22px);
 }
 
-/* parchment pages */
+/* parchment pages; a column so the folio can be pinned to the bottom regardless of text length */
 .book-paper {
+  position: relative;
   height: 100%;
+  display: flex;
+  flex-direction: column;
   overflow: hidden;
   padding: 7cqw 7cqw 5cqw;
   background:
-    radial-gradient(ellipse at 50% 40%, transparent 60%, rgba(120, 80, 30, 0.18) 100%),
-    #ecdcb0;
+    radial-gradient(ellipse at 50% 40%, transparent 60%, rgba(120, 80, 30, 0.08) 100%),
+    #faf2dc;
   font-family: Georgia, 'Times New Roman', serif;
   /* text scales with the page, so the spread works on small screens too */
   font-size: clamp(10px, 3.8cqw, 18px);
@@ -2424,7 +2406,9 @@ canvas {
 }
 
 .book-folio {
-  margin-top: 1.4em;
+  /* pinned to the bottom of the page, not right after the text */
+  margin: auto 0 0;
+  padding-top: 1.4em;
   text-align: center;
   font-size: 0.8em;
   color: #8a6a3c;
