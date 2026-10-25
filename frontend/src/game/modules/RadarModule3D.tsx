@@ -1,9 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { useFrame, type ThreeEvent } from '@react-three/fiber'
-import { Text } from '@react-three/drei'
 import * as THREE from 'three'
-import { FACE, FONT_URL } from './module3d'
-import { ModuleHeading } from './Label3D'
+import { FACE } from './module3d'
+import { ModuleHeading, PlateText } from './Label3D'
 import type { ModuleProps } from './types'
 
 const ACTIVE = '#ffb547'
@@ -113,9 +112,13 @@ export default function RadarModule3D({ primitive, value, onChange, disabled, he
           </group>
         )}
       </group>
-      <Text font={FONT_URL} position={[-0.42, -0.405, FACE + 0.012]} fontSize={0.026} anchorX="left" anchorY="middle" color="#9aa3b2">
-        {value ? `Ziel: ${value.x}% / ${value.y}%` : 'Kein Ziel markiert'}
-      </Text>
+      <PlateText
+        text={value ? `Ziel: ${value.x}% / ${value.y}%` : 'Kein Ziel markiert'}
+        position={[-0.42, -0.405, FACE + 0.014]}
+        fontSize={0.028}
+        anchorX="left"
+        color={value ? ACTIVE : '#d4d8de'}
+      />
     </group>
   )
 }

@@ -41,6 +41,7 @@ export default function TerminalModule3D(props: Props) {
   const isNumber = props.primitive.kind === 'number'
   const unit = props.primitive.kind === 'number' ? props.primitive.unit : null
   const uppercase = props.primitive.kind === 'text' && props.primitive.uppercase
+  const user = props.primitive.kind === 'text' ? props.primitive.user : undefined
   const [input, setInput] = useState(() => (props.value === null ? '' : String(props.value)))
   const [typedWidth, setTypedWidth] = useState(0)
   const inputRef = useRef<HTMLInputElement>(null)
@@ -92,13 +93,20 @@ export default function TerminalModule3D(props: Props) {
       </mesh>
       <mesh position={[0, 0.03, FACE + 0.041]} onClick={focusInput}>
         <planeGeometry args={[0.8, 0.44]} />
-        <meshStandardMaterial color="#04140a" emissive="#06301a" emissiveIntensity={0.6} roughness={0.25} />
+        {/* unlit: a glowing screen, no glare from the room light washing out the text */}
+        <meshBasicMaterial color="#062414" toneMapped={false} />
       </mesh>
 
       <group position={[-0.37, 0, FACE + 0.043]}>
-        <Text font={FONT_URL} position={[0, 0.2, 0]} fontSize={0.028} anchorX="left" anchorY="middle" color={SCREEN_GREEN}>
-          SYSTEM GESPERRT · EINGABE ERFORDERLICH
+        <Text font={FONT_URL} position={[0, 0.19, 0]} fontSize={user ? 0.038 : 0.028} anchorX="left" anchorY="middle" color={SCREEN_GREEN}>
+          {user ? `USER: ${user}` : 'SYSTEM GESPERRT · EINGABE ERFORDERLICH'}
         </Text>
+        {/* login screen: the answer is the forgotten password */}
+        {user && (
+          <Text font={FONT_URL} position={[0, 0.125, 0]} fontSize={0.038} anchorX="left" anchorY="middle" color={SCREEN_GREEN}>
+            PASSWORT:
+          </Text>
+        )}
         <Text font={FONT_URL} position={[0, 0.06, 0]} fontSize={0.06} anchorX="left" anchorY="middle" color={SCREEN_GREEN}>
           {'>'}
         </Text>

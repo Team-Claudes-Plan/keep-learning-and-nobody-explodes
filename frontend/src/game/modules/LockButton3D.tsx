@@ -35,7 +35,8 @@ export default function LockButton3D({ enabled, label, onPress }: Props) {
     onPress()
   }
 
-  const color = enabled ? (hover ? '#3bbf68' : '#2f9e55') : '#5b6270'
+  // deep green with white text when it can be pressed, dark grey when not (both clearly legible)
+  const color = enabled ? (hover ? '#228a4a' : '#1b7a3f') : '#2a2f37'
 
   return (
     <group position={[0.27, -0.405, FACE]}>
@@ -51,7 +52,8 @@ export default function LockButton3D({ enabled, label, onPress }: Props) {
           onPointerOut={() => setHover(false)}
         >
           <boxGeometry args={[0.25, 0.058, 0.024]} />
-          <meshStandardMaterial color={color} roughness={0.4} emissive={color} emissiveIntensity={enabled ? 0.25 : 0} />
+          {/* unlit, so the green never washes out to pastel under the room light: white text stays legible */}
+          <meshBasicMaterial color={color} />
         </mesh>
         <Text
           font={FONT_URL}
@@ -60,7 +62,7 @@ export default function LockButton3D({ enabled, label, onPress }: Props) {
           fontSize={0.026}
           anchorX="center"
           anchorY="middle"
-          color={enabled ? '#ffffff' : '#c3c9d3'}
+          color={enabled ? '#ffffff' : '#8b939f'}
         >
           {label}
         </Text>

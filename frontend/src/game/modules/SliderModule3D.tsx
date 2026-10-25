@@ -1,9 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { useFrame, type ThreeEvent } from '@react-three/fiber'
-import { Text } from '@react-three/drei'
 import * as THREE from 'three'
 import { FACE, FONT_URL, labelSize, rowLayout, useModulePointer } from './module3d'
-import { Label, ModuleHeading } from './Label3D'
+import { Label, ModuleHeading, PlateText } from './Label3D'
 import type { ModuleProps } from './types'
 
 const ACTIVE = '#ffb547'
@@ -151,17 +150,13 @@ export default function SliderModule3D({ primitive, value, onChange, disabled, h
         <meshStandardMaterial color="#0d1014" roughness={0.8} />
       </mesh>
       {ys.map((y, k) => (
-        <Text
+        <PlateText
           key={k}
-          font={FONT_URL}
-          position={[NUMBER_X, y, FACE + 0.012]}
+          text={`${k + 1}.`}
+          position={[NUMBER_X, y, FACE + 0.014]}
           fontSize={Math.min(0.04, step * 0.4)}
-          anchorX="center"
-          anchorY="middle"
-          color={drag && drag.insertAt === k ? ACTIVE : '#9aa3b2'}
-        >
-          {`${k + 1}.`}
-        </Text>
+          color={drag && drag.insertAt === k ? ACTIVE : '#d4d8de'}
+        />
       ))}
       {primitive.items.map((label, item) => {
         const dragging = drag?.item === item
