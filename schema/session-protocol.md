@@ -156,9 +156,15 @@ client never sees an event that could be lost on a restart.
 
 ## Content conventions
 
-- `tasks.content` is the question without `id` and `type` (both added by the
-  server); `tasks.solution` has the same shape as the answer value (`AnswerMap`
-  in `frontend/src/api/types.ts`). Exception: `coords` is `{ x, y, radius }` in
-  percent.
+- Stored task JSON is normalized by the backend. `tasks.content` may contain
+  legacy `id`/`type`/`correct_answer` fields, which are stripped before a task
+  is sent to a player. For `text_input`, `number_input` and `coords` the prompt
+  may live in `instructions.instruction` instead of `tasks.content`;
+  `caseSensitive`, `unit` and `image` stay in `tasks.content`.
+- `tasks.solution` may be stored raw or wrapped as `{"correct_answer": ...}`.
+  Both forms are accepted; answer events and the wire protocol always carry the
+  raw answer value (`AnswerMap` in `frontend/src/api/types.ts`).
+- `coords` solutions are `{ x, y, radius }` in percent. If `radius` is omitted,
+  the backend uses a 5 percentage point tolerance.
 - Text answers are trimmed and compared case-insensitively unless the question
   has `caseSensitive: true`. Multiple choice is compared as a set.

@@ -9,6 +9,7 @@ mod glyphs;
 mod judge;
 pub mod protocol;
 mod state;
+mod task;
 
 use std::{collections::HashMap, sync::Arc};
 
