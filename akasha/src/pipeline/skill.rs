@@ -72,8 +72,8 @@ pub fn classify(
 fn parse_assignments(
     assignments: &[Value],
     topics: &[TopicQuestions],
-) -> Result<Vec<Vec<Option<String>>>, SchemaIssues> {
-    let mut assigned: Vec<Vec<Option<String>>> = topics
+) -> Result<Vec<Vec<Option<Assigned>>>, SchemaIssues> {
+    let mut assigned: Vec<Vec<Option<Assigned>>> = topics
         .iter()
         .map(|topic| vec![None; topic.questions.len()])
         .collect();
@@ -146,7 +146,10 @@ fn parse_assignments(
             ));
             continue;
         }
-        *slot = Some(skill.to_owned());
+        *slot = Some(Assigned {
+            skill: skill.to_owned(),
+            rank: index,
+        });
     }
 
     for (topic_index, assigned_topic) in assigned.iter().enumerate() {
@@ -169,9 +172,20 @@ fn parse_assignments(
     }
 }
 
+/// A question's skill and where the LLM first named it in its answer.
+#[derive(Clone)]
+struct Assigned {
+    skill: String,
+    rank: usize,
+}
+
+/// Groups the questions by skill in skill tree order: existing skills keep
+/// their order, new ones follow in the order the LLM first named them, which
+/// the prompt asks to be from foundational to advanced. Stored in this order,
+/// new skills become the next storeys of their house.
 fn build_skills(
     topics: &[TopicQuestions],
-    assigned: &[Vec<Option<String>>],
+    assigned: &[Vec<Option<Assigned>>],
     existing: &[ExistingTopic],
 ) -> Vec<TopicSkills> {
     topics
@@ -179,25 +193,37 @@ fn build_skills(
         .enumerate()
         .map(|(topic_index, topic)| {
             let existing = existing_skill_names(existing, &topic.topic);
-            let mut skills: Vec<SkillQuestions> = Vec::new();
+            let mut skills: Vec<(usize, SkillQuestions)> = Vec::new();
 
             for (question_index, question) in topic.questions.iter().enumerate() {
                 let proposed = assigned[topic_index][question_index]
-                    .as_deref()
+                    .as_ref()
                     .expect("every question was assigned");
-                let skill = canonical_skill(existing, proposed);
+                let skill = canonical_skill(existing, &proposed.skill);
+                let order = existing
+                    .iter()
+                    .position(|name| name.to_lowercase() == skill.to_lowercase())
+                    .unwrap_or(existing.len() + proposed.rank);
 
                 match skills
                     .iter_mut()
-                    .find(|group| group.skill.to_lowercase() == skill.to_lowercase())
+                    .find(|(_, group)| group.skill.to_lowercase() == skill.to_lowercase())
                 {
-                    Some(group) => group.questions.push(question.clone()),
-                    None => skills.push(SkillQuestions {
-                        skill,
-                        questions: vec![question.clone()],
-                    }),
+                    Some((group_order, group)) => {
+                        *group_order = (*group_order).min(order);
+                        group.questions.push(question.clone());
+                    }
+                    None => skills.push((
+                        order,
+                        SkillQuestions {
+                            skill,
+                            questions: vec![question.clone()],
+                        },
+                    )),
                 }
             }
+            skills.sort_by_key(|(order, _)| *order);
+            let skills = skills.into_iter().map(|(_, group)| group).collect();
 
             TopicSkills {
                 topic: topic.topic.clone(),
@@ -295,6 +321,31 @@ mod tests {
         assert_eq!(topics[0].skills[1].skill, "Division");
         assert_eq!(topics[1].topic, "Physik");
         assert_eq!(topics[1].skills[0].skill, "Kräfte");
+    }
+
+    #[test]
+    fn orders_new_skills_after_existing_ones_as_first_named() {
+        let existing = [ExistingTopic {
+            topic: "Mathe".to_owned(),
+            skills: vec!["Addition".to_owned(), "Multiplikation".to_owned()],
+        }];
+        // the LLM names "Brüche" before "Division", and "Multiplikation"
+        // only for the last question
+        let assignments = json!([
+            { "topic": 0, "question": 1, "skill": "Brüche" },
+            { "topic": 0, "question": 0, "skill": "Division" },
+            { "topic": 0, "question": 2, "skill": "multiplikation" },
+            { "topic": 1, "question": 0, "skill": "Kräfte" }
+        ]);
+
+        let topics = classify(&assignments, &topics(), &existing).expect("valid assignments");
+
+        let names: Vec<&str> = topics[0]
+            .skills
+            .iter()
+            .map(|skill| skill.skill.as_str())
+            .collect();
+        assert_eq!(names, ["Multiplikation", "Brüche", "Division"]);
     }
 
     #[test]
