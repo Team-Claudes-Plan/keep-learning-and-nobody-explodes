@@ -1,4 +1,5 @@
 import { Suspense, useMemo, useState } from 'react'
+import { Html } from '@react-three/drei'
 import type { ThreeEvent } from '@react-three/fiber'
 import { previewHeights, type House } from '../data/houses'
 import type { HouseKitId } from '../data/houseKits'
@@ -43,6 +44,24 @@ function KitHitbox({ kit, size, handlers }: { kit: HouseKitId; size: [number, nu
   return <Hitbox size={[size[0], size[1] + crown, size[2]]} handlers={handlers} />
 }
 
+/** Gap between the roof and the hover label. */
+const LABEL_GAP = 0.6
+
+/** The house's name, floating above its roof while hovered. */
+function HouseLabel({ name, top }: { name: string; top: number }) {
+  return (
+    <Html position={[0, top + LABEL_GAP, 0]} center zIndexRange={[0, 0]} style={{ pointerEvents: 'none' }}>
+      <div className="island-sign">{name}</div>
+    </Html>
+  )
+}
+
+/** Kit houses carry a roof crown; their label sits above it. */
+function KitHouseLabel({ kit, name, height }: { kit: HouseKitId; name: string; height: number }) {
+  const crown = useKitCrownHeight(kit)
+  return <HouseLabel name={name} top={height + crown} />
+}
+
 export default function Skyscraper({ house, position, onClick, storeyDelta = 0 }: SkyscraperProps) {
   const [hovered, setHovered] = useState(false)
   const [w, d] = house.footprint
@@ -78,6 +97,7 @@ export default function Skyscraper({ house, position, onClick, storeyDelta = 0 }
               <meshStandardMaterial color={house.facadeColor} roughness={0.5} metalness={0.15} />
             </mesh>
             <Hitbox size={size} handlers={handlers} />
+            {hovered && <HouseLabel name={house.name} top={height} />}
           </>
         }
       >
@@ -85,6 +105,7 @@ export default function Skyscraper({ house, position, onClick, storeyDelta = 0 }
           <>
             <KitFacade kit={house.kit} footprint={house.footprint} storeyHeights={storeyHeights} hovered={hovered} />
             <KitHitbox kit={house.kit} size={size} handlers={handlers} />
+            {hovered && <KitHouseLabel kit={house.kit} name={house.name} height={height} />}
           </>
         ) : (
           <>
@@ -96,6 +117,7 @@ export default function Skyscraper({ house, position, onClick, storeyDelta = 0 }
               roofColor={house.facade.roofColor}
             />
             <Hitbox size={size} handlers={handlers} />
+            {hovered && <HouseLabel name={house.name} top={height} />}
           </>
         )}
       </Suspense>
