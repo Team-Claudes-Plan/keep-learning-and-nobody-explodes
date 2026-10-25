@@ -7,8 +7,8 @@ question generation and runs the cooperative games.
 ## What happens here
 
 - **Upload & ingestion** — receives documents for an island
-  (`POST /upload`), stores them in S3 (RustFS), reacts to the storage
-  webhook (`/events/rustfs`) and queues an OCR job.
+  (`POST /upload?island_id=<uuid>`), stores them in S3 (RustFS), reacts to the
+  storage webhook (`/events/rustfs`) and queues an OCR job.
 - **OCR worker** — an Apalis worker on a Postgres job queue extracts the text
   of PDFs and images (xberg) and hands it to [Akasha](../akasha/) via gRPC.
 - **REST API** (`/api`) — users, islands, memberships, forks and the houses
