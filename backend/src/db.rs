@@ -22,6 +22,7 @@ pub struct PickedTask {
     pub task_id: Uuid,
     pub instruction_id: Uuid,
     pub question_type: String,
+    pub content: Value,
 }
 
 /// Everything about a game part the server needs during play; never sent as a whole.
@@ -275,9 +276,10 @@ impl Database {
         topics: &[Uuid],
         count: u16,
     ) -> Result<Vec<PickedTask>, sqlx::Error> {
-        let rows: Vec<(Uuid, Uuid, String)> = sqlx::query_as(
-            "SELECT task_id, instruction_id, question_type FROM (
-                 SELECT DISTINCT ON (t.id) t.id AS task_id, i.id AS instruction_id, t.question_type
+        let rows: Vec<(Uuid, Uuid, String, Json<Value>)> = sqlx::query_as(
+            "SELECT task_id, instruction_id, question_type, content FROM (
+                 SELECT DISTINCT ON (t.id) t.id AS task_id, i.id AS instruction_id,
+                        t.question_type, t.content
                  FROM tasks t
                  JOIN documents d ON d.id = t.document_id
                  JOIN instructions i ON i.task_id = t.id
@@ -293,11 +295,14 @@ impl Database {
         .await?;
         Ok(rows
             .into_iter()
-            .map(|(task_id, instruction_id, question_type)| PickedTask {
-                task_id,
-                instruction_id,
-                question_type,
-            })
+            .map(
+                |(task_id, instruction_id, question_type, Json(content))| PickedTask {
+                    task_id,
+                    instruction_id,
+                    question_type,
+                    content,
+                },
+            )
             .collect())
     }
 

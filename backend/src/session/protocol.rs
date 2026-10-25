@@ -203,6 +203,10 @@ pub struct PartInfo {
     pub position: u32,
     pub task_id: Uuid,
     pub question_type: String,
+    /// Symbols for the answers of this part, in list order, none shared with
+    /// another part of the game. Empty if the part is shown as text.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub glyphs: Vec<u8>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -242,13 +246,30 @@ pub enum ServerMessage {
 #[serde(tag = "role", rename_all = "snake_case")]
 pub enum Brief {
     /// The question as in `questions.schema.json`, without its prompt.
-    Defuser { task: Value },
-    /// The prompt and the manual page for the defuser's module.
+    ///
+    /// With `glyphs`, the list that `glyphs::symbol_field` names is missing
+    /// from `task`; entry `i` of it is shown as symbol `glyphs[i]` instead.
+    Defuser {
+        task: Value,
+        #[serde(skip_serializing_if = "Vec::is_empty")]
+        glyphs: Vec<u8>,
+    },
+    /// The prompt and the manual page for the defuser's module, and what the
+    /// defuser's symbols stand for.
     Expert {
         question_type: String,
         prompt: Option<Value>,
         instruction: Value,
+        #[serde(skip_serializing_if = "Vec::is_empty")]
+        symbols: Vec<Symbol>,
     },
+}
+
+/// One symbol on the defuser's module and the answer it stands for.
+#[derive(Clone, Debug, PartialEq, Serialize)]
+pub struct Symbol {
+    pub glyph: u8,
+    pub text: Value,
 }
 
 #[derive(Clone, Debug, Serialize)]

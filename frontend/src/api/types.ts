@@ -155,7 +155,7 @@ export type GameEvent =
       question_count: number
       time_limit_secs: number
       created_by: string
-      parts: { position: number; task_id: string; question_type: QuestionType }[]
+      parts: { position: number; task_id: string; question_type: QuestionType; glyphs?: number[] }[]
     }
   | { type: 'player_joined'; player_id: string; seat: 0 | 1; role: Role | null }
   | { type: 'game_started'; deadline: string; starting_defuser: string }
@@ -186,9 +186,13 @@ export type SessionServerMessage =
   | { type: 'welcome'; game_id: string; player_id: string; token: string; seat: 0 | 1 }
   | { type: 'snapshot'; state: GameView }
   | { type: 'event'; sequence: number; at: string; event: GameEvent }
-  /** Defuser: the question without its prompt. */
-  | { type: 'briefing'; turn: number; role: 'defuser'; task: DefuserTask }
-  /** Expert: the prompt and the manual page. */
+  /**
+   * Defuser: the question without its prompt. With `glyphs`, the answer list (`options` for choice
+   * questions, `items` for order and grouping, `right` for matching) is missing: entry i is shown as
+   * symbol `glyphs[i]` (see game/glyphs.ts). A symbol appears at most once per game.
+   */
+  | { type: 'briefing'; turn: number; role: 'defuser'; task: DefuserTask; glyphs?: number[] }
+  /** Expert: the prompt, the manual page and what the defuser's symbols stand for. */
   | {
       type: 'briefing'
       turn: number
@@ -196,6 +200,7 @@ export type SessionServerMessage =
       question_type: QuestionType
       prompt: string | null
       instruction: Record<string, unknown>
+      symbols?: { glyph: number; text: string }[]
     }
   | { type: 'presence'; player_id: string; online: boolean }
   | { type: 'error'; code: SessionErrorCode; message: string }
