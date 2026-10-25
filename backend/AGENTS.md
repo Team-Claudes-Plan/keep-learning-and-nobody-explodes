@@ -4,7 +4,7 @@
 
 Run Rust/Nix commands from the repository root.
 
-- `nix run .#dev` — start the complete local backend stack (Postgres, RustFS, setup, webhook configuration, and the backend under `cargo watch`). Run it in its own terminal.
+- `nix run .#dev` — start the complete local backend stack (Postgres, RustFS, setup, webhook configuration, the backend under `cargo watch`, and Akasha). Run it in its own terminal.
 - `nix develop` — enter the backend development shell with the required environment and native libraries; `.envrc` uses this automatically through direnv.
 - `cargo test --workspace` — run Rust tests, excluding ignored integration tests.
 - `cargo test -p backend <test_name>` — run a focused backend test.
@@ -49,8 +49,8 @@ The frontend is a separate Bun package, not part of the Cargo workspace. From `f
     - RustFS sends an authenticated object-created webhook to `/events/rustfs`
     - the webhook reads the island from the key (`upload::island_of_key`)
     - registers the `documents` row (`mark_queued`), then enqueues OCR
-    - the worker retrieves the object, extracts text, updates the row and sends the text with the island's id and name to Akasha (`ManifestTrials`). Akasha extracts questions grouped by topic (reusing existing topic names), then a classification step groups every topic's questions into skills (reusing existing skills and adding new ones), and writes `topics`, `skills`, `tasks` and `instructions` itself.
-    - The key is the only carrier of the island: it is all the webhook gets from RustFS, so keep the `uploads/<island_id>/<uuid>/<filename>` layout, the `uploads/` prefix and the bucket/webhook-token assumptions when changing this flow.
+    - the worker retrieves the object, extracts text, updates the row and sends the document id, island id/name and language with the text to Akasha (`ManifestTrials`). Akasha extracts questions grouped by broad topic (reusing existing topic names), then a classification step groups every topic's questions into skills (reusing existing skills and adding new ones), and writes `topics`, `skills`, `tasks` and `instructions` itself.
+    - The key is the only carrier of the island: it is all the webhook gets from RustFS, so keep the `uploads/<content island id>/<uuid>/<filename>` layout, the `uploads/` prefix and the bucket/webhook-token assumptions when changing this flow.
     - Keys without an island (older `uploads/<uuid>/<file>` keys, or objects put into the bucket by hand, e.g. with `s5cmd`) are logged and skipped. A redelivered event is acknowledged with 204 (the queue's idempotency key rejects the second job); events for an island that no longer exists are skipped, so RustFS does not retry them forever. `OcrJob` deliberately does not carry the island, so jobs already in the queue keep decoding.
 - Session flow (gameplay): the `session/` module is the authority for a game; clients only render what they are told. See `schema/session-protocol.md` for the wire protocol (rules, message tables, event list, examples) and keep it in sync with the code.
   - `protocol.rs` — serde wire types (`ClientMessage`, `ServerMessage`, `GameEvent`, `Answer`, `ErrorCode`, …). These are mirrored by `schema/session-client-message.schema.json`, `schema/session-server-message.schema.json` and `frontend/src/api/types.ts`; change all of them together.
@@ -81,6 +81,6 @@ The frontend is a separate Bun package, not part of the Cargo workspace. From `f
 
 ## Environment and local state
 
-- A plain `cargo run` is insufficient unless backend dependencies and environment are already configured. Required runtime variables are `DATABASE_URL`, `WEBHOOK_TOKEN`, `S3_ENDPOINT`, `S3_ACCESS_KEY`, `S3_SECRET_KEY`, and `S3_BUCKET`; optional are `LISTEN_ADDR` (default `127.0.0.1:8081`), `MAX_UPLOAD_BYTES` (default 256 MiB) and `S3_REGION`. The Nix dev stack supplies development values.
+- A plain `cargo run` is insufficient unless backend dependencies and environment are already configured. Required runtime variables are `DATABASE_URL`, `WEBHOOK_TOKEN`, `S3_ENDPOINT`, `S3_ACCESS_KEY`, `S3_SECRET_KEY`, and `S3_BUCKET`; optional are `LISTEN_ADDR` (default `0.0.0.0:8081`), `MAX_UPLOAD_BYTES` (default 256 MiB) and `S3_REGION`. The Nix dev stack supplies development values.
 - The Rust build needs native ONNX Runtime/libheif and build tools supplied by the Nix shell. Outside Nix, `ORT_LIB_PATH` and dynamic-link configuration may also be needed; prefer the flake environment rather than reconstructing it manually.
 - Local Postgres data, RustFS objects, notification queues, and process logs live under `.data/`. Delete it only when intentionally resetting all local dev state. Logs are in `.data/logs/`.

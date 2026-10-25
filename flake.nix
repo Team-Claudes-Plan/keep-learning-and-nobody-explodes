@@ -231,6 +231,11 @@
                 set +a
               fi
 
+              # Akasha must use the same database as the backend. Set it after
+              # sourcing `.env` so a local override cannot point Akasha at a
+              # different database.
+              export DATABASE_URL="${devEnv.DATABASE_URL}"
+
               export CARGO_BUILD_JOBS="1"
               export NUM_JOBS="1"
 
@@ -357,6 +362,9 @@
               akasha = {
                 description = "Akasha question extraction gRPC service (cargo watch)";
                 command = akasha-run;
+                environment = {
+                  DATABASE_URL = devEnv.DATABASE_URL;
+                };
                 depends_on.backend.condition = "process_healthy";
               };
 

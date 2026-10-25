@@ -1,0 +1,134 @@
+# Complete stack over plain HTTP. Only the frontend publishes a port, by default on
+# http://127.0.0.1:8080; everything else is reachable only on the internal networks.
+# For a public host, put a TLS-terminating reverse proxy in front (see README.md).
+#
+#   cp .env.example .env   # set the LLM_* variables
+#   docker compose up -d --build
+
+x-database-url: &database-url postgres://postgres:${POSTGRES_PASSWORD:-postgres}@postgres:5432/upload
+
+services:
+  # nginx with the static frontend; proxies /backend/* (REST, uploads, websockets) to the backend.
+  frontend:
+    build: ./frontend
+    restart: unless-stopped
+    ports:
+      - "${BIND_ADDRESS:-127.0.0.1}:${HTTP_PORT:-8080}:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks: [web]
+
+  backend:
+    build:
+      context: .
+      target: backend
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: *database-url
+      S3_ENDPOINT: http://rustfs:9000
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY:-keep-learning}
+      S3_SECRET_KEY: ${S3_SECRET_KEY:-keep-learning-secret}
+      S3_BUCKET: ${S3_BUCKET:-course-materials}
+      WEBHOOK_TOKEN: ${WEBHOOK_TOKEN:-keep-learning-webhook}
+      AKASHA_GRPC_URL: http://akasha:50051
+      AKASHA_LANGUAGE: ${AKASHA_LANGUAGE:-german}
+      RUST_LOG: ${RUST_LOG:-info}
+    volumes:
+      # OCR models are downloaded on first use; keep them across restarts.
+      - backend-cache:/app/.cache
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "-o", "/dev/null", "http://127.0.0.1:8081/health"]
+      interval: 3s
+      timeout: 3s
+      retries: 40
+    depends_on:
+      postgres:
+        condition: service_healthy
+    # `web` gives the frontend a route in and the backend a route out (OCR downloads).
+    networks: [web, private]
+
+  # Generates the questions with the LLM (OpenAI-compatible API).
+  akasha:
+    build:
+      context: .
+      target: akasha
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: *database-url
+      LLM_BASE_URL: ${LLM_BASE_URL:?set LLM_BASE_URL in .env}
+      LLM_API_KEY: ${LLM_API_KEY:?set LLM_API_KEY in .env}
+      LLM_MODEL: ${LLM_MODEL:?set LLM_MODEL in .env}
+      RUST_LOG: ${RUST_LOG:-info}
+    depends_on:
+      # The backend applies the database migrations.
+      backend:
+        condition: service_healthy
+    networks: [private, egress]
+
+  postgres:
+    image: postgres:18-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: upload
+    volumes:
+      - postgres-data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d upload"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+    networks: [private]
+
+  rustfs:
+    image: rustfs/rustfs:${RUSTFS_VERSION:-1.0.3}
+    restart: unless-stopped
+    environment:
+      RUSTFS_ADDRESS: 0.0.0.0:9000
+      RUSTFS_VOLUMES: /data
+      RUSTFS_ACCESS_KEY: ${S3_ACCESS_KEY:-keep-learning}
+      RUSTFS_SECRET_KEY: ${S3_SECRET_KEY:-keep-learning-secret}
+      RUSTFS_CONSOLE_ENABLE: "false"
+      RUSTFS_NOTIFY_ENABLE: "true"
+      RUSTFS_NOTIFY_WEBHOOK_ENABLE_PRIMARY: "on"
+      RUSTFS_NOTIFY_WEBHOOK_ENDPOINT_PRIMARY: http://backend:8081/events/rustfs
+      RUSTFS_NOTIFY_WEBHOOK_AUTH_TOKEN_PRIMARY: ${WEBHOOK_TOKEN:-keep-learning-webhook}
+      RUSTFS_NOTIFY_WEBHOOK_QUEUE_DIR_PRIMARY: /data/.notify-primary
+      RUSTFS_OUTBOUND_ALLOW_ORIGINS: http://backend:8081
+    volumes:
+      - rustfs-data:/data
+    # RustFS health-checks the webhook target on start, so the backend must be up first.
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks: [private]
+
+  # One-shot: create the bucket and register the OCR webhook, then exit.
+  storage-init:
+    image: amazon/aws-cli:2.36.31
+    restart: on-failure
+    entrypoint: ["/bin/sh", "/init-storage.sh"]
+    environment:
+      S3_ENDPOINT: http://rustfs:9000
+      S3_BUCKET: ${S3_BUCKET:-course-materials}
+      AWS_ACCESS_KEY_ID: ${S3_ACCESS_KEY:-keep-learning}
+      AWS_SECRET_ACCESS_KEY: ${S3_SECRET_KEY:-keep-learning-secret}
+    volumes:
+      - ./deploy/init-storage.sh:/init-storage.sh:ro
+    depends_on: [rustfs]
+    networks: [private]
+
+networks:
+  web: {}
+  # No route to the outside world: database and storage only talk to the services.
+  private:
+    internal: true
+  # Outbound access for the LLM API.
+  egress: {}
+
+volumes:
+  backend-cache:
+  postgres-data:
+  rustfs-data:

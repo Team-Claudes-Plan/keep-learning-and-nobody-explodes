@@ -1,10 +1,18 @@
-# Iso City (frontend)
+# Frontend
 
-React + TypeScript + Vite app rendering three.js scenes via
+The game client that players see. It renders each learning group's floating
+island, where every topic is a house and every skill is a storey. It also
+handles uploading course material and the cooperative bomb game: the defuser
+works the 3D modules while the expert reads the page-turning manual.
+
+It is needed because this is where learning turns into play. The client only
+shows what the [backend](../backend/) tells it over REST and websockets. It
+never decides on answers itself. Without a backend it has in-memory mockups for some actions, but it's not fully functional.
+
+It is a React + TypeScript + Vite app that renders three.js scenes via
 [React Three Fiber](https://docs.pmnd.rs/react-three-fiber) and
 [drei](https://github.com/pmndrs/drei), with client-side routing via
-[React Router](https://reactrouter.com). It is a starting point for an
-isometric game.
+[React Router](https://reactrouter.com).
 
 ## Stack
 
@@ -60,23 +68,28 @@ backend and Postgres; see [`e2e/README.md`](e2e/README.md).
 ## Data & structure
 
 - `src/router.tsx` — route table (`createBrowserRouter`).
-- `src/data/houses.ts` — `House` / `Storey` / `Room` / `RoomItem` types plus the
-  mock `HOUSES` data and lookup helpers. This is the seam to swap in real data.
+- `src/data/houses.ts` — house design catalogue: `House` / `Storey` / `Room`
+  types, the `HOUSES` designs and lookup helpers.
+- `src/data/islands.ts` — maps API islands, topics and skills to placed houses
+  (`resolveIsland`); the seam between backend data and 3D placement.
+- `src/data/islandGrid.ts` — buildable grid cells, roads and field props.
+- `src/api/mockIslands.ts` — in-memory stand-in for the islands API when no
+  backend is configured.
 - `src/components/SceneCanvas.tsx` — reusable `<Canvas>` with lights, ground and
   `MapControls` (rotation disabled); camera and controls are configurable.
   `grid={false}` hides the ground grid (used by the island), and `panBounds`
   clamps panning to a shape.
-- `src/components/city/Island.tsx` — low-poly island: terraced rocky plateau
+- `src/components/islands/Island.tsx` — low-poly island: terraced rocky plateau
   and a rough boulder ring. Geometry comes from `src/data/island.ts`.
-- `src/components/city/River.tsx` — low-poly lake at the origin of the river,
+- `src/components/islands/River.tsx` — low-poly lake at the origin of the river,
   plus the river itself, which follows the island edge and cascades down the
   terrace steps into a waterfall falling into the void.
 - `src/components/Room.tsx` — generic, customizable room template (size, colors,
-  which walls are rendered, items, item selection). Used by both the house front
-  view (front wall/ceiling hidden) and the isometric storey view.
+  which walls are rendered, items, item selection) used by the house front view.
+- `src/components/RoomStage.tsx` — the isometric storey view around the bomb.
 - `src/components/Skyscraper.tsx` — clickable city block.
-- `src/components/ItemBox.tsx` — generic clickable room item.
-- `src/pages/` — `CityPage`, `HousePage`, `StoreyPage`, `NotFoundPage`.
+- `src/pages/` — `TitlePage`, `IslandsPage`, `HousePage`, `StoreyPage`,
+  `MinigamesPage`, `BombPage`, `KoopPages`, `SessionPages`, `NotFoundPage`.
 
 ## Adding a new house (static assets)
 
@@ -98,18 +111,20 @@ texture loader are needed, since asset folders are auto-discovered.
    `facade: { shape, design, textures }`, where `textures` is the folder name
    from step 1 and `shape`/`design` are keys from `src/data/facadeShapes.ts`
    and `src/data/baseDesigns.ts`.
-4. **Place it in the city** by adding an entry to `HOUSE_BLOCKS` in
-   `src/data/city.ts`; `houseBlockCenter()` then derives the house position and
-   the block is cleared of field props.
+4. **Placement is automatic.** `resolveIsland` in `src/data/islands.ts` assigns
+   topics to the buildable cells from `src/data/islandGrid.ts`, so no separate
+   city entry is needed. Occupied cells are cleared of field props
+   automatically.
 
 Static house assets are placed under `frontend/src/assets/`, not `public/`
 (they are bundled and resolved by the loader). Reference packs from outside the
 app (e.g. downloadable texture drops) should be moved into
 `frontend/src/assets/house-<name>/` before wiring them up.
 
-## Next steps for the game
+## Further work
 
-- Replace `HOUSES` with real game item/house data.
-- Add item types beyond boxes and richer room customization.
-- Consider shadows, a tileset, and richer island terrain.
+- Authentication and user accounts instead of the temporary user header.
+- More bomb modules and question types.
+- Teacher tooling to curate and edit generated questions.
+- Richer island terrain and interior decoration.
 
