@@ -11,7 +11,7 @@ use axum::{
 enum ErrorKind {
     InvalidRequest,
     PayloadTooLarge,
-    TopicNotFound,
+    IslandNotFound,
     Storage,
     Internal,
 }
@@ -20,7 +20,7 @@ enum ErrorKind {
 ///
 /// Inspect it with [`is_invalid_request`](Self::is_invalid_request),
 /// [`is_payload_too_large`](Self::is_payload_too_large),
-/// [`is_topic_not_found`](Self::is_topic_not_found),
+/// [`is_island_not_found`](Self::is_island_not_found),
 /// [`is_storage`](Self::is_storage), and [`is_internal`](Self::is_internal);
 /// the kind itself is not exposed.
 #[derive(Debug)]
@@ -42,9 +42,9 @@ impl UploadError {
         Self::new(ErrorKind::PayloadTooLarge, message.into(), None)
     }
 
-    /// Creates an error for an upload into a topic that does not exist.
-    pub fn topic_not_found(message: impl Into<String>) -> Self {
-        Self::new(ErrorKind::TopicNotFound, message.into(), None)
+    /// Creates an error for an upload into an island that does not exist.
+    pub fn island_not_found(message: impl Into<String>) -> Self {
+        Self::new(ErrorKind::IslandNotFound, message.into(), None)
     }
 
     /// Creates an error for a failure inside the service, such as a database error.
@@ -86,10 +86,10 @@ impl UploadError {
         self.kind == ErrorKind::PayloadTooLarge
     }
 
-    /// Returns `true` if the upload targets a topic that does not exist.
+    /// Returns `true` if the upload targets an island that does not exist.
     #[must_use]
-    pub fn is_topic_not_found(&self) -> bool {
-        self.kind == ErrorKind::TopicNotFound
+    pub fn is_island_not_found(&self) -> bool {
+        self.kind == ErrorKind::IslandNotFound
     }
 
     /// Returns `true` if the service failed for a reason unrelated to the request.
@@ -154,7 +154,7 @@ impl IntoResponse for UploadError {
                 "upload failed internally"
             );
             (StatusCode::INTERNAL_SERVER_ERROR, "internal error").into_response()
-        } else if self.is_topic_not_found() {
+        } else if self.is_island_not_found() {
             (StatusCode::NOT_FOUND, self.message).into_response()
         } else if self.is_payload_too_large() {
             (StatusCode::PAYLOAD_TOO_LARGE, self.message).into_response()

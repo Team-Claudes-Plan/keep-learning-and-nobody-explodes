@@ -4,7 +4,10 @@ Two players defuse one bomb together over a websocket. The server has the
 authority: it picks the questions, runs the timer, checks answers and counts
 strikes. Clients only render what they are told.
 
-- Endpoint: `GET /api/sessions/ws` (websocket), lobby list: `GET /api/sessions`
+- Endpoint: `GET /api/sessions/ws?user_id=<uuid>` (websocket), lobby list: `GET /api/sessions`
+- The player is the user named by `user_id` (or the `X-User-Id` header, where
+  the client can set one). Unknown users are refused with 401 before the
+  upgrade. The player ids in all messages are user ids.
 - Every message is a JSON text frame with a `type` field.
 - Schemas: [`session-client-message.schema.json`](session-client-message.schema.json),
   [`session-server-message.schema.json`](session-server-message.schema.json)
@@ -12,6 +15,8 @@ strikes. Clients only render what they are told.
 
 ## Rules
 
+- The questions come from the chosen `topics`: the houses of an island (see
+  `GET /api/islands`).
 - A bomb has `question_count` parts (1–11). **Turn n** plays part n.
 - Each turn one player is the **defuser** (sees the module, answers) and the
   other is the **expert** (sees the prompt and the manual page). **Roles swap
@@ -42,6 +47,8 @@ The first message decides how the socket enters a game:
 
 `create`/`join` answer with `welcome { game_id, player_id, token, seat }`.
 **Store the token** (e.g. localStorage): it is the only way back into the game.
+`resume` only accepts a token of the connecting user. Nobody can join their own
+game.
 
 Then the server sends the current state:
 
@@ -55,7 +62,7 @@ pushed live.
 
 | type | fields | when |
 |---|---|---|
-| `create` | `topics: uuid[]`, `question_count`, `role?`, `time_limit_secs?` (30–3600) | first message |
+| `create` | `topics: uuid[]` (house ids), `question_count`, `role?`, `time_limit_secs?` (30–3600) | first message |
 | `join` | `game_id`, `role?` | first message, game `waiting` |
 | `resume` | `game_id`, `token`, `last_sequence?` | first message |
 | `submit_answer` | `turn`, `answer: { type, answer }` | your turn as defuser |

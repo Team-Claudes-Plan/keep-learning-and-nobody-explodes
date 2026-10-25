@@ -105,6 +105,9 @@ pub struct Connection {
 
 #[derive(Debug)]
 pub struct CreateGame {
+    /// The user creating the game.
+    pub player: Uuid,
+    /// Topics (houses) to draw the tasks from.
     pub topics: Vec<Uuid>,
     pub question_count: u16,
     pub role: Option<Role>,
@@ -181,7 +184,7 @@ impl Sessions {
 
         let seat = Seat {
             game_id: Uuid::new_v4(),
-            player_id: Uuid::new_v4(),
+            player_id: request.player,
             token: Uuid::new_v4(),
             index: 0,
         };
@@ -232,9 +235,18 @@ impl Sessions {
         Ok(seat)
     }
 
-    pub async fn join(&self, game_id: Uuid, role: Option<Role>) -> Result<Seat, SessionError> {
-        self.request(game_id, |reply| Request::Join { role, reply })
-            .await?
+    pub async fn join(
+        &self,
+        game_id: Uuid,
+        player: Uuid,
+        role: Option<Role>,
+    ) -> Result<Seat, SessionError> {
+        self.request(game_id, |reply| Request::Join {
+            player,
+            role,
+            reply,
+        })
+        .await?
     }
 
     pub async fn authenticate(&self, game_id: Uuid, token: Uuid) -> Result<Uuid, SessionError> {

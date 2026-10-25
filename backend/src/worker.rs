@@ -30,13 +30,13 @@ impl OcrJob {
         )
     }
 
-    /// The topic the document belongs to, read from the object key.
+    /// The island the document belongs to, read from the object key.
     ///
     /// Not stored in the job: jobs already in the queue must keep decoding, and
     /// the key is the single source of truth for where a file was uploaded.
     #[must_use]
-    pub fn topic_id(&self) -> Option<Uuid> {
-        upload::topic_of_key(&self.key)
+    pub fn island_id(&self) -> Option<Uuid> {
+        upload::island_of_key(&self.key)
     }
 
     #[must_use]
@@ -82,12 +82,12 @@ async fn process_ocr(
     Data(store): Data<ObjectStore>,
     Data(akasha): Data<AkashaClient>,
 ) -> Result<(), BoxDynError> {
-    let Some(topic_id) = job.topic_id() else {
-        // Queued before topics existed; retrying cannot give it a topic.
-        tracing::warn!(name: "ocr.skipped", key = %job.key, "object key does not name a topic, skipping OCR job");
+    let Some(island_id) = job.island_id() else {
+        // Queued before islands existed; retrying cannot give it an island.
+        tracing::warn!(name: "ocr.skipped", key = %job.key, "object key does not name an island, skipping OCR job");
         return Ok(());
     };
-    db.mark_processing(topic_id, &job.bucket, &job.key, job.etag.as_deref())
+    db.mark_processing(island_id, &job.bucket, &job.key, job.etag.as_deref())
         .await?;
 
     let text = match extract_and_save(&job, &db, &store).await {
@@ -106,18 +106,18 @@ async fn process_ocr(
     let Some(document_id) = db.document_id(&job.bucket, &job.key).await? else {
         return Err(std::io::Error::other("document row is missing").into());
     };
-    let Some(topic) = db.topic_name(topic_id).await? else {
-        return Err(std::io::Error::other("topic row is missing").into());
+    let Some(island_name) = db.island_name(island_id).await? else {
+        return Err(std::io::Error::other("island row is missing").into());
     };
 
     akasha
-        .manifest_trials(&document_id.to_string(), &topic, &text)
+        .manifest_trials(document_id, island_id, &island_name, &text)
         .await?;
 
     tracing::info!(
         name: "ocr.completed",
         key = %job.key,
-        topic = %topic,
+        island = %island_name,
         document_id = %document_id,
         "completed OCR job and sent chronicle to Akasha"
     );

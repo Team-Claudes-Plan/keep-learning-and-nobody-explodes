@@ -80,7 +80,8 @@ mod tests {
                 ("max_questions", "10"),
                 ("allowed_types", "text_input"),
                 ("image_section", "images"),
-                ("topic_context", "topic"),
+                ("island_context", "island"),
+                ("existing_topics", "- Cells"),
             ],
         );
 

@@ -7,6 +7,7 @@ mod akasha;
 mod api;
 mod config;
 mod db;
+mod knowledge;
 mod session;
 mod upload;
 mod webhook;

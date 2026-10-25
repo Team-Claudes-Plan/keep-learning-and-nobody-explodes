@@ -1,8 +1,10 @@
 //! Rust representation of `schema/questions.schema.json`.
 //!
 //! Deserialization enforces the JSON schema (required fields, unknown fields,
-//! value types). [`convert`] additionally validates cross-field invariants such
-//! as answer lengths, index ranges, permutations and coordinate bounds.
+//! value types). [`convert_questions`] additionally validates cross-field
+//! invariants such as answer lengths, index ranges, permutations and coordinate
+//! bounds. The extraction groups the questions by topic (the houses of an
+//! island); [`convert`] validates those groups.
 
 use std::collections::HashSet;
 use std::fmt;
@@ -23,6 +25,17 @@ pub const TYPES: &[&str] = &[
     "coords",
     "order",
 ];
+
+/// Longest accepted topic name, in characters.
+pub const MAX_TOPIC_CHARS: usize = 60;
+
+/// The questions the extraction filed under one topic.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct TopicQuestions {
+    pub topic: String,
+    pub questions: Vec<Question>,
+}
 
 /// One question as defined by `questions.schema.json`.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -149,7 +162,9 @@ pub enum Nullable<T> {
 /// A static schema or game invariant violation.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SchemaIssue {
-    /// Zero-based index of the question in the generated array.
+    /// Zero-based index of the topic group in the generated array.
+    pub topic: Option<usize>,
+    /// Zero-based index of the question within its topic group.
     pub question: Option<usize>,
     /// Field path within the question, for example `correct_answer`.
     pub field: Option<String>,
@@ -158,6 +173,14 @@ pub struct SchemaIssue {
 
 impl fmt::Display for SchemaIssue {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if let Some(topic) = self.topic {
+            let separator = if self.question.is_none() && self.field.is_none() {
+                ": "
+            } else {
+                " "
+            };
+            write!(f, "topic {topic}{separator}")?;
+        }
         match (self.question, &self.field) {
             (Some(question), Some(field)) => {
                 write!(f, "question {question} `{field}`: {}", self.message)
@@ -196,13 +219,123 @@ impl fmt::Display for SchemaIssues {
 
 impl std::error::Error for SchemaIssues {}
 
-/// Parses and validates a candidate JSON value.
+/// Parses and validates a candidate: an array of `{"topic", "questions"}`
+/// groups. Groups whose topic names only differ in case are merged.
 ///
-/// All questions are inspected so the LLM receives every violation in one
-/// feedback round instead of failing one field at a time.
-pub fn convert(value: &Value) -> Result<Vec<Question>, SchemaIssues> {
+/// All groups and questions are inspected so the LLM receives every violation
+/// in one feedback round instead of failing one field at a time.
+pub fn convert(value: &Value) -> Result<Vec<TopicQuestions>, SchemaIssues> {
+    let topic_issue = |topic: Option<usize>, field: Option<&str>, message: String| SchemaIssue {
+        topic,
+        question: None,
+        field: field.map(str::to_owned),
+        message,
+    };
+    let Some(groups) = value.as_array() else {
+        return Err(SchemaIssues(vec![topic_issue(
+            None,
+            None,
+            "expected a JSON array of topics".to_owned(),
+        )]));
+    };
+
+    let mut topics: Vec<TopicQuestions> = Vec::with_capacity(groups.len());
+    let mut issues = Vec::new();
+
+    for (index, group) in groups.iter().enumerate() {
+        let Some(fields) = group.as_object() else {
+            issues.push(topic_issue(
+                Some(index),
+                None,
+                "expected an object with `topic` and `questions`".to_owned(),
+            ));
+            continue;
+        };
+        if let Some(unknown) = fields
+            .keys()
+            .find(|key| !matches!(key.as_str(), "topic" | "questions"))
+        {
+            issues.push(topic_issue(
+                Some(index),
+                Some(unknown),
+                "unknown field; a topic only has `topic` and `questions`".to_owned(),
+            ));
+        }
+
+        let name = match fields.get("topic").and_then(Value::as_str).map(str::trim) {
+            None => {
+                issues.push(topic_issue(
+                    Some(index),
+                    Some("topic"),
+                    "must be a string".to_owned(),
+                ));
+                None
+            }
+            Some("") => {
+                issues.push(topic_issue(
+                    Some(index),
+                    Some("topic"),
+                    "must not be empty".to_owned(),
+                ));
+                None
+            }
+            Some(name) if name.chars().count() > MAX_TOPIC_CHARS => {
+                issues.push(topic_issue(
+                    Some(index),
+                    Some("topic"),
+                    format!("must be at most {MAX_TOPIC_CHARS} characters"),
+                ));
+                None
+            }
+            Some(name) => Some(name),
+        };
+
+        let questions = if let Some(questions) = fields.get("questions") {
+            match convert_questions(questions) {
+                Ok(questions) => Some(questions),
+                Err(SchemaIssues(found)) => {
+                    issues.extend(found.into_iter().map(|issue| SchemaIssue {
+                        topic: Some(index),
+                        ..issue
+                    }));
+                    None
+                }
+            }
+        } else {
+            issues.push(topic_issue(
+                Some(index),
+                Some("questions"),
+                "is missing".to_owned(),
+            ));
+            None
+        };
+
+        if let (Some(name), Some(questions)) = (name, questions) {
+            match topics
+                .iter_mut()
+                .find(|topic| topic.topic.to_lowercase() == name.to_lowercase())
+            {
+                Some(topic) => topic.questions.extend(questions),
+                None => topics.push(TopicQuestions {
+                    topic: name.to_owned(),
+                    questions,
+                }),
+            }
+        }
+    }
+
+    if issues.is_empty() {
+        Ok(topics)
+    } else {
+        Err(SchemaIssues(issues))
+    }
+}
+
+/// Parses and validates an array of questions.
+pub fn convert_questions(value: &Value) -> Result<Vec<Question>, SchemaIssues> {
     let Some(items) = value.as_array() else {
         return Err(SchemaIssues(vec![SchemaIssue {
+            topic: None,
             question: None,
             field: None,
             message: "expected a JSON array of questions".to_owned(),
@@ -219,6 +352,7 @@ pub fn convert(value: &Value) -> Result<Vec<Question>, SchemaIssues> {
                 questions.push(question);
             }
             Err(error) => issues.push(SchemaIssue {
+                topic: None,
                 question: Some(index),
                 field: None,
                 message: error.to_string(),
@@ -508,6 +642,7 @@ fn push_issue(
     issues: &mut Vec<SchemaIssue>,
 ) {
     issues.push(SchemaIssue {
+        topic: None,
         question: Some(question),
         field: Some(field.into()),
         message: message.into(),
@@ -521,7 +656,7 @@ mod tests {
     use super::*;
 
     fn convert_one(question: &Value) -> Result<Question, SchemaIssues> {
-        convert(&json!([question])).map(|mut questions| questions.remove(0))
+        convert_questions(&json!([question])).map(|mut questions| questions.remove(0))
     }
 
     #[test]
@@ -581,7 +716,7 @@ mod tests {
             }
         ]);
 
-        let questions = convert(&questions).expect("all example questions are valid");
+        let questions = convert_questions(&questions).expect("all example questions are valid");
         assert_eq!(questions.len(), TYPES.len());
     }
 
@@ -755,7 +890,7 @@ mod tests {
 
     #[test]
     fn reports_all_issues() {
-        let error = convert(&json!([
+        let error = convert_questions(&json!([
             {
                 "type": "true_false",
                 "statements": ["a", "b"],
@@ -771,5 +906,80 @@ mod tests {
         .expect_err("both questions are invalid");
 
         assert_eq!(error.0.len(), 3);
+    }
+
+    fn text_question(prompt: &str) -> Value {
+        json!({ "type": "text_input", "prompt": prompt, "correct_answer": "x" })
+    }
+
+    #[test]
+    fn groups_questions_by_topic() {
+        let topics = convert(&json!([
+            { "topic": " Photosynthesis ", "questions": [text_question("a")] },
+            { "topic": "Cell structure", "questions": [text_question("b"), text_question("c")] }
+        ]))
+        .expect("valid topics");
+
+        assert_eq!(topics.len(), 2);
+        assert_eq!(topics[0].topic, "Photosynthesis", "names are trimmed");
+        assert_eq!(topics[1].questions.len(), 2);
+    }
+
+    #[test]
+    fn merges_topics_that_differ_in_case() {
+        let topics = convert(&json!([
+            { "topic": "Photosynthesis", "questions": [text_question("a")] },
+            { "topic": "photosynthesis", "questions": [text_question("b")] }
+        ]))
+        .expect("valid topics");
+
+        assert_eq!(topics.len(), 1);
+        assert_eq!(topics[0].topic, "Photosynthesis", "the first spelling wins");
+        assert_eq!(topics[0].questions.len(), 2);
+    }
+
+    #[test]
+    fn rejects_invalid_topics() {
+        let long = "x".repeat(MAX_TOPIC_CHARS + 1);
+        let error = convert(&json!([
+            { "topic": "  ", "questions": [] },
+            { "topic": long, "questions": [] },
+            { "questions": [] },
+            { "topic": "Cells" },
+            { "topic": "Cells", "questions": [], "extra": 1 },
+            []
+        ]))
+        .expect_err("every group is invalid");
+
+        let message = error.to_string();
+        assert_eq!(error.0.len(), 6, "{message}");
+        assert!(message.contains("topic 0 `topic`: must not be empty"));
+        assert!(message.contains("at most 60 characters"));
+        assert!(message.contains("topic 2 `topic`: must be a string"));
+        assert!(message.contains("topic 3 `questions`: is missing"));
+        assert!(message.contains("topic 4 `extra`"));
+        assert!(message.contains("topic 5: expected an object"));
+    }
+
+    #[test]
+    fn reports_question_issues_with_their_topic() {
+        let error = convert(&json!([
+            { "topic": "Cells", "questions": [text_question("ok")] },
+            { "topic": "Plants", "questions": [text_question("ok"), text_question("")] }
+        ]))
+        .expect_err("second topic has an empty prompt");
+
+        assert_eq!(
+            error.to_string(),
+            "topic 1 question 1 `prompt`: must not be empty"
+        );
+    }
+
+    #[test]
+    fn rejects_a_plain_question_array() {
+        let error = convert(&json!([text_question("a")])).expect_err("not grouped");
+
+        assert!(error.to_string().contains("topic 0 `"));
+        assert!(error.to_string().contains("unknown field"));
     }
 }

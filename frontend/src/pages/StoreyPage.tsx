@@ -1,5 +1,5 @@
 import { Suspense, useEffect, useState } from 'react'
-import { Link, useParams } from 'react-router'
+import { Link, Navigate, useParams } from 'react-router'
 import SceneCanvas from '../components/SceneCanvas'
 import { ROOM_CAMERA, roomZoom } from '../components/cameras'
 import RoomStage from '../components/RoomStage'
@@ -9,8 +9,8 @@ import RoomDecor from '../components/storey/RoomDecor'
 import Hud from '../components/Hud'
 import { useWallTextures } from '../components/facade/useHouseTextures'
 import type { SurfaceSpec } from '../components/surfaces'
-import type { House, Storey } from '../data/houses'
-import type { ResolvedIsland } from '../data/islands'
+import type { Storey } from '../data/houses'
+import type { PlacedHouse, ResolvedIsland } from '../data/islands'
 import { useIslandHouse } from '../data/useIslandHouse'
 import { DEFAULT_WALL_ATLAS, resolveParts } from '../data/houseParts'
 import { resolveDesign } from '../data/baseDesigns'
@@ -32,7 +32,8 @@ const ROOM_MODULES = ROOM_MODULE ? [ROOM_MODULE] : []
 /** Shown on the bomb until the questions are there. */
 const PLACEHOLDER_MODULES = ROOM_MODULES.map((m) => ({ id: m.id, status: 'active' as const }))
 
-function StoreyRoom({ island, house, storey }: { island: ResolvedIsland; house: House; storey: Storey }) {
+function StoreyRoom({ island, placed, storey }: { island: ResolvedIsland; placed: PlacedHouse; storey: Storey }) {
+  const { house } = placed
   const [lifted, setLifted] = useState(false)
   const game = useBombGame({ modules: ROOM_MODULES, paused: !lifted })
   const ready = game.load.status === 'ready'
@@ -109,7 +110,7 @@ function StoreyRoom({ island, house, storey }: { island: ResolvedIsland; house: 
         <Hud title={storey.label}>
           <div className="hud-breadcrumb">
             <Link to={`/islands/${island.island.id}`}>{island.island.name}</Link> /{' '}
-            <Link to={`/islands/${island.island.id}/houses/${house.id}`}>{house.name}</Link> /{' '}
+            <Link to={`/islands/${island.island.id}/houses/${placed.topicId}`}>{placed.name}</Link> /{' '}
             <span>{storey.label}</span>
           </div>
           <div>
@@ -138,10 +139,11 @@ function StoreyRoom({ island, house, storey }: { island: ResolvedIsland; house: 
 }
 
 export default function StoreyPage() {
-  const { islandId = '', houseId = '', storeyId = '' } = useParams()
-  const state = useIslandHouse(islandId, houseId)
+  const { islandId = '', topicId = '', storeyId = '' } = useParams()
+  const state = useIslandHouse(islandId, topicId)
 
   if (state.status === 'loading') return null
+  if (state.status === 'signed-out') return <Navigate to="/islands" replace />
 
   // Only storeys up to the house's level on this island can be entered.
   const storey = state.status === 'ready' ? state.placed.house.storeys.find((entry) => entry.id === storeyId) : undefined
@@ -154,17 +156,17 @@ export default function StoreyPage() {
             <>⚠️ {state.message}</>
           ) : (
             <>
-              No storey <strong>{storeyId}</strong> in house <strong>{houseId}</strong> on island{' '}
+              No storey <strong>{storeyId}</strong> in house <strong>{topicId}</strong> on island{' '}
               <strong>{islandId}</strong>.
             </>
           )}
         </div>
         <div className="hud-links">
-          <Link to={state.status === 'ready' ? `/islands/${islandId}/houses/${houseId}` : '/islands'}>Back</Link>
+          <Link to={state.status === 'ready' ? `/islands/${islandId}/houses/${topicId}` : '/islands'}>Back</Link>
         </div>
       </Hud>
     )
   }
 
-  return <StoreyRoom island={state.island} house={state.placed.house} storey={storey} />
+  return <StoreyRoom island={state.island} placed={state.placed} storey={storey} />
 }

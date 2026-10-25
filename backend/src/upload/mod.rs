@@ -1,11 +1,12 @@
 //! HTTP endpoint that stores uploaded course material in the object store.
 //!
-//! [`router`] exposes `POST /upload?topic_id=<uuid>`, which accepts
-//! `multipart/form-data`. Every upload belongs to an existing topic (create one
-//! with `PUT /api/topics/create`). Every part carrying a filename is written to
-//! `uploads/<topic_id>/<uuid>/<sanitized-filename>`; other form fields are
-//! ignored. The topic is part of the key because that is all the object-created
-//! webhook reports back; see [`topic_of_key`].
+//! [`router`] exposes `POST /upload?island_id=<uuid>`, which accepts
+//! `multipart/form-data`. Every upload belongs to an existing island (create one
+//! with `PUT /api/islands/create`). Every part carrying a filename is written to
+//! `uploads/<island_id>/<uuid>/<sanitized-filename>`; other form fields are
+//! ignored. The island is part of the key because that is all the object-created
+//! webhook reports back; see [`island_of_key`]. An upload to a fork is stored
+//! under the fork's origin, which owns the shared content.
 //!
 //! File bytes are spooled to a temporary file one chunk at a time and then
 //! streamed to the object store. A request therefore does not retain the whole
@@ -62,15 +63,15 @@ pub struct StoredObject {
 /// Query parameters of `POST /upload`.
 #[derive(Debug, Deserialize)]
 struct UploadQuery {
-    /// Topic the uploaded files belong to.
-    topic_id: Uuid,
+    /// Island the uploaded files belong to.
+    island_id: Uuid,
 }
 
 /// Response body of `POST /upload`.
 #[derive(Debug, Serialize)]
 pub struct UploadResponse {
-    /// Topic the files were uploaded to.
-    pub topic_id: Uuid,
+    /// Island that owns the files: the requested one, or the origin of a fork.
+    pub island_id: Uuid,
     /// Files stored by the request, in request order.
     pub objects: Vec<StoredObject>,
     /// File parts that were not stored, in request order.
@@ -102,36 +103,37 @@ where
 }
 
 /// Builds the object key of an uploaded file.
-fn object_key(topic_id: Uuid, filename: &str) -> String {
+fn object_key(island_id: Uuid, filename: &str) -> String {
     format!(
-        "{KEY_PREFIX}{topic_id}/{}/{}",
+        "{KEY_PREFIX}{island_id}/{}/{}",
         Uuid::new_v4(),
         sanitize_filename(filename)
     )
 }
 
-/// Returns the topic an object key was uploaded to.
+/// Returns the island an object key was uploaded to.
 ///
-/// Only keys of the form `uploads/<topic_id>/<uuid>/<filename>` qualify. Keys
-/// from before topics existed (`uploads/<uuid>/<filename>`) and keys written
-/// outside the upload endpoint do not, so they cannot be attached to a topic.
+/// Only keys of the form `uploads/<island_id>/<uuid>/<filename>` qualify. Keys
+/// from before islands existed (`uploads/<uuid>/<filename>`) and keys written
+/// outside the upload endpoint do not, so they cannot be attached to an island.
 #[must_use]
-pub fn topic_of_key(key: &str) -> Option<Uuid> {
+pub fn island_of_key(key: &str) -> Option<Uuid> {
     let mut segments = key.strip_prefix(KEY_PREFIX)?.split('/');
-    let topic_id = segments.next()?.parse().ok()?;
+    let island_id = segments.next()?.parse().ok()?;
     let document = segments.next()?;
     let filename = segments.next()?;
     (segments.next().is_none() && document.parse::<Uuid>().is_ok() && !filename.is_empty())
-        .then_some(topic_id)
+        .then_some(island_id)
 }
 
-/// What an upload needs: the object store and the topics to attach files to.
+/// What an upload needs: the object store and the islands to attach files to.
 pub trait UploadStore: Send + Sync {
-    /// Whether `topic_id` names an existing topic.
-    fn topic_exists(
+    /// The island that owns the content of `island_id` (itself, or the origin
+    /// of a fork), or `None` if the island does not exist.
+    fn content_island(
         &self,
-        topic_id: Uuid,
-    ) -> impl Future<Output = Result<bool, UploadError>> + Send;
+        island_id: Uuid,
+    ) -> impl Future<Output = Result<Option<Uuid>, UploadError>> + Send;
 
     /// Streams the file at `path` to `key`.
     fn put(
@@ -143,7 +145,7 @@ pub trait UploadStore: Send + Sync {
     ) -> impl Future<Output = Result<(), UploadError>> + Send;
 }
 
-/// The production [`UploadStore`]: files go to S3, topics live in Postgres.
+/// The production [`UploadStore`]: files go to S3, islands live in Postgres.
 #[derive(Debug, Clone)]
 pub struct Uploader {
     objects: ObjectStore,
@@ -158,13 +160,13 @@ impl Uploader {
 }
 
 impl UploadStore for Uploader {
-    fn topic_exists(
+    fn content_island(
         &self,
-        topic_id: Uuid,
-    ) -> impl Future<Output = Result<bool, UploadError>> + Send {
+        island_id: Uuid,
+    ) -> impl Future<Output = Result<Option<Uuid>, UploadError>> + Send {
         let db = self.db.clone();
         async move {
-            db.topic_exists(topic_id)
+            db.content_island(island_id)
                 .await
                 .map_err(UploadError::internal)
         }
@@ -186,27 +188,27 @@ async fn upload<S: UploadStore>(
     Query(query): Query<UploadQuery>,
     multipart: Multipart,
 ) -> Result<Json<UploadResponse>, UploadError> {
-    accept_upload(&store, query.topic_id, multipart)
+    accept_upload(&store, query.island_id, multipart)
         .await
         .map(Json)
 }
 
 async fn accept_upload(
     store: &impl UploadStore,
-    topic_id: Uuid,
+    island_id: Uuid,
     multipart: Multipart,
 ) -> Result<UploadResponse, UploadError> {
-    if !store.topic_exists(topic_id).await? {
-        return Err(UploadError::topic_not_found(format!(
-            "topic {topic_id} does not exist"
+    let Some(owner) = store.content_island(island_id).await? else {
+        return Err(UploadError::island_not_found(format!(
+            "island {island_id} does not exist"
         )));
-    }
-    store_parts(store, topic_id, multipart).await
+    };
+    store_parts(store, owner, multipart).await
 }
 
 async fn store_parts(
     store: &impl UploadStore,
-    topic_id: Uuid,
+    island_id: Uuid,
     mut multipart: Multipart,
 ) -> Result<UploadResponse, UploadError> {
     let mut objects = Vec::new();
@@ -223,7 +225,7 @@ async fn store_parts(
                 }
                 failures.push(failed_part(None, &upload_err));
                 return Ok(UploadResponse {
-                    topic_id,
+                    island_id,
                     objects,
                     failures,
                 });
@@ -247,14 +249,14 @@ async fn store_parts(
                 }
                 failures.push(failed_part(Some(filename), &err));
                 return Ok(UploadResponse {
-                    topic_id,
+                    island_id,
                     objects,
                     failures,
                 });
             }
         };
         let size = spooled.len;
-        let key = object_key(topic_id, &filename);
+        let key = object_key(island_id, &filename);
         // The temporary file is removed when `spooled` drops, including when
         // the object store rejects this part. Earlier objects stay.
         if let Err(err) = store.put(&key, &content_type, &spooled.path, size).await {
@@ -288,7 +290,7 @@ async fn store_parts(
         )));
     }
     Ok(UploadResponse {
-        topic_id,
+        island_id,
         objects,
         failures,
     })

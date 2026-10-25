@@ -6,6 +6,7 @@ use grpc::akasha::{
 };
 use tonic::{Request, Response, Status};
 use tracing::error;
+use uuid::Uuid;
 
 use crate::worker::ChronicleJob;
 
@@ -40,10 +41,15 @@ impl AkashaService for Akasha {
             Err(_) => return Err(Status::invalid_argument("Unknown language")),
         };
 
+        let Ok(island_id) = Uuid::parse_str(&chronicle.island_id) else {
+            return Err(Status::invalid_argument("island_id must be a UUID"));
+        };
+
         let job = ChronicleJob {
             id: chronicle.id,
             language: language.to_owned(),
-            topic: chronicle.topic,
+            island_id,
+            island_name: chronicle.island_name,
             text: chronicle.text,
         };
 

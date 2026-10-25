@@ -1,6 +1,6 @@
 import { Suspense, useEffect, useMemo, useState } from 'react'
 import type { ThreeEvent } from '@react-three/fiber'
-import { Link, useNavigate, useParams } from 'react-router'
+import { Link, Navigate, useNavigate, useParams } from 'react-router'
 import SceneCanvas from '../components/SceneCanvas'
 import Room from '../components/Room'
 import StoreyWallDressing from '../components/storey/StoreyWallDressing'
@@ -12,7 +12,7 @@ import { useWallTextures } from '../components/facade/useHouseTextures'
 import { useInteriorTextures } from '../components/interior/useInteriorTextures'
 import type { SurfaceSpec } from '../components/surfaces'
 import { houseHeight, type House, type Storey } from '../data/houses'
-import type { PlacedHouse, ResolvedIsland } from '../data/islands'
+import { MAX_HOUSE_LEVEL, type PlacedHouse, type ResolvedIsland } from '../data/islands'
 import { useIslandHouse } from '../data/useIslandHouse'
 import {
   DEFAULT_WALL_ATLAS,
@@ -180,7 +180,7 @@ function KitShell({ kit, room, depth, storeyHeights, onRoofHeight }: KitShellPro
 function HouseView({ island, placed }: { island: ResolvedIsland; placed: PlacedHouse }) {
   const navigate = useNavigate()
   const { house } = placed
-  const base = `/islands/${island.island.id}/houses/${house.id}`
+  const base = `/islands/${island.island.id}/houses/${placed.topicId}`
   const design = resolveDesign(house.facade.design)
   const atlas = house.facade.atlas ?? DEFAULT_WALL_ATLAS
   const wall = useWallTextures(house.facade.textures, design, atlas)
@@ -271,8 +271,15 @@ function HouseView({ island, placed }: { island: ResolvedIsland; placed: PlacedH
           <Link to={`/islands/${island.island.id}`}>{island.island.name}</Link> / <span>{house.name}</span>
         </div>
         <div>
-          Level {placed.level} of {placed.maxLevel}
+          Level {placed.level} of {MAX_HOUSE_LEVEL}
         </div>
+        {!placed.unlocked && (
+          <div>
+            {island.island.group.members.length > 1
+              ? 'Not everyone on this island has learned this topic yet. Play its questions together to build it up.'
+              : 'You have not learned this topic yet. Play its questions to build it up.'}
+          </div>
+        )}
         <div>Scroll or drag to move between storeys &middot; click a floor to open its room</div>
         <ul className="hud-links">
           {house.storeys.map((storey, index) => {
@@ -293,10 +300,11 @@ function HouseView({ island, placed }: { island: ResolvedIsland; placed: PlacedH
 }
 
 export default function HousePage() {
-  const { islandId = '', houseId = '' } = useParams()
-  const state = useIslandHouse(islandId, houseId)
+  const { islandId = '', topicId = '' } = useParams()
+  const state = useIslandHouse(islandId, topicId)
 
   if (state.status === 'loading') return null
+  if (state.status === 'signed-out') return <Navigate to="/islands" replace />
   if (state.status !== 'ready') {
     return (
       <Hud title="House not found">
@@ -305,7 +313,7 @@ export default function HousePage() {
             <>⚠️ {state.message}</>
           ) : (
             <>
-              No house <strong>{houseId}</strong> on island <strong>{islandId}</strong>.
+              No house <strong>{topicId}</strong> on island <strong>{islandId}</strong>.
             </>
           )}
         </div>

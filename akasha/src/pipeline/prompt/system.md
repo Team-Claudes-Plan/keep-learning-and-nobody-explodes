@@ -27,7 +27,7 @@ Only use these types: {{allowed_types}}.
 
 ## General rules
 
-- Return a JSON array of question objects. Each object must contain a `type` and a `correct_answer`.
+- File every question under a topic (see "Topics" below). Each question object must contain a `type` and a `correct_answer`.
 - All text values must be non-empty.
 - Do not include `id`, `evidence`, `solution`, or any field that is not defined for the chosen question type. Every question type forbids additional properties.
 - Use 0-based indices for all options, statements, items, left/right elements, and categories.
@@ -89,29 +89,47 @@ Only use these types: {{allowed_types}}.
    - `items`: 3 to 8 distinct entries, shown to the player in the listed order.
    - `correct_answer`: a permutation of `0` to `items.length - 1`, listing the indices of `items` in the correct order. Every index must appear exactly once.
 
-# Course / topic context
+# Island context
 
-{{topic_context}}
+{{island_context}}
+
+# Topics
+
+The island is organized into topics; each topic becomes one house that the players learn in. File every question under exactly one topic.
+
+- A topic is a short noun phrase in **{{language}}** naming one subject area, for example a chapter or a concept family, such as "Photosynthesis" or "Cell structure". At most 60 characters, without numbering, dates or file names.
+- Choose topics that are broad enough to hold several questions. Do not create one topic per question.
+- The island already has these topics:
+
+{{existing_topics}}
+
+- If a question fits one of these topics, use that topic name **exactly as written**. Only create a new topic when the material really covers a different subject.
+- List every topic at most once in the response.
 
 # Response format
 
-Return only one valid JSON array with this shape. If no question can be grounded in the source material, return an empty array `[]`.
+Return only one valid JSON array of topics with this shape. Each topic object has exactly the fields `topic` and `questions`. If no question can be grounded in the source material, return an empty array `[]`. The limit of {{max_questions}} questions counts across all topics.
 
 ```json
 [
   {
-    "type": "single_choice",
-    "prompt": "question text",
-    "options": ["correct option", "plausible distractor", "another distractor"],
-    "correct_answer": 0
-  },
-  {
-    "type": "matching",
-    "left": ["left item 1", "left item 2"],
-    "right": ["right item 1", "right item 2"],
-    "correct_answer": [1, 0]
+    "topic": "topic name",
+    "questions": [
+      {
+        "type": "single_choice",
+        "prompt": "question text",
+        "options": ["correct option", "plausible distractor", "another distractor"],
+        "correct_answer": 0
+      },
+      {
+        "type": "matching",
+        "left": ["left item 1", "left item 2"],
+        "right": ["right item 1", "right item 2"],
+        "correct_answer": [1, 0]
+      }
+    ]
   }
 ]
 ```
 
-The `...` entries in the examples above are placeholders; replace them with real content. Do not wrap the JSON in Markdown fences. Do not wrap the array in an object such as `{"questions": [...]}`. Do not add commentary, explanations, or any text outside the JSON array. Do not add fields that are not defined for the chosen question type.
+The `...` entries in the examples above are placeholders; replace them with real content. Do not wrap the JSON in Markdown fences. Do not wrap the array in an object such as `{"questions": [...]}`. Do not add commentary, explanations, or any text outside the JSON array. Do not add fields that are not defined for the chosen question type, and no fields besides `topic` and `questions` on a topic.
