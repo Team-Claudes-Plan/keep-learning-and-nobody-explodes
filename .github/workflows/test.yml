@@ -16,6 +16,9 @@ env:
   CARGO_TERM_COLOR: always
   # tests that need a database run against the Postgres service
   DATABASE_URL: postgres://postgres@localhost:5432/upload
+  # compile sqlx macros (apalis-postgres) from their shipped .sqlx data, not against the empty
+  # CI database, which has no apalis schema until the backend runs its migrations
+  SQLX_OFFLINE: "true"
   WEBHOOK_TOKEN: ci-webhook-token
   # no S3 in CI: the client connects lazily and the upload tests are not run
   S3_ENDPOINT: http://127.0.0.1:9
