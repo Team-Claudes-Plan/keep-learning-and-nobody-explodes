@@ -38,6 +38,10 @@ impl<L: Llm> PipelineStep for SkillStep<L> {
 
         let questions = serde_json::to_string_pretty(topics)
             .map_err(|error| StepFailure::new(SkillError::Serialize(error), SKILL))?;
+        let question_count = topics
+            .iter()
+            .map(|topic| topic.questions.len())
+            .sum::<usize>();
         let max_skill_chars = MAX_SKILL_CHARS.to_string();
         let system = prompt::render(
             prompt::SKILL,
@@ -64,6 +68,20 @@ impl<L: Llm> PipelineStep for SkillStep<L> {
             user.push('\n');
         }
 
+        tracing::info!(
+            chronicle = %context.input.id,
+            topics = topics.len(),
+            questions = question_count,
+            has_feedback = context.last_feedback.is_some(),
+            "skill classification started"
+        );
+        tracing::debug!(
+            chronicle = %context.input.id,
+            system_chars = system.len(),
+            user_chars = user.len(),
+            "skill classification prompt prepared"
+        );
+
         let response = self
             .llm
             .complete(&system, &user, 0.0, OutputFormat::Text)
@@ -78,6 +96,27 @@ impl<L: Llm> PipelineStep for SkillStep<L> {
             .map_err(|error| StepFailure::new(SkillError::InvalidJson(error), SKILL))?;
         let skills = skill::classify(&value, topics, &context.input.existing_skills)
             .map_err(|issues| StepFailure::new(SkillError::Invalid(issues), SKILL))?;
+
+        let skill_count = skills.iter().map(|topic| topic.skills.len()).sum::<usize>();
+        tracing::info!(
+            chronicle = %context.input.id,
+            response_chars = response.len(),
+            topics = skills.len(),
+            skills = skill_count,
+            questions = question_count,
+            "skill classification completed"
+        );
+        for topic in &skills {
+            for skill in &topic.skills {
+                tracing::debug!(
+                    chronicle = %context.input.id,
+                    topic = %topic.topic,
+                    skill = %skill.skill,
+                    questions = skill.questions.len(),
+                    "classified skill"
+                );
+            }
+        }
 
         context.skills = Some(skills);
 

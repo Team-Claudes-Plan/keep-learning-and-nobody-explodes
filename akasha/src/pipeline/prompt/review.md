@@ -17,7 +17,8 @@ All player-facing text must be written in **{{language}}**. Proper nouns, units,
 - HTML tags, Markdown syntax, JSON fragments or model commentary inside a player-facing value.
 - Empty answers or answers that do not match the question type.
 - Duplicated or contradictory wording that makes the question unreadable.
-- A topic name that is not a short subject name in the target language (for example a sentence, a file name, or a number).
+- A topic name that is not a broad discipline in the target language. Reject sentences, file names, numbers, and specific techniques, methods or applications that should be skills instead (for example "3D-Scanning" or "Photosynthese" instead of "Robotik" or "Biologie").
+- Do not reject a topic for being broad; broad disciplines are intended.
 
 Ignore harmless stylistic preferences, spelling variants accepted in the target language, and content that is simply difficult.
 

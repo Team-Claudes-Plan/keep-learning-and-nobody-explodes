@@ -1,4 +1,5 @@
 use std::fmt;
+use std::time::Instant;
 
 use async_openai::{
     Client as OpenAiClient,
@@ -76,6 +77,23 @@ impl Llm for Client {
         temperature: f32,
         format: OutputFormat,
     ) -> Result<String, ProviderError> {
+        let started = Instant::now();
+
+        tracing::debug!(
+            model = %self.model,
+            temperature,
+            format = ?format,
+            system_chars = system.len(),
+            user_chars = user.len(),
+            "LLM request started"
+        );
+        tracing::trace!(
+            model = %self.model,
+            system = %system,
+            user = %user,
+            "LLM prompt content"
+        );
+
         let system = ChatCompletionRequestSystemMessageArgs::default()
             .content(system)
             .build()?;
@@ -98,17 +116,60 @@ impl Llm for Client {
 
         let request = request.build()?;
 
-        let response = self.inner.chat().create(request).await?;
-        let choice = response
-            .choices
-            .into_iter()
-            .next()
-            .ok_or(ProviderError::NoChoices)?;
+        let response = match self.inner.chat().create(request).await {
+            Ok(response) => response,
+            Err(error) => {
+                tracing::warn!(
+                    model = %self.model,
+                    elapsed_ms = started.elapsed().as_millis(),
+                    error = %error,
+                    "LLM request failed"
+                );
+                return Err(error.into());
+            }
+        };
 
-        choice
+        let response_model = response.model.clone();
+        let total_tokens = response
+            .usage
+            .as_ref()
+            .map_or(0, |usage| usage.total_tokens);
+        let Some(choice) = response.choices.into_iter().next() else {
+            tracing::warn!(
+                model = %self.model,
+                elapsed_ms = started.elapsed().as_millis(),
+                "LLM response contains no choices"
+            );
+            return Err(ProviderError::NoChoices);
+        };
+
+        let Some(content) = choice
             .message
             .content
             .filter(|content| !content.trim().is_empty())
-            .ok_or(ProviderError::NoContent)
+        else {
+            tracing::warn!(
+                model = %self.model,
+                elapsed_ms = started.elapsed().as_millis(),
+                "LLM response choice contains no content"
+            );
+            return Err(ProviderError::NoContent);
+        };
+
+        tracing::info!(
+            model = %self.model,
+            response_model = %response_model,
+            elapsed_ms = started.elapsed().as_millis(),
+            response_chars = content.len(),
+            total_tokens,
+            "LLM request completed"
+        );
+        tracing::trace!(
+            model = %self.model,
+            response = %content,
+            "LLM response content"
+        );
+
+        Ok(content)
     }
 }

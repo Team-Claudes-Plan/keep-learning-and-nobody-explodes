@@ -28,11 +28,33 @@ fn convert(context: &mut PipelineContext) -> Result<StepOutcome, StepFailure> {
         .clone()
         .ok_or_else(|| StepFailure::new(SchemaError::NoCandidate, EXTRACT))?;
 
+    tracing::debug!(
+        chronicle = %context.input.id,
+        groups = candidate.as_array().map_or(0, Vec::len),
+        "validating candidate schema"
+    );
+
     let topics = schema::convert(&candidate)
         .map_err(|issues| StepFailure::new(SchemaError::Invalid(issues), EXTRACT))?;
 
     let canonical = serde_json::to_value(&topics)
         .map_err(|error| StepFailure::new(SchemaError::Serialize(error), EXTRACT))?;
+
+    let question_count = topics
+        .iter()
+        .map(|topic| topic.questions.len())
+        .sum::<usize>();
+    tracing::info!(
+        chronicle = %context.input.id,
+        topics = topics.len(),
+        questions = question_count,
+        "schema validation passed"
+    );
+    tracing::debug!(
+        chronicle = %context.input.id,
+        topics = ?topics.iter().map(|topic| topic.topic.as_str()).collect::<Vec<_>>(),
+        "validated topics"
+    );
 
     context.candidate = Some(canonical);
     context.topics = Some(topics);

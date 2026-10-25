@@ -34,6 +34,10 @@ impl<L: Llm> PipelineStep for ExtractStep<L> {
         context: &'a mut PipelineContext,
     ) -> Result<StepOutcome, StepFailure> {
         if context.input.text.trim().is_empty() {
+            tracing::warn!(
+                chronicle = %context.input.id,
+                "extraction skipped: source text is empty"
+            );
             return Err(StepFailure::new(ExtractError::EmptyInput, EXTRACT));
         }
 
@@ -71,6 +75,21 @@ impl<L: Llm> PipelineStep for ExtractStep<L> {
             user.push('\n');
         }
 
+        tracing::info!(
+            chronicle = %context.input.id,
+            language = %context.input.language,
+            existing_topics = context.input.existing_topics.len(),
+            max_questions = self.max_questions,
+            has_feedback = context.last_feedback.is_some(),
+            "extraction started"
+        );
+        tracing::debug!(
+            chronicle = %context.input.id,
+            system_chars = system.len(),
+            user_chars = user.len(),
+            "extraction prompt prepared"
+        );
+
         let response = self
             .llm
             .complete(&system, &user, 0.2, OutputFormat::Text)
@@ -87,6 +106,13 @@ impl<L: Llm> PipelineStep for ExtractStep<L> {
         if !candidate.is_array() {
             return Err(StepFailure::new(ExtractError::NotAnArray, EXTRACT));
         }
+
+        tracing::info!(
+            chronicle = %context.input.id,
+            response_chars = response.len(),
+            groups = candidate.as_array().map_or(0, Vec::len),
+            "extraction candidate parsed"
+        );
 
         context.candidate = Some(candidate);
 

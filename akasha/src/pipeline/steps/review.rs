@@ -45,6 +45,10 @@ impl<L: Llm> PipelineStep for ReviewStep<L> {
 
         let questions = serde_json::to_string_pretty(topics)
             .map_err(|error| StepFailure::new(ReviewError::Serialize(error), EXTRACT))?;
+        let question_count = topics
+            .iter()
+            .map(|topic| topic.questions.len())
+            .sum::<usize>();
 
         let system = prompt::render(
             prompt::REVIEW,
@@ -53,6 +57,19 @@ impl<L: Llm> PipelineStep for ReviewStep<L> {
         let user = format!(
             "Island: {}\nTarget language: {}\n\nQuestions to review, grouped by topic:\n{}",
             context.input.island_name, context.input.language, questions
+        );
+
+        tracing::info!(
+            chronicle = %context.input.id,
+            topics = topics.len(),
+            questions = question_count,
+            "content review started"
+        );
+        tracing::debug!(
+            chronicle = %context.input.id,
+            system_chars = system.len(),
+            user_chars = user.len(),
+            "content review prompt prepared"
         );
 
         let response = self
@@ -70,7 +87,21 @@ impl<L: Llm> PipelineStep for ReviewStep<L> {
         let verdict = serde_json::from_value::<ReviewVerdict>(value)
             .map_err(|error| StepFailure::new(ReviewError::InvalidResponse(error), EXTRACT))?;
 
+        tracing::debug!(
+            chronicle = %context.input.id,
+            response_chars = response.len(),
+            valid = verdict.valid,
+            issues = verdict.issues.len(),
+            "content review verdict parsed"
+        );
+
         if verdict.valid && verdict.issues.is_empty() {
+            tracing::info!(
+                chronicle = %context.input.id,
+                topics = topics.len(),
+                questions = question_count,
+                "content review passed"
+            );
             return Ok(StepOutcome::Next);
         }
 
@@ -84,6 +115,22 @@ impl<L: Llm> PipelineStep for ReviewStep<L> {
         } else {
             verdict.issues
         };
+
+        tracing::warn!(
+            chronicle = %context.input.id,
+            issues = issues.len(),
+            "content review rejected questions"
+        );
+        for issue in &issues {
+            tracing::warn!(
+                chronicle = %context.input.id,
+                topic = ?issue.topic,
+                question = ?issue.question,
+                field = ?issue.field,
+                reason = %issue.reason,
+                "content review issue"
+            );
+        }
 
         Err(StepFailure::new(
             ReviewError::Rejected(ReviewIssues(issues)),
