@@ -17,7 +17,8 @@ is needed, so the tests can run against the dev database.
 The bomb is drawn with three.js, so the defuser's page answers through
 `window.__bomb` (`src/game/e2eHook.ts`), which only exists in `VITE_E2E=true`
 builds and sends the same `submit_answer` a click on the bomb would. The expert
-side reads the real manual page to find the symbol of the right answer.
+side leafs through the real manual until it finds the page with a module's
+symbols, and reads off the symbol of the right answer.
 
 ## Running
 

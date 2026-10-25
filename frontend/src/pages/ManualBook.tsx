@@ -10,10 +10,6 @@ type Props = {
   seed: number
   /** "Zufällige Bombe" or "Üben: …", printed on the cover and checked against the bomb. */
   typeLabel?: string
-  /** Keep the pages in the given order instead of shuffling them (pages that arrive one by one). */
-  ordered?: boolean
-  /** Index into `manuals` of the page to show; once the book is open, it jumps there whenever this changes. */
-  open?: number
 }
 
 function shuffled<T>(items: T[], random: Random): T[] {
@@ -59,27 +55,20 @@ const CLICK_SLOP = 6
  * real sheet of paper would; let go past the middle to finish the turn, short of it to drop it back.
  * A plain click, the buttons or ← → send a leaf all the way over without having to drag it.
  */
-export default function ManualBook({ manuals, seed, typeLabel, ordered = false, open }: Props) {
+export default function ManualBook({ manuals, seed, typeLabel }: Props) {
   const users = manuals.flatMap((manual) => (manual.user ? [{ user: manual.user, prompt: manual.prompt ?? '' }] : []))
-  const others = manuals.map((manual, index) => ({ manual, index })).filter(({ manual }) => !manual.user)
+  const others = manuals.filter((manual) => !manual.user)
   const firstModule = users.length > 0 ? 2 : 1
-  const modulePages = ordered ? others : shuffled(others, seededRandom(seed * 7 + 3))
+  const modulePages = shuffled(others, seededRandom(seed * 7 + 3))
 
   // In reading order. Shuffled (the same for a code), so the page order says nothing about the bomb.
   const interior: ReactNode[] = [
     <HowTo key="howto" seed={seed} typeLabel={typeLabel} page={1} />,
     ...(users.length > 0 ? [<UsersPage key="users" users={users} page={2} />] : []),
-    ...modulePages.map(({ manual }, i) => (
-      <ModulePage key={i} manual={manual} page={i + firstModule + 1} seed={seed * 13 + i} shuffle={!ordered} />
+    ...modulePages.map((manual, i) => (
+      <ModulePage key={i} manual={manual} page={i + firstModule + 1} seed={seed * 13 + i} />
     )),
   ]
-  /** The interior page `open` points at: on the users page, or its own module page. */
-  const openPage =
-    open === undefined || !manuals[open]
-      ? null
-      : manuals[open].user
-        ? 1
-        : firstModule + modulePages.findIndex(({ index }) => index === open)
   // leaves pair two interior pages front-to-back, so there must be an even number of them
   if (interior.length % 2 === 1) interior.push(<BlankPage key="filler" />)
 
@@ -93,17 +82,6 @@ export default function ManualBook({ manuals, seed, typeLabel, ordered = false, 
   /** How many leaves have been turned from the right stack onto the left one. */
   const [turned, setTurned] = useState(0)
   const [flip, setFlip] = useState<Flip | null>(null)
-
-  // jump to the page `open` asks for (interior page k sits on the right after k/2 + 1 turns, on the left after one more),
-  // but only while the book is open: it starts closed and the reader opens it themselves
-  const [shownPage, setShownPage] = useState<number | null>(null)
-  if (openPage !== shownPage) {
-    setShownPage(openPage)
-    if (openPage !== null && turned > 0) {
-      setFlip(null)
-      setTurned(Math.floor((openPage + 1) / 2) + 1)
-    }
-  }
 
   // once a flip is sitting at an angle other than where it should end up, move it there a frame
   // later (so the browser actually animates the change instead of starting there outright); a drag
@@ -324,15 +302,14 @@ function HowTo({ seed, typeLabel, page }: { seed: number; typeLabel?: string; pa
   )
 }
 
-function ModulePage({ manual, page, seed, shuffle }: { manual: Manual; page: number; seed: number; shuffle: boolean }) {
-  // listed in their own random order, not the bomb's, so you have to talk it through
-  const random = seededRandom(seed)
-  const mix = <T,>(items: T[]) => (shuffle ? shuffled(items, random) : items)
-  const statements = manual.statements && mix(manual.statements.map((text, i) => ({ text, n: i + 1 })))
-  const glyphs = manual.glyphs && mix(manual.glyphs)
+/** One module's page. It never says which module it is for or what kind of module it is. */
+function ModulePage({ manual, page, seed }: { manual: Manual; page: number; seed: number }) {
+  // symbols in their own random order, not the bomb's, so you have to talk it through; the
+  // statements keep their order, "Aussage n" on the bomb is statement n here
+  const statements = manual.statements?.map((text, i) => ({ text, n: i + 1 }))
+  const glyphs = manual.glyphs && shuffled(manual.glyphs, seededRandom(seed))
   return (
     <article className="book-paper">
-      {manual.title && <h2>{manual.title}</h2>}
       {manual.prompt && (
         <section>
           <h3>Die Frage</h3>
@@ -366,21 +343,6 @@ function ModulePage({ manual, page, seed, shuffle }: { manual: Manual; page: num
           </ul>
         </section>
       )}
-
-      {manual.lists?.map(({ title, items }) => (
-        <section key={title}>
-          <h3>{title}</h3>
-          <ol className="book-statements">
-            {items.map((item, i) => (
-              <li key={i}>{item}</li>
-            ))}
-          </ol>
-        </section>
-      ))}
-
-      {manual.notes?.map((note, i) => (
-        <p key={i}>{note}</p>
-      ))}
 
       <p className="book-folio">– {page} –</p>
     </article>

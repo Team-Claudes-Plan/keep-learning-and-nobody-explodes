@@ -218,16 +218,14 @@ async fn plays_a_game_and_restores_it() {
             (4, "player_ready"),
             (5, "player_ready"),
             (6, "game_started"),
-            (7, "turn_started")
         ]
     );
-    // the creator picked defuser, so the joiner's wish loses
+    // the creator picked defuser, so the joiner's wish loses; the whole bomb at once
     assert!(seen.iter().any(|m| matches!(
         m,
         ServerMessage::Briefing {
-            turn: 0,
-            brief: Brief::Defuser { .. }
-        }
+            brief: Brief::Defuser { parts }
+        } if parts.len() == 3
     )));
 
     let not_yours = sessions.submit(a.game_id, b.player_id, 0, answer(1)).await;
@@ -242,29 +240,24 @@ async fn plays_a_game_and_restores_it() {
         .expect("wrong answer");
     let stale = sessions.submit(a.game_id, a.player_id, 0, answer(0)).await;
     assert_eq!(stale.expect_err("resent").code, ErrorCode::StaleTurn);
-    // the roles hold for the whole game: a defuses every part
-    let b_turn = sessions.submit(a.game_id, b.player_id, 1, answer(1)).await;
+    // the roles hold for the whole game: a defuses every part, in any order
+    let b_turn = sessions.submit(a.game_id, b.player_id, 2, answer(1)).await;
     assert_eq!(
         b_turn.expect_err("a still defuses").code,
         ErrorCode::NotYourTurn
     );
     sessions
-        .submit(a.game_id, a.player_id, 1, answer(1))
+        .submit(a.game_id, a.player_id, 2, answer(1))
         .await
         .expect("a answers");
 
+    // the expert got the whole manual when the clock started
     let b_seen = drain(&mut b_updates, b.player_id).await;
     assert!(b_seen.iter().any(|m| matches!(
         m,
-        ServerMessage::Briefing {
-            turn: 1,
-            brief: Brief::Expert { .. }
-        }
-    )));
-    assert!(b_seen.iter().any(|m| matches!(
-        m,
-        ServerMessage::Briefing { turn: 2, brief: Brief::Expert { instruction, .. } }
-            if instruction["options"] == json!(["4", "8"])
+        ServerMessage::Briefing { brief: Brief::Expert { pages } }
+            if pages.len() == 3
+                && pages.iter().all(|page| page.symbols.iter().any(|s| s.text == json!("8")))
     )));
 
     // a fresh registry stands in for a server restart
@@ -275,16 +268,13 @@ async fn plays_a_game_and_restores_it() {
         .expect("token");
     assert_eq!(player, b.player_id);
     let resumed = restarted
-        .connect(a.game_id, b.player_id, Some(9))
+        .connect(a.game_id, b.player_id, Some(7))
         .await
         .expect("resume");
-    assert_eq!(
-        events(&resumed.initial),
-        [(10, "answer_submitted"), (11, "turn_started")]
-    );
+    assert_eq!(events(&resumed.initial), [(8, "answer_submitted")]);
 
     restarted
-        .submit(a.game_id, a.player_id, 2, answer(1))
+        .submit(a.game_id, a.player_id, 1, answer(1))
         .await
         .expect("last answer");
     let Connection { initial, .. } = restarted
@@ -305,12 +295,12 @@ async fn plays_a_game_and_restores_it() {
     .fetch_one(db.pool())
     .await
     .expect("game row");
-    assert_eq!((status.as_str(), failures, next), ("won", 1, 14));
+    assert_eq!((status.as_str(), failures, next), ("won", 1, 11));
 
     let log = db.load_game_events(a.game_id).await.expect("log");
     assert_eq!(
         log.iter().map(|e| e.sequence).collect::<Vec<_>>(),
-        (0..14).collect::<Vec<_>>()
+        (0..11).collect::<Vec<_>>()
     );
     assert!(matches!(
         log.last().map(|e| &e.event),
@@ -385,7 +375,7 @@ async fn climbs_the_storeys_of_a_house() {
         ErrorCode::NotIslandMember
     );
 
-    // two tasks fill a bomb of five
+    // two tasks make a bomb of two, not five with repeats
     let game = sessions.create(storey(ground)).await.expect("create");
     let parts: Vec<Uuid> =
         sqlx::query_scalar("SELECT task_id FROM game_parts WHERE game_id = $1 ORDER BY position")
@@ -393,9 +383,8 @@ async fn climbs_the_storeys_of_a_house() {
             .fetch_all(db.pool())
             .await
             .expect("parts");
-    assert_eq!(parts.len(), 5);
-    assert_eq!(parts[0], parts[2], "the tasks repeat in order");
-    assert_ne!(parts[0], parts[1]);
+    assert_eq!(parts.len(), 2);
+    assert_ne!(parts[0], parts[1], "every task once");
 
     let lobbies = sessions.lobbies().await.expect("lobbies");
     assert!(
@@ -412,7 +401,7 @@ async fn climbs_the_storeys_of_a_house() {
     for player in [alex, mia] {
         sessions.ready(game.game_id, player).await.expect("ready");
     }
-    win(&sessions, game.game_id, [alex, mia], 5).await;
+    win(&sessions, game.game_id, [alex, mia], 2).await;
 
     let topics = db.island_topics(island).await.expect("progress");
     let house = topics.iter().find(|t| t.id == topic).expect("house");
@@ -527,35 +516,53 @@ mod websocket {
             send(socket, json!({ "type": "ready" })).await;
         }
 
-        let turn = loop {
+        let started = loop {
             let event = expect(&mut a, "event").await;
-            if event["event"]["type"] == "turn_started" {
+            if event["event"]["type"] == "game_started" {
                 break event["event"].clone();
             }
         };
-        let (defuser, other) = if turn["defuser"] == b_id {
+        let (defuser, other) = if started["starting_defuser"] == b_id {
             (&mut b, &mut a)
         } else {
             (&mut a, &mut b)
         };
         let briefing = expect(defuser, "briefing").await;
         assert_eq!(briefing["role"], "defuser");
+        let parts = briefing["parts"].as_array().expect("parts");
+        assert_eq!(parts.len(), 2);
         // the answers only exist as symbols for the defuser ...
-        assert!(briefing["task"].get("options").is_none());
-        assert!(briefing["task"].get("prompt").is_none());
-        let glyphs = briefing["glyphs"].as_array().expect("glyphs");
+        let module = &parts[0];
+        assert!(module["task"].get("options").is_none());
+        assert!(module["task"].get("prompt").is_some());
+        let glyphs = module["glyphs"].as_array().expect("glyphs");
         assert_eq!(glyphs.len(), 2);
         assert_ne!(glyphs[0], glyphs[1]);
 
-        // ... and the expert's symbols say which one is which
+        // ... and one of the expert's pages says which one is which
         let expert_briefing = expect(other, "briefing").await;
         assert_eq!(expert_briefing["role"], "expert");
+        let page = expert_briefing["pages"]
+            .as_array()
+            .expect("pages")
+            .iter()
+            .find(|page| {
+                page["symbols"]
+                    .as_array()
+                    .expect("symbols")
+                    .iter()
+                    .any(|s| s["glyph"] == glyphs[0])
+            })
+            .expect("a page for the module");
+        assert!(page.get("prompt").is_none());
+        let mut symbols = page["symbols"].as_array().expect("symbols").clone();
+        symbols.sort_by_key(|s| s["text"].as_str().map(str::to_owned));
         assert_eq!(
-            expert_briefing["symbols"],
-            json!([
-                { "glyph": glyphs[0], "text": "4" },
-                { "glyph": glyphs[1], "text": "8" },
-            ])
+            symbols,
+            [
+                json!({ "glyph": glyphs[0], "text": "4" }),
+                json!({ "glyph": glyphs[1], "text": "8" }),
+            ]
         );
 
         send(
@@ -574,8 +581,7 @@ mod websocket {
         assert_eq!(submitted["event"]["type"], "answer_submitted");
         assert_eq!(submitted["event"]["correct"], true);
 
-        // roles hold: the same player defuses turn 1, the other gives up
-        assert_eq!(expect(defuser, "briefing").await["role"], "defuser");
+        // the other gives up
         send(other, json!({ "type": "forfeit" })).await;
         let ended = loop {
             let event = expect(defuser, "event").await;

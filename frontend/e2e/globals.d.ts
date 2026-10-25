@@ -4,9 +4,8 @@ export {}
 declare global {
   interface Window {
     __bomb?: {
-      turn: number
-      glyphs: number[]
-      chooseGlyph(glyph: number): boolean
+      parts: { position: number; glyphs: number[] }[]
+      chooseGlyph(position: number, glyph: number): boolean
     }
   }
 }

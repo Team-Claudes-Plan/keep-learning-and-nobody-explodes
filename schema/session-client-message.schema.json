@@ -60,15 +60,15 @@
       }
     },
     "submit_answer": {
-      "description": "Only the defuser of the current turn may answer, once per turn.",
+      "description": "Only the defuser may answer, once per part, in any order.",
       "type": "object",
       "required": ["type", "turn", "answer"],
       "additionalProperties": false,
       "properties": {
         "type": { "const": "submit_answer" },
-        "turn": { "type": "integer", "minimum": 0 },
+        "turn": { "description": "The position of the part.", "type": "integer", "minimum": 0 },
         "answer": {
-          "description": "An AnswerSubmission (answer-submission.schema.json) where questionId may be omitted, the turn identifies the question.",
+          "description": "An AnswerSubmission (answer-submission.schema.json) where questionId may be omitted, the part's position (turn) identifies the question.",
           "type": "object",
           "required": ["type", "answer"],
           "properties": {
@@ -80,7 +80,7 @@
       }
     },
     "ready": {
-      "description": "The sender is ready to play. Once both players are, the clock starts with the first turn. Repeated or late ready messages change nothing.",
+      "description": "The sender is ready to play. Once both players are, the clock starts and every module is open. Repeated or late ready messages change nothing.",
       "type": "object",
       "required": ["type"],
       "additionalProperties": false,

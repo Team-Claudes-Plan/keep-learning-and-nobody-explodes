@@ -113,22 +113,32 @@ export type AnswerResult = {
 
 export type Role = 'defuser' | 'expert'
 
-/** A question without its prompt; the expert reads the prompt out. */
-export type DefuserTask = Question extends infer Q ? (Q extends Question ? Omit<Q, 'prompt'> : never) : never
-
 /**
- * A question whose answers are shown as symbols: like DefuserTask, but the answer list is missing
- * (`options` for choice questions, `items` for order and grouping, `right` for matching). The
- * briefing's `glyphs` give the symbol per list entry.
+ * One module as the defuser gets it: the question reduced to the defuser's half (see
+ * backend/src/session/brief.rs). Depending on the type it lacks the prompt, has its answer list as
+ * symbols (`glyphs`: entry i of the missing list is shown as symbol glyphs[i]), has only
+ * `statementCount` instead of the statements, or carries the terminal's `user`.
  */
-export type SymbolizedTask =
-  | Omit<SingleChoiceQuestion, 'prompt' | 'options'>
-  | Omit<MultipleChoiceQuestion, 'prompt' | 'options'>
-  | Omit<OrderQuestion, 'prompt' | 'items'>
-  | Omit<GroupingQuestion, 'items'>
-  | Omit<MatchingQuestion, 'right'>
+export type DefuserPart = {
+  /** The part this module answers (`turn` of `submit_answer`). */
+  position: number
+  task: { id: string; type: QuestionType; prompt?: string; statementCount?: number; user?: string } & Record<string, unknown>
+  glyphs?: number[]
+}
 
-/** Like AnswerSubmission, but the turn identifies the question. */
+/** One page of the expert's manual. It does not say which module it is for. */
+export type ManualPage = {
+  /** The question, when only the expert has it. */
+  prompt?: string
+  /** Free-text terminals: the user logged in on the defuser's terminal. */
+  user?: string
+  /** True/false: statement i is "Aussage i + 1" on the bomb. */
+  statements?: string[]
+  /** What the defuser's symbols stand for. */
+  symbols?: { glyph: number; text: string }[]
+}
+
+/** Like AnswerSubmission, but the part's position (`turn`) identifies the question. */
 export type SessionAnswer = {
   [T in QuestionType]: { type: T; answer: AnswerMap[T] }
 }[QuestionType]
@@ -151,6 +161,7 @@ export type SessionClientMessage =
   | { type: 'resume'; game_id: string; token: string; last_sequence?: number }
   /** Ready to play; the game starts once both players are. */
   | { type: 'ready' }
+  /** `turn`: the position of the part; parts can be answered in any order. */
   | { type: 'submit_answer'; turn: number; answer: SessionAnswer }
   | { type: 'forfeit' }
 
@@ -167,7 +178,6 @@ export type GameView = {
   invited: string | null
   players: { player_id: string; seat: 0 | 1; online: boolean; ready: boolean }[]
   deadline: string | null
-  turn: number | null
   defuser: string | null
   expert: string | null
   strikes: number
@@ -190,10 +200,11 @@ export type GameEvent =
       invited?: string
     }
   | { type: 'player_joined'; player_id: string; seat: 0 | 1; role: Role | null }
-  /** Both seats taken: the roles of turn 0. */
+  /** Both seats taken: the roles for the whole game. */
   | { type: 'roles_assigned'; defuser: string; expert: string }
   | { type: 'player_ready'; player_id: string }
   | { type: 'game_started'; deadline: string; starting_defuser: string }
+  /** Only in games from before all modules were open at once. */
   | { type: 'turn_started'; turn: number; defuser: string; expert: string }
   | {
       type: 'answer_submitted'
@@ -224,23 +235,9 @@ export type SessionServerMessage =
   | { type: 'welcome'; game_id: string; player_id: string; token: string; seat: 0 | 1 }
   | { type: 'snapshot'; state: GameView }
   | { type: 'event'; sequence: number; at: string; event: GameEvent }
-  /** Defuser, answers as plain text: the question without its prompt. */
-  | { type: 'briefing'; turn: number; role: 'defuser'; task: DefuserTask; glyphs?: undefined }
-  /**
-   * Defuser, answers as symbols: the answer list is missing from `task`, entry i of it is shown as
-   * symbol `glyphs[i]` (see game/glyphs.ts). A symbol appears at most once per game.
-   */
-  | { type: 'briefing'; turn: number; role: 'defuser'; task: SymbolizedTask; glyphs: number[] }
-  /** Expert: the prompt, the manual page and what the defuser's symbols stand for. */
-  | {
-      type: 'briefing'
-      turn: number
-      role: 'expert'
-      question_type: QuestionType
-      prompt: string | null
-      instruction: Record<string, unknown>
-      symbols?: { glyph: number; text: string }[]
-    }
+  /** Private: the whole bomb (defuser) or the whole manual (expert), once the game runs. */
+  | { type: 'briefing'; role: 'defuser'; parts: DefuserPart[] }
+  | { type: 'briefing'; role: 'expert'; pages: ManualPage[] }
   | { type: 'presence'; player_id: string; online: boolean }
   | { type: 'error'; code: SessionErrorCode; message: string }
 

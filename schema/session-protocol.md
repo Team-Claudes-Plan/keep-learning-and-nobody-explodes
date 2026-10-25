@@ -24,18 +24,21 @@ strikes. Clients only render what they are told.
 - A **lobby game** (`create` with `topics` only) draws its questions from whole
   houses (topics) of an island, spread over their skills. It does not count
   towards any storey.
-- A bomb has `question_count` parts (1–11). **Turn n** plays part n.
+- A bomb has `question_count` parts (1–11), at positions 0, 1, ….
 - One player is the **defuser** (sees the modules, answers) and the other is
-  the **expert** (sees the prompt and the manual page). **The roles hold for
-  the whole game**: the defuser defuses every part.
+  the **expert** (reads the manual). **The roles hold for the whole game**: the
+  defuser defuses every part.
+- **All modules are open from the start** and can be answered in any order;
+  the expert has the whole manual from the start too (see
+  [Briefings](#briefings)).
 - Starting role: if the creator picked a `role`, the joiner gets the other one.
   If only the joiner picked one, theirs counts. If nobody picked, it is random.
   The roles are dealt when the second player joins (`roles_assigned`, status
   **ready**), so each player can get to their side of the table.
 - The game starts once **both players sent `ready`**: only then the clock runs
-  and turn 0 begins.
-- A wrong answer is a strike and the part counts as failed. Either way the next
-  turn starts.
+  and the briefings are sent.
+- Each part can be answered once. A wrong answer is a strike and the part
+  counts as failed.
 - **Lost** at 3 strikes or when the deadline (`time_limit_secs` after the
   start, default 300) passes. **Won** once all parts are resolved.
   **Aborted** when a player sends `forfeit`.
@@ -60,14 +63,15 @@ house as `skills: [{ skill_id, name, position, tasks, passed, unlocked }]`.
 - A house's `level` is the number of storeys passed in a row from the ground
   floor. **Unlocked** are the passed storeys and the next one; `create` refuses
   the others with `skill_locked`.
-- The client decides how big a storey's bomb is (`question_count`; the
+- The client asks how big a storey's bomb is (`question_count`; the
   frontend uses 4 for the ground floor, one more per storey, at most 8, see
   `frontend/src/game/sessionRules.ts`).
 - The server picks the tasks (`session/pick.rs`): first those neither player
   solved yet (failed ones before unseen ones), then solved ones that rested
-  for 10 minutes, longest first, then the rest. If the skill has fewer tasks
-  than the bomb has parts, they repeat. `no_tasks` only when the skill has
-  none.
+  for 10 minutes, longest first, then the rest. A task is on a bomb at most
+  once: if the skill has fewer tasks than asked for, the bomb is smaller and
+  `game_created` carries the real `question_count`. `no_tasks` only when the
+  skill has none.
 
 ## Connecting
 
@@ -89,7 +93,7 @@ Then the server sends the current state:
 - without `last_sequence`: one `snapshot`
 - `resume` with `last_sequence`: every `event` after that sequence, no snapshot
 
-followed by your `briefing` if a turn is running. After that, everything is
+followed by your `briefing` while the game is active. After that, everything is
 pushed live.
 
 ## Client → server
@@ -100,29 +104,49 @@ pushed live.
 | `join` | `game_id`, `role?` | first message, game `waiting` |
 | `resume` | `game_id`, `token`, `last_sequence?` | first message |
 | `ready` | – | game `ready`; repeats and a `ready` after the start are ignored |
-| `submit_answer` | `turn`, `answer: { type, answer }` | your turn as defuser |
+| `submit_answer` | `turn` (the position of the part), `answer: { type, answer }` | as defuser, game `active`, part not answered yet |
 | `forfeit` | – | game not over |
 
 `answer` is the `AnswerSubmission` from
 [`answer-submission.schema.json`](answer-submission.schema.json). A
-`questionId` in it is ignored; `turn` names the question. Because of `turn`, a
-resent answer is rejected with `stale_turn` and never costs a second strike.
+`questionId` in it is ignored; `turn` names the part (the name is kept from
+when parts were played one turn after another). A part that does not exist is
+`bad_message`; an answer to a part already answered (e.g. a resent one) is
+rejected with `stale_turn` and never costs a second strike.
 
 ## Server → client
 
 | type | content |
 |---|---|
 | `welcome` | `game_id, player_id, token, seat` |
-| `snapshot` | `state`: status, topics, `skill_id`, `invited`, players (+ online, ready), deadline, turn, defuser, expert, strikes, parts with results, `last_sequence` |
+| `snapshot` | `state`: status, topics, `skill_id`, `invited`, players (+ online, ready), deadline, defuser, expert, strikes, parts with results, `last_sequence` |
 | `event` | `sequence, at, event`: one logged game event, see below |
-| `briefing` | private, per turn: `{ turn, role: "defuser", task, glyphs? }` or `{ turn, role: "expert", question_type, prompt, instruction, symbols? }` |
+| `briefing` | private, the whole bomb: `{ role: "defuser", parts: [{ position, task, glyphs? }] }` or `{ role: "expert", pages: [{ prompt?, user?, statements?, symbols? }] }` |
 | `presence` | `player_id, online` |
 | `error` | `code, message`: answers a single message, the connection stays open |
 
-The defuser's `task` is the question as in
-[`questions.schema.json`](questions.schema.json) **without `prompt`**, enough
-to render the module. The expert gets the `prompt` and the manual page
-(`instructions.instruction`). That way the players have to talk.
+### Briefings
+
+The defuser gets every module of the bomb at once, the expert the whole
+manual: one page per module, **in a random order, without saying which module
+a page is for or what kind of module it is**. Neither can solve a module alone,
+so the players have to talk. What each side gets, per question type
+(`backend/src/session/brief.rs`):
+
+| question type | defuser's `task` (on the bomb) | expert's page |
+|---|---|---|
+| `single_choice`, `multiple_choice`, `order` | the `prompt`, the answers as symbols | `symbols` |
+| `matching` | `left` as text, `right` as symbols (no `prompt`) | `symbols` |
+| `grouping` | `categories` as text, `items` as symbols (no `prompt`) | `symbols` |
+| `true_false` | only `statementCount`: the bomb shows "Aussage 1, 2, …" | `statements`, in that order |
+| `number_input` | the `unit` | `prompt` |
+| `text_input` | `caseSensitive` and the `user` logged in on the terminal | `prompt` and the same `user` |
+| `coords` | the `image` | `prompt` |
+
+The defuser's `task` otherwise follows
+[`questions.schema.json`](questions.schema.json), plus `id` and `type`.
+Terminal users are unique within a game. Everything is derived from the game
+id, so every briefing of a game is the same.
 
 ### Symbols
 
@@ -132,16 +156,18 @@ server deals them out when the game is created (`parts[].glyphs` in
 `game_created`), so both players see the same bomb and **no symbol appears
 twice in a game**.
 
-- Defuser `briefing`: `glyphs: [g0, g1, …]` and `task` **without** the answer
-  list (`options`, `items` or `right`, depending on the type). Entry `i` of the
-  list is shown as symbol `glyphs[i]`; answers keep referring to list indices.
-- Expert `briefing`: `symbols: [{ glyph, text }, …]` says what each symbol
-  stands for. The players have to describe the shapes to each other.
+- Defuser part: `glyphs: [g0, g1, …]` and `task` **without** the answer list
+  (`options`, `items` or `right`, depending on the type). Entry `i` of the list
+  is shown as symbol `glyphs[i]`; answers keep referring to list indices.
+- Expert page: `symbols: [{ glyph, text }, …]` (in a random order) says what
+  each symbol stands for. The players have to describe the shapes to each
+  other.
 - A symbol is an index into the drawings in `frontend/src/game/glyphs.ts`
   (`GLYPH_COUNT` in `backend/src/session/glyphs.rs` must match their number).
 - A part gets all its symbols or none. When a game needs more symbols than
   exist, the parts that no longer fit are shown as plain text: no `glyphs` /
-  `symbols`, the list stays in `task`.
+  `symbols`, the list stays in `task`, and the `prompt` moves to the expert's
+  page instead.
 
 Error codes: `bad_message`, `unknown_game`, `game_full`, `invalid_token`,
 `not_your_turn`, `stale_turn`, `invalid_state`, `no_tasks`, `skill_locked`
@@ -163,8 +189,8 @@ server restart. Clients should ignore events with
 | `roles_assigned` | `defuser, expert` (the roles for the whole game; status becomes `ready`) |
 | `player_ready` | `player_id` |
 | `game_started` | `deadline, starting_defuser` |
-| `turn_started` | `turn, defuser, expert` |
-| `answer_submitted` | `turn, actor, answer, correct, solution, strikes` |
+| `turn_started` | `turn, defuser, expert` (only in games from before all modules were open at once; no longer logged) |
+| `answer_submitted` | `turn` (the part's position)`, actor, answer, correct, solution, strikes` |
 | `game_ended` | `outcome: won\|lost\|aborted, reason: all_resolved\|strikes\|timeout\|forfeit` |
 
 The server writes events to the database **before** it broadcasts them. A
@@ -191,20 +217,26 @@ client never sees an event that could be lost on a restart.
 { "type": "event", "sequence": 4, "event": { "type": "player_ready", "player_id": "A" } }
 { "type": "event", "sequence": 5, "event": { "type": "player_ready", "player_id": "B" } }
 { "type": "event", "sequence": 6, "event": { "type": "game_started", "deadline": "…", "starting_defuser": "A" } }
-{ "type": "event", "sequence": 7, "event": { "type": "turn_started", "turn": 0, "defuser": "A", "expert": "B" } }
-// server → A only
-{ "type": "briefing", "turn": 0, "role": "defuser", "task": { "type": "single_choice", "id": "…", "options": ["4", "8"] } }
-// server → B only
-{ "type": "briefing", "turn": 0, "role": "expert", "question_type": "single_choice", "prompt": "Wie viele Bits hat ein Byte?", "instruction": { … } }
+// server → A only: every module
+{ "type": "briefing", "role": "defuser", "parts": [
+  { "position": 0, "task": { "type": "single_choice", "id": "…", "prompt": "Wie viele Bits hat ein Byte?" }, "glyphs": [7, 2] },
+  { "position": 1, "task": { "type": "number_input", "id": "…", "unit": "km" } },
+  …
+] }
+// server → B only: the whole manual, shuffled
+{ "type": "briefing", "role": "expert", "pages": [
+  { "prompt": "Wie weit ist es von Berlin nach Hamburg?" },
+  { "symbols": [{ "glyph": 2, "text": "8" }, { "glyph": 7, "text": "4" }] },
+  …
+] }
 
-// A → server
-{ "type": "submit_answer", "turn": 0, "answer": { "type": "single_choice", "answer": 1 } }
+// A → server: any part, in any order
+{ "type": "submit_answer", "turn": 1, "answer": { "type": "number_input", "answer": 289 } }
 // server → A and B
-{ "type": "event", "sequence": 8, "event": { "type": "answer_submitted", "turn": 0, "actor": "A", "correct": true, "strikes": 0, … } }
-{ "type": "event", "sequence": 9, "event": { "type": "turn_started", "turn": 1, "defuser": "A", "expert": "B" } }
+{ "type": "event", "sequence": 7, "event": { "type": "answer_submitted", "turn": 1, "actor": "A", "correct": true, "strikes": 0, … } }
 
-// B's connection drops; B reconnects and only gets what it missed
-{ "type": "resume", "game_id": "G", "token": "T_B", "last_sequence": 9 }
+// B's connection drops; B reconnects and only gets what it missed, then the briefing again
+{ "type": "resume", "game_id": "G", "token": "T_B", "last_sequence": 7 }
 ```
 
 ## Content conventions

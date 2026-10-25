@@ -3,14 +3,13 @@
 //! same code serves live games and replays from the event log.
 
 use chrono::{DateTime, TimeDelta, Utc};
-use serde_json::Value;
 use uuid::Uuid;
 
 use super::{
-    SessionError, glyphs, judge,
+    SessionError, brief, judge,
     protocol::{
         Answer, Brief, EndReason, ErrorCode, GameEvent, GameView, MAX_STRIKES, Outcome, PartInfo,
-        PartResult, PartView, PlayerView, Role, ServerMessage, Status, Symbol,
+        PartResult, PartView, PlayerView, Role, ServerMessage, Status,
     },
     task,
 };
@@ -58,7 +57,6 @@ pub struct GameState {
     parts: Vec<(PartInfo, Option<PartResult>)>,
     starting_defuser: Option<Uuid>,
     pub deadline: Option<DateTime<Utc>>,
-    turn: Option<u32>,
     strikes: u8,
     reason: Option<EndReason>,
     pub last_sequence: Option<u32>,
@@ -78,7 +76,6 @@ impl GameState {
             parts: Vec::new(),
             starting_defuser: None,
             deadline: None,
-            turn: None,
             strikes: 0,
             reason: None,
             last_sequence: None,
@@ -212,7 +209,7 @@ impl GameState {
     }
 
     /// Marks `player` ready; when the other player already is, the clock
-    /// starts and so does the first turn. Repeated or late `ready`s change
+    /// starts and every module of the bomb is open. Repeated or late `ready`s change
     /// nothing.
     fn decide_ready(
         &self,
@@ -244,15 +241,10 @@ impl GameState {
             .iter()
             .filter(|p| p.id != player)
             .all(|p| p.ready);
-        if others_ready && let Some((defuser, expert)) = self.roles() {
+        if others_ready && let Some((defuser, _)) = self.roles() {
             events.push(GameEvent::GameStarted {
                 deadline: now + TimeDelta::seconds(i64::from(self.time_limit_secs)),
                 starting_defuser: defuser,
-            });
-            events.push(GameEvent::TurnStarted {
-                turn: 0,
-                defuser,
-                expert,
             });
         }
         Ok(events)
@@ -275,13 +267,6 @@ impl GameState {
         if let Some(timeout) = self.timed_out(now) {
             return Ok(vec![timeout]);
         }
-        let current = self.turn.unwrap_or_default();
-        if turn != current {
-            return Err(SessionError::new(
-                ErrorCode::StaleTurn,
-                format!("turn {turn} is not the current turn {current}"),
-            ));
-        }
         let Some((defuser, _)) = self.roles() else {
             return Err(SessionError::internal("game has no roles"));
         };
@@ -289,6 +274,19 @@ impl GameState {
             return Err(SessionError::new(
                 ErrorCode::NotYourTurn,
                 "only the defuser can answer",
+            ));
+        }
+        // all modules are open at once: any part not answered yet
+        let Some((_, result)) = usize::try_from(turn).ok().and_then(|i| self.parts.get(i)) else {
+            return Err(SessionError::new(
+                ErrorCode::BadMessage,
+                format!("the bomb has no part {turn}"),
+            ));
+        };
+        if result.is_some() {
+            return Err(SessionError::new(
+                ErrorCode::StaleTurn,
+                format!("part {turn} is already answered"),
             ));
         }
         let Some(part) = usize::try_from(turn).ok().and_then(|i| details.get(i)) else {
@@ -320,22 +318,20 @@ impl GameState {
             strikes,
         }];
 
-        let next = turn + 1;
+        let still_open = self
+            .parts
+            .iter()
+            .zip(0..)
+            .any(|((_, result), position)| result.is_none() && position != turn);
         if strikes >= MAX_STRIKES {
             events.push(GameEvent::GameEnded {
                 outcome: Outcome::Lost,
                 reason: EndReason::Strikes,
             });
-        } else if usize::try_from(next).is_ok_and(|n| n >= self.parts.len()) {
+        } else if !still_open {
             events.push(GameEvent::GameEnded {
                 outcome: Outcome::Won,
                 reason: EndReason::AllResolved,
-            });
-        } else if let Some((defuser, expert)) = self.roles() {
-            events.push(GameEvent::TurnStarted {
-                turn: next,
-                defuser,
-                expert,
             });
         }
         Ok(events)
@@ -382,7 +378,8 @@ impl GameState {
                 self.deadline = Some(*deadline);
                 self.starting_defuser = Some(*starting_defuser);
             }
-            GameEvent::TurnStarted { turn, .. } => self.turn = Some(*turn),
+            // logged by games from before all modules were open at once
+            GameEvent::TurnStarted { .. } => {}
             GameEvent::AnswerSubmitted {
                 turn,
                 correct,
@@ -434,7 +431,6 @@ impl GameState {
                 })
                 .collect(),
             deadline: self.deadline,
-            turn: self.turn,
             defuser: roles.map(|(defuser, _)| defuser),
             expert: roles.map(|(_, expert)| expert),
             strikes: self.strikes,
@@ -453,57 +449,26 @@ impl GameState {
         }
     }
 
-    /// What `player` gets to see in the current turn, if one is running.
+    /// What `player` gets to see of the bomb while the game is running: all
+    /// modules at once, or the whole manual (see [`brief`]).
     pub fn briefing(&self, player: Uuid, details: &[PartDetails]) -> Option<ServerMessage> {
         if self.status != Status::Active {
             return None;
         }
-        let turn = self.turn?;
         let (defuser, expert) = self.roles()?;
-        let index = usize::try_from(turn).ok()?;
-        let (info, _) = self.parts.get(index)?;
-        let part = details.get(index)?;
-        let mut content = task::content_object(&part.content);
-        let mut instruction = task::instruction_object(&part.instruction);
-        let prompt = content
-            .get("prompt")
-            .cloned()
-            .or_else(|| instruction.get("prompt").cloned());
-
-        if let Value::Object(fields) = &mut instruction {
-            fields.remove("prompt");
-        }
-
+        let parts: Vec<PartInfo> = self.parts.iter().map(|(info, _)| info.clone()).collect();
         let brief = if player == defuser {
-            content.remove("prompt");
-            if !info.glyphs.is_empty()
-                && let Some(field) = glyphs::symbol_field(&part.question_type)
-            {
-                content.remove(field);
-            }
-            content.insert("id".to_owned(), info.task_id.to_string().into());
-            content.insert("type".to_owned(), part.question_type.clone().into());
             Brief::Defuser {
-                task: Value::Object(content),
-                glyphs: info.glyphs.clone(),
+                parts: brief::defuser(self.id, &parts, details),
             }
         } else if player == expert {
-            let symbols = info
-                .glyphs
-                .iter()
-                .zip(glyphs::symbol_texts(&part.question_type, &part.content))
-                .map(|(&glyph, text)| Symbol { glyph, text })
-                .collect();
             Brief::Expert {
-                question_type: part.question_type.clone(),
-                prompt,
-                instruction,
-                symbols,
+                pages: brief::manual(self.id, &parts, details),
             }
         } else {
             return None;
         };
-        Some(ServerMessage::Briefing { turn, brief })
+        Some(ServerMessage::Briefing { brief })
     }
 }
 
@@ -512,6 +477,7 @@ mod tests {
     use serde_json::json;
 
     use super::*;
+    use crate::session::protocol::{DefuserPart, ManualPage};
 
     const CREATOR: Uuid = Uuid::from_u128(1);
     const JOINER: Uuid = Uuid::from_u128(2);
@@ -664,15 +630,28 @@ mod tests {
     }
 
     #[test]
-    fn only_current_defuser_and_turn() {
+    fn only_the_defuser_answers_each_part_once() {
         let mut game = Game::new(3, Some(Role::Defuser));
         game.join(None, false);
         assert_eq!(code(game.answer(JOINER, 0, 1)), ErrorCode::NotYourTurn);
-        assert_eq!(code(game.answer(CREATOR, 1, 1)), ErrorCode::StaleTurn);
+        assert_eq!(code(game.answer(CREATOR, 3, 1)), ErrorCode::BadMessage);
         game.answer(CREATOR, 0, 0).expect("answer");
-        // a resent answer for the old turn must not cost a second strike
+        // a resent answer for the same part must not cost a second strike
         assert_eq!(code(game.answer(CREATOR, 0, 0)), ErrorCode::StaleTurn);
         assert_eq!(game.state.view(|_| true).strikes, 1);
+    }
+
+    #[test]
+    fn parts_can_be_answered_in_any_order() {
+        let mut game = Game::new(3, Some(Role::Defuser));
+        game.join(None, false);
+        game.answer(CREATOR, 2, 1).expect("last part first");
+        game.answer(CREATOR, 0, 1).expect("then the first");
+        assert_eq!(game.state.status, Status::Active);
+        game.answer(CREATOR, 1, 1).expect("the one left");
+        let view = game.state.view(|_| true);
+        assert_eq!(view.status, Status::Won);
+        assert_eq!(view.reason, Some(EndReason::AllResolved));
     }
 
     #[test]
@@ -773,7 +752,6 @@ mod tests {
             [
                 GameEvent::PlayerReady { .. },
                 GameEvent::GameStarted { starting_defuser, .. },
-                GameEvent::TurnStarted { turn: 0, .. },
             ] if *starting_defuser == JOINER
         ));
         let view = game.state.view(|_| true);
@@ -855,43 +833,57 @@ mod tests {
         assert_eq!(code(third), ErrorCode::InvalidState);
     }
 
-    #[test]
-    fn briefings_follow_roles() {
-        let mut game = Game::new(2, Some(Role::Expert));
-        game.join(None, false);
+    fn defuser_parts(game: &Game, player: Uuid) -> Vec<DefuserPart> {
         let Some(ServerMessage::Briefing {
-            brief: Brief::Defuser { task, glyphs },
-            ..
-        }) = game.state.briefing(JOINER, &game.details)
+            brief: Brief::Defuser { parts },
+        }) = game.state.briefing(player, &game.details)
         else {
-            panic!("joiner defuses turn 0");
+            panic!("{player} defuses");
         };
-        assert!(task.get("prompt").is_none());
-        assert_eq!(task["type"], "single_choice");
-        // the answers only exist as symbols for the defuser
-        assert!(task.get("options").is_none());
-        assert_eq!(glyphs, [0, 1]);
+        parts
+    }
 
+    fn manual_pages(game: &Game, player: Uuid) -> Vec<ManualPage> {
         let Some(ServerMessage::Briefing {
-            brief: Brief::Expert { symbols, .. },
-            ..
-        }) = game.state.briefing(CREATOR, &game.details)
+            brief: Brief::Expert { pages },
+        }) = game.state.briefing(player, &game.details)
         else {
-            panic!("creator is the expert");
+            panic!("{player} reads the manual");
         };
+        pages
+    }
+
+    #[test]
+    fn briefings_show_the_whole_bomb() {
+        let mut game = Game::new(3, Some(Role::Expert));
+        game.join(None, false);
+        let parts = defuser_parts(&game, JOINER);
         assert_eq!(
-            symbols,
-            [
-                Symbol {
-                    glyph: 0,
-                    text: json!("a")
-                },
-                Symbol {
-                    glyph: 1,
-                    text: json!("b")
-                }
-            ]
+            parts.iter().map(|p| p.position).collect::<Vec<_>>(),
+            [0, 1, 2]
         );
+        let first = &parts[0];
+        // the question on the bomb, the answers only as symbols
+        assert_eq!(first.task["prompt"], "?");
+        assert_eq!(first.task["type"], "single_choice");
+        assert!(first.task.get("options").is_none());
+        assert_eq!(first.glyphs, [0, 1]);
+
+        let pages = manual_pages(&game, CREATOR);
+        assert_eq!(pages.len(), 3);
+        // every page explains two symbols, nothing says which module it is for
+        let mut glyphs: Vec<u8> = pages
+            .iter()
+            .flat_map(|page| page.symbols.iter().map(|s| s.glyph))
+            .collect();
+        glyphs.sort_unstable();
+        assert_eq!(glyphs, [0, 1, 2, 3, 4, 5]);
+        assert!(pages.iter().all(|page| page.prompt.is_none()));
+
+        // still there after an answer, the same as before
+        game.answer(JOINER, 1, 1).expect("answer");
+        assert_eq!(defuser_parts(&game, JOINER), parts);
+        assert_eq!(manual_pages(&game, CREATOR), pages);
     }
 
     #[test]
@@ -900,23 +892,14 @@ mod tests {
         game.join(None, false);
         // as if the game had run out of symbols
         game.state.parts[0].0.glyphs.clear();
-        let Some(ServerMessage::Briefing {
-            brief: Brief::Defuser { task, glyphs },
-            ..
-        }) = game.state.briefing(JOINER, &game.details)
-        else {
-            panic!("joiner defuses turn 0");
-        };
-        assert_eq!(glyphs, Vec::<u8>::new());
-        assert_eq!(task["options"], json!(["a", "b"]));
-        let Some(ServerMessage::Briefing {
-            brief: Brief::Expert { symbols, .. },
-            ..
-        }) = game.state.briefing(CREATOR, &game.details)
-        else {
-            panic!("creator is the expert");
-        };
-        assert_eq!(symbols, Vec::<Symbol>::new());
+        let parts = defuser_parts(&game, JOINER);
+        assert_eq!(parts[0].glyphs, Vec::<u8>::new());
+        assert_eq!(parts[0].task["options"], json!(["a", "b"]));
+        // then the question is the expert's half
+        assert!(parts[0].task.get("prompt").is_none());
+        let pages = manual_pages(&game, CREATOR);
+        assert_eq!(pages[0].symbols.len(), 0);
+        assert_eq!(pages[0].prompt, Some(json!("?")));
     }
 
     #[test]
@@ -934,8 +917,6 @@ mod tests {
     fn briefing_strips_legacy_solution_fields_from_content() {
         let mut game = Game::new(1, Some(Role::Expert));
         game.join(None, false);
-        // without symbols, the options stay readable for the defuser
-        game.state.parts[0].0.glyphs.clear();
         game.details[0].content = json!({
             "type": "single_choice",
             "id": "legacy-id",
@@ -945,54 +926,29 @@ mod tests {
             "solution": 1
         });
 
-        let Some(ServerMessage::Briefing {
-            brief: Brief::Defuser { task, .. },
-            ..
-        }) = game.state.briefing(JOINER, &game.details)
-        else {
-            panic!("joiner defuses turn 0");
-        };
-
-        assert!(task.get("prompt").is_none());
+        let task = defuser_parts(&game, JOINER).remove(0).task;
+        assert_eq!(task["prompt"], "Question?");
         assert!(task.get("correct_answer").is_none());
         assert!(task.get("solution").is_none());
         assert_eq!(task["type"], "single_choice");
         assert_eq!(task["id"], game.state.parts[0].0.task_id.to_string());
-        assert_eq!(task["options"], json!(["a", "b"]));
     }
 
     #[test]
     fn briefing_reads_prompt_from_instruction_for_manual_types() {
         let mut game = Game::new(1, Some(Role::Expert));
         game.join(None, false);
+        game.state.parts[0].0.glyphs.clear();
         game.details[0].question_type = "text_input".to_owned();
         game.details[0].content = json!({ "caseSensitive": true });
         game.details[0].instruction = json!({ "prompt": "Wie heißt die Hauptstadt?" });
 
-        let Some(ServerMessage::Briefing {
-            brief:
-                Brief::Expert {
-                    prompt,
-                    instruction,
-                    ..
-                },
-            ..
-        }) = game.state.briefing(CREATOR, &game.details)
-        else {
-            panic!("creator is expert on turn 0");
-        };
-        assert_eq!(prompt, Some(json!("Wie heißt die Hauptstadt?")));
-        assert!(instruction.get("prompt").is_none());
-
-        let Some(ServerMessage::Briefing {
-            brief: Brief::Defuser { task, .. },
-            ..
-        }) = game.state.briefing(JOINER, &game.details)
-        else {
-            panic!("joiner defuses turn 0");
-        };
+        let page = manual_pages(&game, CREATOR).remove(0);
+        assert_eq!(page.prompt, Some(json!("Wie heißt die Hauptstadt?")));
+        let task = defuser_parts(&game, JOINER).remove(0).task;
         assert_eq!(task["caseSensitive"], true);
         assert!(task.get("prompt").is_none());
+        assert_eq!(page.user.as_deref(), task["user"].as_str());
     }
 
     #[test]

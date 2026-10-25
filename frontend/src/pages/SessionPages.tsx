@@ -8,18 +8,16 @@ import {
   releaseSession,
   storedCredentials,
   useSession,
-  type Briefing,
   type SessionClient,
   type SessionState,
 } from '../api/session'
-import type { EndReason, IslandsResponse, Lobby, Role } from '../api/types'
+import type { EndReason, IslandsResponse, Lobby, ManualPage, Role } from '../api/types'
 import { reloadIslands, useIslands } from '../api/useIslands'
 import BombRoom, { PLAIN_ROOM, StoreyBombRoom, type BombRoomProps } from '../components/storey/BombRoom'
 import { useIslandHouse } from '../data/useIslandHouse'
 import BlastOverlay from '../game/BlastOverlay'
 import Celebration from '../game/Celebration'
 import type { Manual } from '../game/briefing'
-import { QUESTION_TYPE_LABELS } from '../game/questionTypes'
 import { sessionErrorText } from '../game/sessionErrors'
 import { useSessionBomb, useTimeLeft } from '../game/useSessionBomb'
 import ReadyButton3D from '../components/session/ReadyButton3D'
@@ -28,7 +26,8 @@ import ManualBook from './ManualBook'
 
 // Koop over the backend's game session (schema/session-protocol.md): the server picks the
 // questions, runs the timer and judges answers. One player defuses the modules, the other reads
-// the manual pages; the roles hold for the whole bomb.
+// the manual; the roles hold for the whole bomb. All modules and all manual pages are there from
+// the start, the manual in a random order and without saying which page belongs to which module.
 
 const ROLE_LABELS: Record<Role, string> = { defuser: '💣 Entschärfer', expert: '📖 Experte' }
 const MAX_PARTS = 11
@@ -122,8 +121,8 @@ export function SessionLobbyPage() {
         <Link to="/minigames">← Minigames</Link>
       </header>
       <p className="mg-muted">
-        Zu zweit: In jeder Runde entschärft einer ein Modul, der andere liest im Handbuch nach. Nach jeder Runde
-        tauscht ihr die Rollen. Drei Fehler oder die Zeit läuft ab: Boom.
+        Zu zweit: Einer entschärft die Bombe, der andere liest im Handbuch nach, welche Seite zu welchem Modul
+        passt. Drei Fehler oder die Zeit läuft ab: Boom.
       </p>
 
       {islands.status === 'signed-out' && (
@@ -384,7 +383,9 @@ function SessionGame({ client, islandId }: { client: SessionClient; islandId: st
   const meReady = game.players.find((player) => player.player_id === me)?.ready ?? false
 
   return (
-    <div className={`bomb-screen ${blasted ? 'is-blasted' : ''}`} data-role={myRole ?? undefined} data-status={game.status} data-turn={game.turn ?? undefined}>
+    <div className={`bomb-screen ${blasted ? 'is-blasted' : ''}`} data-role={myRole ?? undefined} data-status={game.status}
+      data-done={game.parts.filter((part) => part.result !== null).map((part) => part.position).join(',')}
+    >
       {myRole === 'defuser' ? (
         <DefuserRoom
           game={game}
@@ -395,10 +396,7 @@ function SessionGame({ client, islandId }: { client: SessionClient; islandId: st
         />
       ) : (
         <>
-          <ExpertBook
-            game={game}
-            briefing={session.briefing?.role === 'expert' && session.briefing.turn === game.turn ? session.briefing : null}
-          />
+          <ExpertBook game={game} pages={session.briefing?.role === 'expert' ? session.briefing.pages : null} />
           {game.status === 'lost' && <BlastOverlay onBlast={onBlast} />}
           {starting && (
             <div className="session-ready">
@@ -410,7 +408,7 @@ function SessionGame({ client, islandId }: { client: SessionClient; islandId: st
 
       <div className="session-bar">
         <span>
-          Modul {Math.min((game.turn ?? 0) + 1, game.parts.length)} / {game.parts.length}
+          {game.parts.filter((part) => part.result !== null).length} / {game.parts.length} Module
         </span>
         {myRole && <strong>{ROLE_LABELS[myRole]}</strong>}
         <span aria-label="Strikes">
@@ -549,67 +547,21 @@ function ConnectionNote({ session }: { session: SessionState }) {
   return null
 }
 
-const LIST_LABELS: Record<string, string> = {
-  options: 'Antworten',
-  statements: 'Aussagen',
-  left: 'Links',
-  right: 'Rechts',
-  categories: 'Gruppen',
-  items: 'Elemente',
-}
-
-/** The list the defuser sees as symbols, which the symbol table already explains. */
-const SYMBOL_FIELD: Record<string, string> = {
-  single_choice: 'options',
-  multiple_choice: 'options',
-  order: 'items',
-  grouping: 'items',
-  matching: 'right',
-}
-
-const asText = (value: unknown) => (typeof value === 'string' ? value : JSON.stringify(value))
-
-type ExpertBriefing = Extract<Briefing, { role: 'expert' }>
-
-/** One expert briefing as a page of the manual book. */
-function toManual(briefing: ExpertBriefing): Manual {
-  const { instruction, symbols } = briefing
-  const prompt = briefing.prompt ?? (typeof instruction.prompt === 'string' ? instruction.prompt : undefined)
-  const hidden = symbols?.length ? SYMBOL_FIELD[briefing.question_type] : undefined
-  const manual: Manual = {
-    title: `Modul ${briefing.turn + 1} · ${QUESTION_TYPE_LABELS[briefing.question_type] ?? briefing.question_type}`,
-    prompt,
-    glyphs: symbols?.length ? symbols.map(({ glyph, text }) => ({ glyph, text: asText(text) })) : undefined,
-    lists: [],
-    notes: [],
+/** One page from the server as a page of the manual book. */
+function toManual(page: ManualPage): Manual {
+  return {
+    prompt: page.prompt,
+    user: page.user,
+    statements: page.statements,
+    glyphs: page.symbols?.length ? page.symbols : undefined,
   }
-  for (const [key, value] of Object.entries(instruction)) {
-    if (key === 'prompt' || key === hidden) continue
-    if (key === 'statements' && Array.isArray(value)) manual.statements = value.map(asText)
-    else if (Array.isArray(value)) manual.lists!.push({ title: LIST_LABELS[key] ?? key, items: value.map(asText) })
-    else manual.notes!.push(asText(value))
-  }
-  return manual
 }
 
-/**
- * The expert's side: the manual book. The server hands out one page per turn, so the book collects
- * them as the game goes on. It starts closed; once opened, it turns to the current module.
- */
-function ExpertBook({ game, briefing }: { game: NonNullable<SessionState['game']>; briefing: ExpertBriefing | null }) {
-  const [pages, setPages] = useState<Map<number, Manual>>(new Map())
-  if (briefing && !pages.has(briefing.turn)) setPages(new Map(pages).set(briefing.turn, toManual(briefing)))
-
-  const turns = [...pages.keys()].sort((a, b) => a - b)
-  const current = briefing ? turns.indexOf(briefing.turn) : -1
-  return (
-    <ManualBook
-      manuals={turns.map((turn) => pages.get(turn)!)}
-      seed={seedOf(game.game_id)}
-      ordered
-      open={current === -1 ? undefined : current}
-    />
-  )
+/** The expert's side: the whole manual, from the start. It starts closed. */
+function ExpertBook({ game, pages }: { game: NonNullable<SessionState['game']>; pages: ManualPage[] | null }) {
+  const manuals = useMemo(() => (pages ?? []).map(toManual), [pages])
+  // a new book once the pages arrive, so it opens on its cover
+  return <ManualBook key={pages ? 'manual' : 'empty'} manuals={manuals} seed={seedOf(game.game_id)} />
 }
 
 /** A stable number from the game id (for the book's paper details). */

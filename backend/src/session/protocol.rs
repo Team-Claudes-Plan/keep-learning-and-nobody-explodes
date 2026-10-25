@@ -137,7 +137,8 @@ pub enum ClientMessage {
     },
     /// The sender is ready to play; once both are, the game starts.
     Ready,
-    /// Only the defuser of `turn` may answer, once.
+    /// Only the defuser may answer, once per part, in any order. `turn` is
+    /// the position of the part.
     SubmitAnswer {
         turn: u32,
         answer: Answer,
@@ -180,12 +181,15 @@ pub enum GameEvent {
         deadline: DateTime<Utc>,
         starting_defuser: Uuid,
     },
+    /// Only in games from before all modules were open at once; new games
+    /// never log it.
     TurnStarted {
         turn: u32,
         defuser: Uuid,
         expert: Uuid,
     },
     AnswerSubmitted {
+        /// The position of the answered part.
         turn: u32,
         actor: Uuid,
         answer: Answer,
@@ -260,9 +264,9 @@ pub enum ServerMessage {
         at: DateTime<Utc>,
         event: GameEvent,
     },
-    /// Private to one player: what their role gets to see this turn.
+    /// Private to one player: what their role gets to see of the whole
+    /// bomb. Sent once the game starts and again on every (re)connect.
     Briefing {
-        turn: u32,
         #[serde(flatten)]
         brief: Brief,
     },
@@ -279,24 +283,44 @@ pub enum ServerMessage {
 #[derive(Clone, Debug, Serialize)]
 #[serde(tag = "role", rename_all = "snake_case")]
 pub enum Brief {
-    /// The question as in `questions.schema.json`, without its prompt.
+    /// Every module on the bomb, see `brief.rs` for what each question type
+    /// shows.
+    Defuser { parts: Vec<DefuserPart> },
+    /// The manual: one page per module, in a random order and without saying
+    /// which module a page is for.
+    Expert { pages: Vec<ManualPage> },
+}
+
+/// One module as the defuser sees it.
+#[derive(Clone, Debug, PartialEq, Serialize)]
+pub struct DefuserPart {
+    /// The part this module answers (`turn` of `submit_answer`).
+    pub position: u32,
+    /// The question as in `questions.schema.json`, reduced to the defuser's
+    /// half (see `brief.rs`).
     ///
-    /// With `glyphs`, the list that `glyphs::symbol_field` names is missing
-    /// from `task`; entry `i` of it is shown as symbol `glyphs[i]` instead.
-    Defuser {
-        task: Value,
-        #[serde(skip_serializing_if = "Vec::is_empty")]
-        glyphs: Vec<u8>,
-    },
-    /// The prompt and the manual page for the defuser's module, and what the
-    /// defuser's symbols stand for.
-    Expert {
-        question_type: String,
-        prompt: Option<Value>,
-        instruction: Value,
-        #[serde(skip_serializing_if = "Vec::is_empty")]
-        symbols: Vec<Symbol>,
-    },
+    /// With `glyphs`, the list that `glyphs::symbol_field` names is missing;
+    /// entry `i` of it is shown as symbol `glyphs[i]` instead.
+    pub task: Value,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub glyphs: Vec<u8>,
+}
+
+/// One page of the expert's manual: the other half of one module.
+#[derive(Clone, Debug, Default, PartialEq, Serialize)]
+pub struct ManualPage {
+    /// The question, when only the expert has it.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub prompt: Option<Value>,
+    /// Free-text terminals: the user logged in on the defuser's terminal.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub user: Option<String>,
+    /// True/false: statement `i` is "Aussage i + 1" on the bomb.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub statements: Vec<Value>,
+    /// What the defuser's symbols stand for, in a random order.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub symbols: Vec<Symbol>,
 }
 
 /// One symbol on the defuser's module and the answer it stands for.
@@ -315,7 +339,6 @@ pub struct GameView {
     pub invited: Option<Uuid>,
     pub players: Vec<PlayerView>,
     pub deadline: Option<DateTime<Utc>>,
-    pub turn: Option<u32>,
     pub defuser: Option<Uuid>,
     pub expert: Option<Uuid>,
     pub strikes: u8,

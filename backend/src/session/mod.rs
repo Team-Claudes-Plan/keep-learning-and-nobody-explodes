@@ -5,6 +5,7 @@
 //! connected players. [`Sessions`] finds or restores the actor of a game.
 
 mod actor;
+mod brief;
 mod glyphs;
 mod judge;
 mod pick;
@@ -185,6 +186,8 @@ impl Sessions {
         }
 
         let (topics, tasks) = self.game_tasks(&request).await?;
+        // a storey with fewer tasks than asked for makes a smaller bomb
+        let question_count = u16::try_from(tasks.len()).expect("at most question_count tasks");
         let skill_id = request.storey.map(|storey| storey.skill_id);
 
         // every symbol is used at most once per game
@@ -203,7 +206,7 @@ impl Sessions {
         let events = vec![
             GameEvent::GameCreated {
                 topics: topics.clone(),
-                question_count: request.question_count,
+                question_count,
                 time_limit_secs,
                 created_by: seat.player_id,
                 parts: (0..)
@@ -230,7 +233,7 @@ impl Sessions {
             topics: &topics,
             skill_id,
             invited: request.invited,
-            question_count: request.question_count,
+            question_count,
             time_limit_secs,
             tasks: &tasks,
         };

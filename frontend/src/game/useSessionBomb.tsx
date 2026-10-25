@@ -4,101 +4,137 @@ import { submissionFor } from './adapters'
 import type { SlotStatus } from './Bomb3D'
 import LockButton3D from './modules/LockButton3D'
 import { MODULES } from './modules'
+import type { PlannedModule } from './plan'
 import { initialValue, isComplete, submitsImmediately, type AnyValue } from './primitives'
 import { useE2eBomb } from './e2eHook'
-import { planTurn, sessionAnswer } from './sessionTask'
+import { planPart, sessionAnswer } from './sessionTask'
 
-/** Shown for parts whose module this player never saw (the bay stays empty, only the LED counts). */
+/** Shown for parts without a module yet (before the game starts): the bay stays empty. */
 const UNKNOWN_MODULE = 'blank'
 
-type Work = { turn: number; value: AnyValue; sending: boolean; error?: string }
+/** How long a solved module stays open (green LED) before the view zooms out. */
+const SOLVED_ZOOM_OUT_MS = 1100
+
+type Work = { value: AnyValue; sending: boolean; error?: string }
 
 /**
- * The bomb of an online game as the defuser sees it: one slot per part, the current turn's module
- * is live, solved and failed parts show their LED. The server judges every answer.
+ * The bomb of an online game as the defuser sees it: every module is there from the start and can
+ * be opened and answered in any order. Solved and failed parts show their LED. The server judges
+ * every answer.
  */
 export function useSessionBomb(client: SessionClient, session: SessionState) {
   const { game, briefing, gameId } = session
-  const turn = game?.turn ?? null
-  const defuserBriefing = briefing?.role === 'defuser' && briefing.turn === turn ? briefing : null
-  const planned = useMemo(
-    () => (defuserBriefing && gameId ? planTurn(defuserBriefing, gameId, MODULES) : null),
-    [defuserBriefing, gameId],
-  )
+  const parts = briefing?.role === 'defuser' ? briefing.parts : null
+  /** The module per part position. */
+  const planned = useMemo(() => {
+    const byPosition = new Map<number, PlannedModule | null>()
+    if (parts && gameId) for (const part of parts) byPosition.set(part.position, planPart(part, gameId, MODULES))
+    return byPosition
+  }, [parts, gameId])
 
-  useE2eBomb(client, defuserBriefing ? turn : null, defuserBriefing?.glyphs)
+  useE2eBomb(client, parts)
 
-  const [work, setWork] = useState<Work | null>(null)
-  /** Module shown per turn this player defused, so finished parts keep their look. */
-  const [seen, setSeen] = useState<Record<number, string>>({})
+  const [work, setWork] = useState<Record<number, Work>>({})
   const [expanded, setExpanded] = useState<number | null>(null)
 
-  // A new turn: fresh controls, and zoom in on the module to work on.
+  // Fresh controls for every module once the bomb is known; a briefing sent again after a
+  // reconnect keeps what was already set.
   useEffect(() => {
-    if (!planned || turn === null) return
-    setWork({ turn, value: planned.module.init?.(planned.task.primitive) ?? initialValue(planned.task.primitive), sending: false })
-    setSeen((prev) => ({ ...prev, [turn]: planned.module.id }))
-    setExpanded(turn)
-  }, [planned, turn])
+    setWork((prev) => {
+      const next: Record<number, Work> = {}
+      for (const [position, plan] of planned) {
+        if (!plan) continue
+        next[position] = prev[position] ?? {
+          value: plan.module.init?.(plan.task.primitive) ?? initialValue(plan.task.primitive),
+          sending: false,
+        }
+      }
+      return next
+    })
+  }, [planned])
 
-  // An error while sending answers the submission: the module is free again.
+  // An error while sending answers the submission that is still out: that module is free again.
   useEffect(() => {
     if (!session.error) return
-    setWork((prev) => (prev?.sending ? { ...prev, sending: false, error: session.error?.message } : prev))
+    setWork((prev) => {
+      const next = { ...prev }
+      for (const [position, entry] of Object.entries(prev)) {
+        if (entry.sending) next[Number(position)] = { ...entry, sending: false, error: session.error?.message }
+      }
+      return next
+    })
   }, [session.error])
 
-  const current = planned && work && work.turn === turn ? work : null
   const over = game !== null && game.status !== 'active'
-  const part = game?.parts.find((p) => p.position === turn)
-  const answerable = current !== null && !current.sending && !over && !part?.result
+  const resultOf = (position: number) => game?.parts.find((p) => p.position === position)?.result ?? null
 
-  function lockIn(value: AnyValue = current?.value ?? null) {
-    if (!planned || !current || turn === null || !answerable || !isComplete(planned.task.primitive, value)) return
-    const answer = sessionAnswer(submissionFor(planned.task, value))
-    const sent = client.submitAnswer(turn, answer)
-    setWork({ ...current, value, sending: sent, error: sent ? undefined : 'Keine Verbindung zum Server.' })
+  // Once a module is solved, zoom back out to the bomb.
+  const solvedOpen = expanded !== null && resultOf(expanded) === 'solved'
+  useEffect(() => {
+    if (!solvedOpen || expanded === null) return
+    const id = setTimeout(() => setExpanded((open) => (open === expanded ? null : open)), SOLVED_ZOOM_OUT_MS)
+    return () => clearTimeout(id)
+  }, [solvedOpen, expanded])
+
+  function answerable(position: number) {
+    const current = work[position]
+    return planned.get(position) != null && current !== undefined && !current.sending && !over && !resultOf(position)
   }
 
-  const immediate =
-    planned !== null &&
-    ((submitsImmediately(planned.task.primitive) && !planned.module.confirm) || planned.module.submitWhenComplete === true)
+  function immediate(plan: PlannedModule) {
+    return (submitsImmediately(plan.task.primitive) && !plan.module.confirm) || plan.module.submitWhenComplete === true
+  }
 
-  function change(value: AnyValue) {
-    if (!planned || !current || !answerable) return
-    if (immediate && isComplete(planned.task.primitive, value)) lockIn(value)
-    else setWork({ ...current, value })
+  function lockIn(position: number, value: AnyValue = work[position]?.value ?? null) {
+    const plan = planned.get(position)
+    const current = work[position]
+    if (!plan || !current || !answerable(position) || !isComplete(plan.task.primitive, value)) return
+    const answer = sessionAnswer(submissionFor(plan.task, value))
+    const sent = client.submitAnswer(position, answer)
+    setWork((prev) => ({
+      ...prev,
+      [position]: { ...current, value, sending: sent, error: sent ? undefined : 'Keine Verbindung zum Server.' },
+    }))
+  }
+
+  function change(position: number, value: AnyValue) {
+    const plan = planned.get(position)
+    const current = work[position]
+    if (!plan || !current || !answerable(position)) return
+    if (immediate(plan) && isComplete(plan.task.primitive, value)) lockIn(position, value)
+    else setWork((prev) => ({ ...prev, [position]: { ...current, value } }))
   }
 
   function statusOf(position: number): SlotStatus {
-    const result = game?.parts.find((p) => p.position === position)?.result
+    const result = resultOf(position)
     if (result) return result
-    if (position === turn && current?.sending) return 'sending'
+    if (work[position]?.sending) return 'sending'
     return 'active'
   }
 
-  const liveIndex = planned && current && turn !== null ? turn : null
-  const complete = planned !== null && current !== null && isComplete(planned.task.primitive, current.value)
-
-  function content3d() {
-    if (!planned || !current || liveIndex === null) return undefined
-    const Module3D = planned.module.component3d
+  function content3d(position: number) {
+    const plan = planned.get(position)
+    const current = work[position]
+    if (!plan || !current) return undefined
+    const Module3D = plan.module.component3d
     if (!Module3D) return undefined
-    const focused = expanded === liveIndex
+    const focused = expanded === position
+    const open = answerable(position)
     return (
-      <group key={`${gameId}-${liveIndex}`}>
+      <group key={`${gameId}-${position}`}>
         <Module3D
-          primitive={planned.task.primitive}
+          primitive={plan.task.primitive}
           value={current.value}
-          onChange={change}
-          disabled={!answerable || !focused}
-          onLockIn={() => lockIn()}
-          heading={planned.heading ?? undefined}
+          onChange={(value) => change(position, value)}
+          disabled={!open || !focused}
+          onLockIn={() => lockIn(position)}
+          heading={plan.heading ?? undefined}
         />
-        {!immediate && (
+        {!immediate(plan) && (
           <LockButton3D
-            enabled={answerable && focused && complete}
-            label={current.sending ? 'SENDE…' : answerable ? 'ABSCHLIESSEN' : 'ABGESCHLOSSEN'}
-            onPress={() => lockIn()}
+            enabled={open && focused && isComplete(plan.task.primitive, current.value)}
+            label={current.sending ? 'SENDE…' : open ? 'ABSCHLIESSEN' : 'ABGESCHLOSSEN'}
+            onPress={() => lockIn(position)}
           />
         )}
       </group>
@@ -106,41 +142,50 @@ export function useSessionBomb(client: SessionClient, session: SessionState) {
   }
 
   const bombModules = (game?.parts ?? []).map((p) => ({
-    id: p.position === liveIndex && planned ? planned.module.id : (seen[p.position] ?? UNKNOWN_MODULE),
+    id: planned.get(p.position)?.module.id ?? UNKNOWN_MODULE,
     status: statusOf(p.position),
-    content3d: p.position === liveIndex ? content3d() : undefined,
+    content3d: content3d(p.position),
   }))
 
   const focused = over && game?.status === 'lost' ? null : expanded
-  const focusedOnBomb = focused !== null && focused === liveIndex && planned?.module.component3d !== undefined
+  const focusedPlan = focused === null ? null : (planned.get(focused) ?? null)
+  const focusedOnBomb = focusedPlan !== null && focusedPlan.module.component3d !== undefined
 
   /** Card for modules without 3D controls, and for errors. */
   function card() {
-    if (focused === null || focused !== liveIndex || !planned || !current) return null
-    const Module = planned.module.component
-    const onBomb = planned.module.component3d !== undefined
+    if (focused === null || !focusedPlan) return null
+    const current = work[focused]
+    if (!current) return null
+    const Module = focusedPlan.module.component
+    const onBomb = focusedPlan.module.component3d !== undefined
     if (onBomb && !current.error) return null
+    const open = answerable(focused)
+    const position = focused
     return (
-      <section className={`bomb-module is-expanded is-${statusOf(focused)}`}>
+      <section className={`bomb-module is-expanded is-${statusOf(position)}`}>
         <header className="bomb-module-head">
           <span>
-            {planned.module.icon} {planned.module.name}
+            {focusedPlan.module.icon} {focusedPlan.module.name}
           </span>
         </header>
-        {planned.heading && <p className="mg-question">{planned.heading}</p>}
+        {focusedPlan.heading && <p className="mg-question">{focusedPlan.heading}</p>}
         {!onBomb && (
           <Module
-            primitive={planned.task.primitive}
+            primitive={focusedPlan.task.primitive}
             value={current.value}
-            onChange={change}
-            disabled={!answerable}
-            onLockIn={() => lockIn()}
+            onChange={(value) => change(position, value)}
+            disabled={!open}
+            onLockIn={() => lockIn(position)}
           />
         )}
         {current.error && <p className="bomb-error">⚠️ {current.error}</p>}
-        {!onBomb && !immediate && (
-          <button className="mg-button mg-primary bomb-lock" disabled={!answerable || !complete} onClick={() => lockIn()}>
-            {current.sending ? 'Sende…' : answerable ? 'Abschließen' : 'Abgeschlossen'}
+        {!onBomb && !immediate(focusedPlan) && (
+          <button
+            className="mg-button mg-primary bomb-lock"
+            disabled={!open || !isComplete(focusedPlan.task.primitive, current.value)}
+            onClick={() => lockIn(position)}
+          >
+            {current.sending ? 'Sende…' : open ? 'Abschließen' : 'Abgeschlossen'}
           </button>
         )}
       </section>
@@ -152,11 +197,11 @@ export function useSessionBomb(client: SessionClient, session: SessionState) {
     focused,
     focusedOnBomb,
     card: card(),
-    /** No module fits the question (should not happen with the current modules). */
-    unplayable: defuserBriefing !== null && planned === null,
-    // Only the module of this turn can be opened.
+    /** Some question has no fitting module (should not happen with the current modules). */
+    unplayable: [...planned.values()].some((plan) => plan === null),
+    /** Any module with a known plan can be opened. */
     select: (index: number) => {
-      if (index === liveIndex) setExpanded(index)
+      if (planned.get(index)) setExpanded(index)
     },
     back: () => setExpanded(null),
   }
