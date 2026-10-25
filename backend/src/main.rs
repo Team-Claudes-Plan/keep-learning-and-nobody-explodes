@@ -8,6 +8,7 @@ mod api;
 mod config;
 mod db;
 mod knowledge;
+mod presence;
 mod session;
 mod upload;
 mod webhook;
@@ -18,6 +19,7 @@ use anyhow::{Context, Result};
 use axum::{Router, routing::get};
 use grpc::akasha::Language;
 use std::sync::Arc;
+use tower_http::cors::CorsLayer;
 use tower_http::trace::TraceLayer;
 use tracing_subscriber::EnvFilter;
 
@@ -30,6 +32,7 @@ pub struct GlobalState {
     pub sessions: session::Sessions,
     /// Language the backend reads and writes content in.
     pub language: Language,
+    pub presence: presence::Hub,
 }
 
 #[tokio::main]
@@ -53,6 +56,7 @@ async fn main() -> Result<()> {
         db: db.clone(),
         sessions: session::Sessions::new(db.clone(), config.akasha_language),
         language: config.akasha_language,
+        presence: presence::Hub::new(),
     });
 
     let app = Router::new()
@@ -69,7 +73,8 @@ async fn main() -> Result<()> {
             token: config.webhook_token,
         }))
         .merge(api::routes().with_state(state))
-        .layer(TraceLayer::new_for_http());
+        .layer(TraceLayer::new_for_http())
+        .layer(CorsLayer::permissive());
 
     let listener = tokio::net::TcpListener::bind(&config.listen_addr)
         .await

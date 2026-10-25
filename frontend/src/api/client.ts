@@ -1,3 +1,4 @@
+import { subscribeChannelPresence } from './invites'
 import { mockFetchQuestions, mockSubmitAnswer } from './mock'
 import {
   mockAddIslandMember,
@@ -10,6 +11,7 @@ import type {
   AnswerResult,
   AnswerSubmission,
   IslandsResponse,
+  Lobby,
   Presence,
   Question,
   UploadResponse,
@@ -61,6 +63,9 @@ const ENDPOINTS = {
   members: (islandId: string) => `/api/islands/${encodeURIComponent(islandId)}/members`,
   fork: (islandId: string) => `/api/islands/${encodeURIComponent(islandId)}/fork`,
   upload: (islandId: string) => `/upload?island_id=${encodeURIComponent(islandId)}`,
+  sessions: '/api/sessions',
+  sessionSocket: '/api/sessions/ws',
+  userSocket: '/api/users/ws',
 }
 
 /** The backend's error text: `{"message": …}` from /api, plain text from /upload. */
@@ -103,6 +108,34 @@ export function submitAnswer(submission: AnswerSubmission): Promise<AnswerResult
     method: 'POST',
     body: JSON.stringify(submission),
   })
+}
+
+/** Games waiting for a second player. */
+export function fetchLobbies(signal?: AbortSignal): Promise<Lobby[]> {
+  if (!API_URL) return Promise.resolve([])
+  return request(ENDPOINTS.sessions, { signal })
+}
+
+/**
+ * Websocket URL of the game session (schema/session-protocol.md). Browsers cannot set headers on
+ * websockets, so the user goes into the query. A relative VITE_API_URL (the dev proxy) is resolved
+ * against the page.
+ */
+export function sessionSocketUrl(userId: string): string {
+  return socketUrl(ENDPOINTS.sessionSocket, userId)
+}
+
+/** The user's own channel: presence of island partners and game invites (schema/user-channel.md). */
+export function userSocketUrl(userId: string): string {
+  return socketUrl(ENDPOINTS.userSocket, userId)
+}
+
+function socketUrl(path: string, userId: string): string {
+  if (!API_URL) throw new Error('no backend configured (VITE_API_URL)')
+  const url = new URL(`${API_URL.replace(/\/$/, '')}${path}`, window.location.href)
+  url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:'
+  url.searchParams.set('user_id', userId)
+  return url.toString()
 }
 
 /** Islands the current user is a member of. */
@@ -158,11 +191,9 @@ export async function forkIsland(islandId: string, partnerId: string, name?: str
  * Returns a function that stops listening.
  */
 export function subscribePresence(userIds: string[], onPresence: (presence: Presence) => void): () => void {
-  // TODO: Real presence needs a backend channel (e.g. a websocket like the game session's
-  // 'presence' message). Until then everyone else shows as offline.
   if (!API_URL) return mockSubscribePresence(userIds, onPresence)
-  for (const userId of userIds) onPresence({ userId, status: 'offline' })
-  return () => undefined
+  // Comes over the user channel; until the backend has it, everyone else shows as offline.
+  return subscribeChannelPresence(userIds, onPresence)
 }
 
 type UploadOptions = {

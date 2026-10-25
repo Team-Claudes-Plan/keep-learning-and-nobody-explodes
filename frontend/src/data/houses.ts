@@ -1,6 +1,6 @@
 import type { FacadeConfig } from './facadeTypes'
 import type { HouseParts } from './houseParts'
-import type { HouseKitId } from './houseKits'
+import { KIT_MIDDLE_HEIGHT, type HouseKitId } from './houseKits'
 
 export type Room = {
   floorColor: string
@@ -14,6 +14,8 @@ export type Storey = {
   concept?: string
   parts?: Partial<HouseParts>
   room: Room
+  /** On an island: the skill this storey teaches, and whether every member passed it. */
+  skill?: { id: string; passed: boolean; tasks: number }
 }
 
 /** A house design (e.g. Mathematics). The same design can stand on several islands at different levels. */
@@ -27,7 +29,7 @@ export type House = {
   kit?: HouseKitId
   parts?: Partial<HouseParts>
   footprint: [number, number]
-  /** Every storey the design has; an island shows only as many as its level. */
+  /** The design's own storeys; on an island the house gets one storey per unlocked skill. */
   storeys: Storey[]
 }
 
@@ -99,13 +101,17 @@ export function houseHeight(house: House): number {
   return house.storeys.reduce((total, storey) => total + storey.height, 0)
 }
 
-/** Highest level a design can reach: one level per storey. */
-export function maxLevel(house: House): number {
-  return house.storeys.length
+/** A storey of the design for the storey at `index`; above its own storeys the design repeats its middle floor. */
+export function designStorey(house: House, index: number): Storey {
+  const own = house.storeys[index]
+  if (own) return own
+  const top = house.storeys[house.storeys.length - 1]
+  return { id: `extra-${index}`, label: `Floor ${index + 1}`, height: KIT_MIDDLE_HEIGHT, room: top.room, parts: top.parts }
 }
 
-/** The house as built on one island: only its first `level` storeys (at least one). */
-export function houseAtLevel(house: House, level: number): House {
-  const count = Math.min(maxLevel(house), Math.max(1, Math.floor(level)))
-  return count === house.storeys.length ? house : { ...house, storeys: house.storeys.slice(0, count) }
+/** Storey heights of a house, shown with this many more (or fewer) storeys than it has. */
+export function previewHeights(house: House, delta: number): number[] {
+  const heights = house.storeys.map((storey) => storey.height)
+  if (delta < 0) return heights.slice(0, Math.max(1, heights.length + delta))
+  return [...heights, ...Array.from({ length: delta }, () => KIT_MIDDLE_HEIGHT)]
 }

@@ -5,6 +5,8 @@ authority: it picks the questions, runs the timer, checks answers and counts
 strikes. Clients only render what they are told.
 
 - Endpoint: `GET /api/sessions/ws?user_id=<uuid>` (websocket), lobby list: `GET /api/sessions`
+- Inviting the partner into a game goes over the user channel, see
+  [`user-channel.md`](user-channel.md).
 - The player is the user named by `user_id` (or the `X-User-Id` header, where
   the client can set one). Unknown users are refused with 401 before the
   upgrade. The player ids in all messages are user ids.
@@ -15,9 +17,15 @@ strikes. Clients only render what they are told.
 
 ## Rules
 
-- The questions come from the chosen `topics`: the houses of an island (see
-  `GET /api/islands`). Only houses of the backend's configured language exist;
-  topic ids of another language are treated as unknown.
+- A **storey game** (`create` with `skill_id` and `island_id`) plays one
+  storey of a house: its questions come from that skill only. The storey must
+  be unlocked for the island (see [Storeys](#storeys)), and both players must
+  be members of it. Winning it passes the storey.
+- A **lobby game** (`create` with `topics` only) draws its questions from whole
+  houses (topics) of an island, spread over their skills. It does not count
+  towards any storey.
+- Only houses of the backend's configured language exist; topic ids of another
+  language are treated as unknown.
 - A bomb has `question_count` parts (1–11). **Turn n** plays part n.
 - Each turn one player is the **defuser** (sees the module, answers) and the
   other is the **expert** (sees the prompt and the manual page). **Roles swap
@@ -30,11 +38,34 @@ strikes. Clients only render what they are told.
   start, default 300) passes. **Won** once all parts are resolved.
   **Aborted** when a player sends `forfeit`.
 
+- With `invited`, only that user may join (`not_invited` for anyone else) and
+  the game is not listed in `GET /api/sessions`.
+
 ```
 waiting ──join──▶ active ──┬─ all parts resolved ──▶ won
    │                       ├─ 3 strikes / deadline ─▶ lost
    └──────forfeit──────────┴─ forfeit ──────────────▶ aborted
 ```
+
+## Storeys
+
+The skills of a topic form its **skill tree**, ordered by `skills.position`:
+the storeys of the house, ground floor first. `GET /api/islands` lists them per
+house as `skills: [{ skill_id, name, position, tasks, passed, unlocked }]`.
+
+- A member **passed** a storey once they won a storey game on it. The island
+  passed it when every member did (`knowledge.rs`).
+- A house's `level` is the number of storeys passed in a row from the ground
+  floor. **Unlocked** are the passed storeys and the next one; `create` refuses
+  the others with `skill_locked`.
+- The client decides how big a storey's bomb is (`question_count`; the
+  frontend uses 4 for the ground floor, one more per storey, at most 8, see
+  `frontend/src/game/sessionRules.ts`).
+- The server picks the tasks (`session/pick.rs`): first those neither player
+  solved yet (failed ones before unseen ones), then solved ones that rested
+  for 10 minutes, longest first, then the rest. If the skill has fewer tasks
+  than the bomb has parts, they repeat. `no_tasks` only when the skill has
+  none.
 
 ## Connecting
 
@@ -63,7 +94,7 @@ pushed live.
 
 | type | fields | when |
 |---|---|---|
-| `create` | `topics: uuid[]` (house ids), `question_count`, `role?`, `time_limit_secs?` (30–3600) | first message |
+| `create` | `topics: uuid[]` (house ids), `question_count`, `role?`, `time_limit_secs?` (30–3600), `skill_id?` + `island_id?` (a storey game; `topics` may then be empty), `invited?` (user id) | first message |
 | `join` | `game_id`, `role?` | first message, game `waiting` |
 | `resume` | `game_id`, `token`, `last_sequence?` | first message |
 | `submit_answer` | `turn`, `answer: { type, answer }` | your turn as defuser |
@@ -79,7 +110,7 @@ resent answer is rejected with `stale_turn` and never costs a second strike.
 | type | content |
 |---|---|
 | `welcome` | `game_id, player_id, token, seat` |
-| `snapshot` | `state`: status, players (+ online), deadline, turn, defuser, expert, strikes, parts with results, `last_sequence` |
+| `snapshot` | `state`: status, topics, `skill_id`, `invited`, players (+ online), deadline, turn, defuser, expert, strikes, parts with results, `last_sequence` |
 | `event` | `sequence, at, event`: one logged game event, see below |
 | `briefing` | private, per turn: `{ turn, role: "defuser", task, glyphs? }` or `{ turn, role: "expert", question_type, prompt, instruction, symbols? }` |
 | `presence` | `player_id, online` |
@@ -110,7 +141,9 @@ twice in a game**.
   `symbols`, the list stays in `task`.
 
 Error codes: `bad_message`, `unknown_game`, `game_full`, `invalid_token`,
-`not_your_turn`, `stale_turn`, `invalid_state`, `no_tasks`, `internal`.
+`not_your_turn`, `stale_turn`, `invalid_state`, `no_tasks`, `skill_locked`
+(storey not unlocked), `not_island_member` (a player is not on the island, or
+the skill is not), `not_invited` (private game of someone else), `internal`.
 
 ## Events
 
@@ -122,7 +155,7 @@ server restart. Clients should ignore events with
 
 | event | payload |
 |---|---|
-| `game_created` | `topics, question_count, time_limit_secs, created_by, parts: [{ position, task_id, question_type, glyphs? }]` |
+| `game_created` | `topics, question_count, time_limit_secs, created_by, parts: [{ position, task_id, question_type, glyphs? }], skill_id?, invited?` |
 | `player_joined` | `player_id, seat, role` (the role they asked for) |
 | `game_started` | `deadline, starting_defuser` |
 | `turn_started` | `turn, defuser, expert` |
@@ -135,8 +168,8 @@ client never sees an event that could be lost on a restart.
 ## Example
 
 ```jsonc
-// A → server
-{ "type": "create", "topics": ["…"], "question_count": 5, "role": "defuser" }
+// A → server: the ground floor of a house, private to B
+{ "type": "create", "topics": [], "skill_id": "S", "island_id": "I", "invited": "B", "question_count": 4, "role": "defuser" }
 // server → A
 { "type": "welcome", "game_id": "G", "player_id": "A", "token": "T", "seat": 0 }
 { "type": "snapshot", "state": { "status": "waiting", … } }

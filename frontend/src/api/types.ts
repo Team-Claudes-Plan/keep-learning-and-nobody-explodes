@@ -134,7 +134,19 @@ export type SessionAnswer = {
 }[QuestionType]
 
 export type SessionClientMessage =
-  | { type: 'create'; topics: string[]; question_count: number; role?: Role; time_limit_secs?: number }
+  | {
+      type: 'create'
+      /** Topics (houses) to draw from; ignored for a storey game. */
+      topics: string[]
+      question_count: number
+      role?: Role
+      time_limit_secs?: number
+      /** Plays one storey: its tasks only, and winning passes it. Needs `island_id`. */
+      skill_id?: string
+      island_id?: string
+      /** Only this user may join; the game is not listed in the lobby. */
+      invited?: string
+    }
   | { type: 'join'; game_id: string; role?: Role }
   | { type: 'resume'; game_id: string; token: string; last_sequence?: number }
   | { type: 'submit_answer'; turn: number; answer: SessionAnswer }
@@ -147,6 +159,9 @@ export type GameView = {
   game_id: string
   status: GameStatus
   topics: string[]
+  /** The storey (skill) the bomb is played on, if any. */
+  skill_id: string | null
+  invited: string | null
   players: { player_id: string; seat: 0 | 1; online: boolean }[]
   deadline: string | null
   turn: number | null
@@ -168,6 +183,8 @@ export type GameEvent =
       time_limit_secs: number
       created_by: string
       parts: { position: number; task_id: string; question_type: QuestionType; glyphs?: number[] }[]
+      skill_id?: string
+      invited?: string
     }
   | { type: 'player_joined'; player_id: string; seat: 0 | 1; role: Role | null }
   | { type: 'game_started'; deadline: string; starting_defuser: string }
@@ -192,6 +209,9 @@ export type SessionErrorCode =
   | 'stale_turn'
   | 'invalid_state'
   | 'no_tasks'
+  | 'skill_locked'
+  | 'not_island_member'
+  | 'not_invited'
   | 'internal'
 
 export type SessionServerMessage =
@@ -218,6 +238,16 @@ export type SessionServerMessage =
   | { type: 'presence'; player_id: string; online: boolean }
   | { type: 'error'; code: SessionErrorCode; message: string }
 
+/** A waiting game, as `GET /api/sessions` lists them (games of the last hour, newest first). */
+export type Lobby = {
+  id: string
+  /** House (topic) ids the questions come from. */
+  topics: string[]
+  question_count: number
+  /** The role left for whoever joins, if the creator picked one. */
+  open_role: Role | null
+}
+
 // Islands, as `GET /api/islands` returns them (backend/src/api/islands.rs).
 // An island holds the documents a user uploaded and belongs to one or two users. Akasha files the
 // questions it generates from the documents under topics; each topic is a house on the island.
@@ -233,14 +263,30 @@ export type LearningGroup = {
   members: [UserSummary] | [UserSummary, UserSummary]
 }
 
+/** A skill of a topic, shown as a storey of its house. */
+export type HouseSkill = {
+  skill_id: string
+  name: string
+  /** Place in the skill tree: 0 is the ground floor. */
+  position: number
+  /** Playable tasks of the skill. */
+  tasks: number
+  /** Every member of the island won a bomb on it. */
+  passed: boolean
+  /** Passed, or the next storey to play. */
+  unlocked: boolean
+}
+
 /** A topic of an island, shown as a house. */
 export type IslandHouse = {
   topic_id: string
   name: string
-  /** 0 to MAX_HOUSE_LEVEL: number of skills every member of the island has learned. */
+  /** Number of storeys every member passed in a row from the ground floor. */
   level: number
-  /** Whether every member has learned at least one skill (`level > 0`). */
+  /** Whether the house has a storey to play. */
   unlocked: boolean
+  /** The skill tree, ground floor first. */
+  skills: HouseSkill[]
 }
 
 export type Island = {

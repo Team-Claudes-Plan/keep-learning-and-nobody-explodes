@@ -9,7 +9,7 @@ import { IslandPartner, NewIsland, SignIn, You } from '../components/islands/Isl
 import UploadDialog, { UploadIcon } from '../components/islands/UploadDialog'
 import { usePresence, useIslands } from '../api/useIslands'
 import type { IslandsResponse } from '../api/types'
-import { MAX_HOUSE_LEVEL, bridgeBetween, islandCenter, resolveIsland } from '../data/islands'
+import { bridgeBetween, islandCenter, resolveIsland } from '../data/islands'
 
 const MIN_ZOOM = 30
 
@@ -153,7 +153,7 @@ function IslandsView({ data }: { data: IslandsResponse }) {
             <li key={placed.topicId}>
               <Link to={`/islands/${active.island.id}/houses/${placed.topicId}`}>{placed.name}</Link>
               <span className="hud-concept">
-                {placed.unlocked ? `Level ${placed.level}/${MAX_HOUSE_LEVEL}` : 'locked'}
+                {placed.unlocked ? `${placed.level}/${placed.totalStoreys} storeys` : 'no questions yet'}
               </span>
             </li>
           ))}

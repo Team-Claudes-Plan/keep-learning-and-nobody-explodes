@@ -27,7 +27,7 @@ use crate::{
     api::{error::ApiError, user::CurrentUser},
     db::Lobby,
     session::{
-        Connection, CreateGame, Seat, SessionError,
+        Connection, CreateGame, Seat, SessionError, Storey,
         protocol::{ClientMessage, ErrorCode, ServerMessage},
     },
 };
@@ -181,11 +181,29 @@ async fn enter(
             question_count,
             role,
             time_limit_secs,
+            skill_id,
+            island_id,
+            invited,
         } => {
+            let storey = match (skill_id, island_id) {
+                (Some(skill_id), Some(island_id)) => Some(Storey {
+                    skill_id,
+                    island_id,
+                }),
+                (None, None) => None,
+                _ => {
+                    return Err(SessionError::new(
+                        ErrorCode::BadMessage,
+                        "skill_id and island_id go together",
+                    ));
+                }
+            };
             sessions
                 .create(CreateGame {
                     player: user,
                     topics,
+                    storey,
+                    invited,
                     question_count,
                     role,
                     time_limit_secs,

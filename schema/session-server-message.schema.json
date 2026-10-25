@@ -64,6 +64,8 @@
             }
           }
         },
+        "skill_id": { "description": "The storey (skill) of a storey game.", "oneOf": [{ "$ref": "#/$defs/uuid" }, { "type": "null" }] },
+        "invited": { "description": "The only user who may join.", "oneOf": [{ "$ref": "#/$defs/uuid" }, { "type": "null" }] },
         "deadline": { "oneOf": [{ "$ref": "#/$defs/time" }, { "type": "null" }] },
         "turn": { "oneOf": [{ "$ref": "#/$defs/turn" }, { "type": "null" }] },
         "defuser": { "oneOf": [{ "$ref": "#/$defs/uuid" }, { "type": "null" }] },
@@ -108,6 +110,8 @@
             "question_count": { "type": "integer" },
             "time_limit_secs": { "type": "integer" },
             "created_by": { "$ref": "#/$defs/uuid" },
+            "skill_id": { "description": "The storey (skill) of a storey game.", "$ref": "#/$defs/uuid" },
+            "invited": { "description": "The only user who may join.", "$ref": "#/$defs/uuid" },
             "parts": {
               "type": "array",
               "items": {
@@ -256,6 +260,9 @@
             "stale_turn",
             "invalid_state",
             "no_tasks",
+            "skill_locked",
+            "not_island_member",
+            "not_invited",
             "internal"
           ]
         },

@@ -68,9 +68,26 @@ pub struct Group {
 pub struct House {
     topic_id: Uuid,
     name: String,
-    /// Number of skills (storeys) every member of the island has learned,
-    /// `0..=MAX_LEVEL`.
-    level: u8,
+    /// Number of skills (storeys) every member of the island passed in a row
+    /// from the ground floor.
+    level: u32,
+    /// Whether the house has a storey to play.
+    unlocked: bool,
+    /// The skill tree, ground floor first.
+    skills: Vec<Storey>,
+}
+
+/// A skill of a house as a storey.
+#[derive(Debug, PartialEq, Eq, Serialize)]
+pub struct Storey {
+    skill_id: Uuid,
+    name: String,
+    position: u32,
+    /// Playable tasks of the skill.
+    tasks: u32,
+    /// Every member won a bomb on it.
+    passed: bool,
+    /// Passed, or the next storey to play.
     unlocked: bool,
 }
 
@@ -225,16 +242,29 @@ fn island(summary: IslandSummary, topics: &[TopicProgress]) -> Island {
     }
 }
 
+/// Builds the house of a topic whose skills are in skill tree order.
 fn house(topic: &TopicProgress) -> House {
-    let level =
-        knowledge::house_level(topic.skills.iter().map(|skill| {
-            knowledge::skill_learned(skill.members.iter().map(|member| member.solved))
-        }));
+    let passed = knowledge::passed_skills(topic);
+    let level = knowledge::house_level(passed.iter().copied());
+    let skills: Vec<Storey> = (0..)
+        .zip(topic.skills.iter().zip(passed))
+        .map(|(index, (skill, passed))| Storey {
+            skill_id: skill.id,
+            name: skill.name.clone(),
+            position: index,
+            tasks: skill.tasks,
+            passed,
+            unlocked: knowledge::storey_unlocked(index, level),
+        })
+        .collect();
     House {
         topic_id: topic.id,
         name: topic.name.clone(),
         level,
-        unlocked: level > 0,
+        unlocked: skills
+            .iter()
+            .any(|storey| storey.unlocked && storey.tasks > 0),
+        skills,
     }
 }
 
@@ -250,16 +280,17 @@ mod tests {
         db::{MemberProgress, SkillProgress},
     };
 
-    fn skill(id: u128, solved: &[u32]) -> SkillProgress {
+    fn skill(id: u128, wins: &[u32]) -> SkillProgress {
         SkillProgress {
             id: Uuid::from_u128(id),
             name: format!("skill {id}"),
+            position: u32::try_from(id).expect("small"),
             tasks: 1,
             members: (0..)
-                .zip(solved)
-                .map(|(user, &solved)| MemberProgress {
+                .zip(wins)
+                .map(|(user, &wins)| MemberProgress {
                     user_id: Uuid::from_u128(user),
-                    solved,
+                    wins,
                 })
                 .collect(),
         }
@@ -273,39 +304,75 @@ mod tests {
         }
     }
 
+    fn storeys(house: &House) -> Vec<(bool, bool)> {
+        house
+            .skills
+            .iter()
+            .map(|storey| (storey.passed, storey.unlocked))
+            .collect()
+    }
+
     #[test]
-    fn house_is_built_as_far_as_both_members_know_it() {
+    fn house_is_built_as_far_as_both_members_passed_it() {
         let house = house(&topic(vec![
-            skill(1, &[1, 2]),
-            skill(2, &[1, 1]),
-            skill(3, &[3, 0]),
+            skill(0, &[1, 2]),
+            skill(1, &[1, 1]),
+            skill(2, &[3, 0]),
+            skill(3, &[0, 0]),
         ]));
         assert_eq!((house.level, house.unlocked), (2, true));
+        assert_eq!(
+            storeys(&house),
+            [(true, true), (true, true), (false, true), (false, false)],
+            "passed storeys and the next one are unlocked"
+        );
     }
 
     #[test]
-    fn house_of_a_solo_island_follows_its_member() {
-        let house = house(&topic(vec![skill(1, &[1])]));
-        assert_eq!((house.level, house.unlocked), (1, true));
+    fn storeys_are_climbed_in_order() {
+        let house = house(&topic(vec![skill(0, &[0]), skill(1, &[1])]));
+        assert_eq!(house.level, 0, "the ground floor is not passed yet");
+        assert_eq!(storeys(&house), [(false, true), (true, false)]);
     }
 
     #[test]
-    fn house_level_is_capped_at_the_drawable_storeys() {
+    fn a_new_house_opens_its_ground_floor() {
+        let topic = topic(vec![skill(0, &[0]), skill(1, &[0])]);
+        let house = house(&topic);
+        assert_eq!((house.level, house.unlocked), (0, true));
+        assert_eq!(
+            knowledge::skill_unlocked(&topic, Uuid::from_u128(0)),
+            Some(true)
+        );
+        assert_eq!(
+            knowledge::skill_unlocked(&topic, Uuid::from_u128(1)),
+            Some(false)
+        );
+        assert_eq!(knowledge::skill_unlocked(&topic, Uuid::from_u128(9)), None);
+    }
+
+    #[test]
+    fn houses_grow_with_their_skill_tree() {
         let house = house(&topic((0..6).map(|id| skill(id, &[1, 1])).collect()));
-        assert_eq!(house.level, knowledge::MAX_LEVEL);
+        assert_eq!(house.level, 6);
+    }
+
+    #[test]
+    fn a_house_without_tasks_is_locked() {
+        assert!(!house(&topic(Vec::new())).unlocked);
     }
 
     async fn user(db: &Database, name: &str) -> Uuid {
         db.create_user(name).await.expect("user")
     }
 
-    /// A topic with `tasks` tasks on `island` in `language`, the first `solved`
-    /// of which `players` solved together in one finished game.
+    /// A topic with `skills` skills (one task each) on `island` in `language`,
+    /// the first `passed` of which `players` won a bomb on together.
     async fn seed_topic(
         db: &Database,
         island: Uuid,
-        tasks: usize,
-        solved: usize,
+        skills: usize,
+        passed: usize,
         players: [Uuid; 2],
         language: Language,
     ) -> Uuid {
@@ -328,26 +395,7 @@ mod tests {
         .fetch_one(pool)
         .await
         .expect("document");
-        let game: Uuid = sqlx::query_scalar(
-            "INSERT INTO games (status, ended_at) VALUES ('won', now()) RETURNING id",
-        )
-        .fetch_one(pool)
-        .await
-        .expect("game");
-        for (seat, player) in (0_i16..).zip(players) {
-            sqlx::query(
-                "INSERT INTO game_players (game_id, player_id, seat, rejoin_token) VALUES ($1, $2, $3, $4)",
-            )
-            .bind(game)
-            .bind(player)
-            .bind(seat)
-            .bind(Uuid::new_v4())
-            .execute(pool)
-            .await
-            .expect("player");
-        }
-        for position in 0..tasks {
-            // one skill per task, so `solved` tasks also means `solved` skills
+        for index in 0..skills {
             let skill: Uuid = sqlx::query_scalar(
                 "INSERT INTO skills (topic_id, name) VALUES ($1, $2) RETURNING id",
             )
@@ -356,33 +404,36 @@ mod tests {
             .fetch_one(pool)
             .await
             .expect("skill");
-            let task: Uuid = sqlx::query_scalar(
+            sqlx::query(
                 "INSERT INTO tasks (document_id, skill_id, question_type, solution)
-                 VALUES ($1, $2, 'text_input', '\"x\"') RETURNING id",
+                 VALUES ($1, $2, 'text_input', '\"x\"')",
             )
             .bind(document)
             .bind(skill)
-            .fetch_one(pool)
+            .execute(pool)
             .await
             .expect("task");
-            let instruction: Uuid =
-                sqlx::query_scalar("INSERT INTO instructions (task_id) VALUES ($1) RETURNING id")
-                    .bind(task)
-                    .fetch_one(pool)
-                    .await
-                    .expect("instruction");
-            if position < solved {
+            if index >= passed {
+                continue;
+            }
+            let game: Uuid = sqlx::query_scalar(
+                "INSERT INTO games (status, ended_at, skill_id) VALUES ('won', now(), $1) RETURNING id",
+            )
+            .bind(skill)
+            .fetch_one(pool)
+            .await
+            .expect("game");
+            for (seat, player) in (0_i16..).zip(players) {
                 sqlx::query(
-                    "INSERT INTO game_parts (game_id, task_id, instruction_id, position, solved_at)
-                     VALUES ($1, $2, $3, $4, now())",
+                    "INSERT INTO game_players (game_id, player_id, seat, rejoin_token) VALUES ($1, $2, $3, $4)",
                 )
                 .bind(game)
-                .bind(task)
-                .bind(instruction)
-                .bind(i32::try_from(position).expect("position"))
+                .bind(player)
+                .bind(seat)
+                .bind(Uuid::new_v4())
                 .execute(pool)
                 .await
-                .expect("part");
+                .expect("player");
             }
         }
         topic
@@ -498,9 +549,9 @@ mod tests {
             .create_island("Semester 1", alex, Some(mia))
             .await
             .expect("island");
-        // alex and mia solved all of `known`, leo none of it
+        // alex and mia passed all of `known`, leo none of it
         let known = seed_topic(&db, island, 4, 4, [alex, mia], Language::German).await;
-        // alex and leo solved half of `shared` in some other game
+        // alex and leo passed half of `shared` in other games
         let shared = seed_topic(&db, island, 4, 2, [alex, leo], Language::German).await;
 
         let (status, body) = call(
@@ -517,12 +568,12 @@ mod tests {
         let (_, body) = call(&app, Method::GET, "/api/islands", Some(alex), None).await;
         assert_eq!(
             houses(&body, island),
-            [(known.to_string(), 4, true), (shared.to_string(), 0, false)],
-            "mia never played `shared`"
+            [(known.to_string(), 4, true), (shared.to_string(), 0, true)],
+            "mia never played `shared`, its ground floor is open"
         );
         assert_eq!(
             houses(&body, fork),
-            [(known.to_string(), 0, false), (shared.to_string(), 2, true)],
+            [(known.to_string(), 0, true), (shared.to_string(), 2, true)],
             "the fork shares the topics, leo never played `known`"
         );
         let fork_entry = body["islands"]
@@ -567,8 +618,8 @@ mod tests {
         assert_eq!(status, StatusCode::OK);
         assert_eq!(
             houses(&body, island),
-            [(german.to_string(), 0, false)],
-            "the English variant does not exist for a German reader"
+            [(german.to_string(), 0, true)],
+            "the English variant does not exist for a German reader; the German ground floor is open"
         );
     }
 

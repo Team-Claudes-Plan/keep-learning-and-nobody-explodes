@@ -30,8 +30,8 @@ impl Database {
     }
 
     /// The topics (houses) and skills (storeys) of an island in `language`,
-    /// oldest first. Topics without skills are returned with an empty skill
-    /// list.
+    /// oldest first, with the skills in skill tree order. Topics without
+    /// skills are returned with an empty skill list.
     pub async fn topic_skills(
         &self,
         island_id: Uuid,
@@ -42,7 +42,7 @@ impl Database {
              FROM topics t
              LEFT JOIN skills s ON s.topic_id = t.id
              WHERE t.island_id = $1 AND t.language = $2
-             ORDER BY t.created_at, t.id, s.created_at, s.id",
+             ORDER BY t.created_at, t.id, s.position, s.created_at, s.id",
         )
         .bind(island_id)
         .bind(language)
@@ -70,7 +70,9 @@ impl Database {
     /// Inserts one task and one instruction per question in a single
     /// transaction, so a failed chronicle never leaves partial task rows.
     /// Topics and skills are created on `island_id` as needed; names that only
-    /// differ in case from existing ones of the same language are reused.
+    /// differ in case from existing ones of the same language are reused. New
+    /// skills are appended to the skill tree in the order given
+    /// (`skills.position` is filled by a trigger).
     pub async fn store_questions(
         &self,
         document_id: Uuid,
