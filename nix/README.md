@@ -161,7 +161,8 @@ nix build .#frontend   # static frontend
 nix build .#checks.x86_64-linux.nixos-module   # VM test of the module
 ```
 
-The frontend's dependencies are a fixed-output derivation. After changing
-`frontend/bun.lock`, replace the hash in [`frontend.nix`](frontend.nix) with
-`lib.fakeHash`, build, and paste the hash from the error message. Only
-`x86_64-linux` has a hash so far.
+The frontend's dependencies are read from `frontend/bun.nix`, which
+[bun2nix](https://github.com/nix-community/bun2nix) generates from
+`frontend/bun.lock`. `bun install` regenerates it through the `postinstall`
+script, so commit it together with `bun.lock`. There are no hashes to update by
+hand, and every platform builds from the same file.

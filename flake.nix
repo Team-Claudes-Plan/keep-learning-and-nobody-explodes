@@ -21,6 +21,10 @@
     # Pinned Rust toolchain + crane for cached Rust builds.
     rust-overlay.url = "github:oxalica/rust-overlay";
     crane.url = "github:ipetkov/crane";
+
+    # Frontend dependencies from frontend/bun.lock (frontend/bun.nix), see nix/frontend.nix.
+    bun2nix.url = "github:nix-community/bun2nix?ref=2.1.2";
+    bun2nix.inputs.nixpkgs.follows = "nixpkgs";
   };
 
   outputs = inputs:
@@ -264,7 +268,9 @@
           # The workspace build contains both service binaries: backend and akasha.
           packages.default = backend;
           packages.server = backend;
-          packages.frontend = pkgs.callPackage ./nix/frontend.nix { };
+          packages.frontend = pkgs.callPackage ./nix/frontend.nix {
+            bun2nix = inputs.bun2nix.packages.${system}.default;
+          };
           # Re-exported so the NixOS module does not depend on the host's nixpkgs having it.
           packages.rustfs = pkgs.rustfs;
 
